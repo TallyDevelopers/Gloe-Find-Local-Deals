@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ApiBridge } from '../api/ApiBridge';
 import { AuthGateProvider } from '../auth-gate/AuthGateProvider';
 import { ClaimedDealsProvider } from '../claimed/ClaimedDealsProvider';
+import { SelectedLocationProvider } from '../discover-header/SelectedLocationProvider';
 import { SavedDealsProvider } from '../saved/SavedDealsProvider';
 
 interface GloeProvidersProps {
@@ -32,9 +33,11 @@ export function GloeProviders({ clerkPublishableKey, apiUrl, children }: GloePro
       <AuthProvider publishableKey={clerkPublishableKey}>
         <ApiBridge apiUrl={apiUrl}>
           <AuthGateProvider>
-            <SavedDealsProvider>
-              <ClaimedDealsProvider>{children}</ClaimedDealsProvider>
-            </SavedDealsProvider>
+            <SelectedLocationProvider>
+              <SavedDealsProvider>
+                <ClaimedDealsProvider>{children}</ClaimedDealsProvider>
+              </SavedDealsProvider>
+            </SelectedLocationProvider>
           </AuthGateProvider>
         </ApiBridge>
       </AuthProvider>

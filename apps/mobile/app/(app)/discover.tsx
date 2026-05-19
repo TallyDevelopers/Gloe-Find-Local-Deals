@@ -1,30 +1,36 @@
 import { trpc } from '@gloe/api-client';
 import { useAuth } from '@gloe/auth';
 import { Stack, Text, color, space } from '@gloe/ui';
-import { Link } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
+import { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useRequireAuth } from '../../features/auth-gate/useRequireAuth';
 import { DealCard } from '../../features/discover/DealCard';
 import { FeaturedCarousel } from '../../features/discover/FeaturedCarousel';
+import { FilterPills } from '../../features/discover-header/FilterPills';
+import { LocationPill } from '../../features/discover-header/LocationPill';
+import { SearchBar } from '../../features/discover-header/SearchBar';
+import { useSelectedLocation } from '../../features/discover-header/SelectedLocationProvider';
 import { useSavedDeals } from '../../features/saved/SavedDealsProvider';
-
-// Downtown San Diego — placeholder until real GPS / city selector wires in
-const FALLBACK_LAT = 32.7157;
-const FALLBACK_LNG = -117.1611;
 
 export default function DiscoverScreen() {
   const insets = useSafeAreaInsets();
-  const { status, user } = useAuth();
+  const router = useRouter();
+  const { status } = useAuth();
   const requireAuth = useRequireAuth();
   const { savedIds, toggle } = useSavedDeals();
+  const { location } = useSelectedLocation();
+
+  const [categorySlug, setCategorySlug] = useState<string | null>(null);
 
   const dealsQuery = trpc.deals.list.useQuery({
-    userLat: FALLBACK_LAT,
-    userLng: FALLBACK_LNG,
+    userLat: location.latitude,
+    userLng: location.longitude,
     maxDistanceMiles: 50,
     limit: 50,
+    ...(categorySlug ? { category: categorySlug } : {}),
   });
 
   const isSignedIn = status === 'signed-in';
@@ -32,24 +38,26 @@ export default function DiscoverScreen() {
   const featured = allDeals.filter((d) => d.isSponsored);
   const rest = allDeals;
 
-  const toggleSave = requireAuth('save', (dealId: string) => {
-    toggle(dealId);
-  });
+  const toggleSave = requireAuth('save', (dealId: string) => toggle(dealId));
 
   return (
     <View style={{ flex: 1, backgroundColor: color.surface.primary }}>
       <ScrollView
         contentContainerStyle={{
-          paddingTop: insets.top + space[4],
+          paddingTop: insets.top + space[3],
           paddingBottom: insets.bottom + space[8],
         }}
         showsVerticalScrollIndicator={false}
       >
-        <Stack gap={6}>
-          <Stack direction="row" justify="space-between" align="center" paddingX={5}>
-            <Text variant="display-lg" tone="primary" weight="medium">
-              Gloe
-            </Text>
+        <Stack gap={4}>
+          {/* Header row: location pill (left) + auth link (right) */}
+          <Stack
+            direction="row"
+            justify="space-between"
+            align="center"
+            paddingX={5}
+          >
+            <LocationPill />
             {!isSignedIn ? (
               <Link href="/(auth)/login" asChild>
                 <Pressable hitSlop={8}>
@@ -61,17 +69,23 @@ export default function DiscoverScreen() {
             ) : null}
           </Stack>
 
-          <Stack gap={1} paddingX={5}>
-            <Text variant="display-md" tone="primary" weight="medium">
-              {isSignedIn ? `Hi, ${user?.firstName ?? 'there'}` : 'Find your glow.'}
-            </Text>
-            <Text variant="body-md" tone="secondary">
-              {isSignedIn
-                ? 'Deals near you, hand-picked.'
-                : 'Browse local aesthetic deals. Sign in to claim.'}
-            </Text>
-          </Stack>
+          {/* Search bar */}
+          <View style={{ paddingHorizontal: space[5] }}>
+            <SearchBar onPress={() => router.push('/(app)/search')} />
+          </View>
 
+          {/* Category filter pills */}
+          <View style={{ paddingLeft: space[5], paddingRight: space[3] }}>
+            <FilterPills
+              selectedSlug={categorySlug}
+              onSelect={setCategorySlug}
+              onOpenFilters={() => {
+                // TODO: open advanced filters sheet (distance, price, rating)
+              }}
+            />
+          </View>
+
+          {/* Feed */}
           {dealsQuery.isLoading ? (
             <View style={{ paddingVertical: space[10], alignItems: 'center' }}>
               <ActivityIndicator color={color.brand[500]} />
@@ -83,7 +97,7 @@ export default function DiscoverScreen() {
               </Text>
             </View>
           ) : (
-            <>
+            <Stack gap={6} style={{ marginTop: space[2] }}>
               {featured.length > 0 ? (
                 <View style={{ paddingLeft: space[5] }}>
                   <FeaturedCarousel deals={featured} onSave={toggleSave} savedIds={savedIds} />
@@ -92,21 +106,27 @@ export default function DiscoverScreen() {
 
               <Stack gap={3} paddingX={5}>
                 <Text variant="display-sm" tone="primary" weight="medium">
-                  Near you
+                  {categorySlug ? 'Filtered results' : 'Near you'}
                 </Text>
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[3] }}>
-                  {rest.map((deal) => (
-                    <View key={deal.id} style={{ width: '48.5%' }}>
-                      <DealCard
-                        deal={deal}
-                        isSaved={savedIds.has(deal.id)}
-                        onSave={() => toggleSave(deal.id)}
-                      />
-                    </View>
-                  ))}
-                </View>
+                {rest.length === 0 ? (
+                  <Text variant="body-md" tone="secondary">
+                    No deals match your filters in {location.label}.
+                  </Text>
+                ) : (
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[3] }}>
+                    {rest.map((deal) => (
+                      <View key={deal.id} style={{ width: '48.5%' }}>
+                        <DealCard
+                          deal={deal}
+                          isSaved={savedIds.has(deal.id)}
+                          onSave={() => toggleSave(deal.id)}
+                        />
+                      </View>
+                    ))}
+                  </View>
+                )}
               </Stack>
-            </>
+            </Stack>
           )}
         </Stack>
       </ScrollView>
