@@ -3,6 +3,8 @@ import { useRouter } from 'expo-router';
 import { Pressable, ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Icon } from '../../features/icon/Icon';
+
 /**
  * Search screen stub. Real implementation (fuzzy search, recent queries,
  * trending, sponsored results at top) is a follow-up patch.
@@ -24,16 +26,14 @@ export default function SearchScreen() {
           {/* Header row */}
           <Stack direction="row" gap={3} align="center">
             <Pressable onPress={() => router.back()} hitSlop={12}>
-              <Text variant="body-lg" tone="primary" weight="semibold">
-                ←
-              </Text>
+              <Icon name="close" size={22} color={color.text.primary} />
             </Pressable>
             <View
               style={{
                 flex: 1,
                 flexDirection: 'row',
                 alignItems: 'center',
-                gap: space[2],
+                gap: space[3],
                 backgroundColor: color.surface.elevated,
                 borderRadius: radius.pill,
                 paddingHorizontal: space[4],
@@ -41,7 +41,7 @@ export default function SearchScreen() {
                 ...shadow.sm,
               }}
             >
-              <Text style={{ fontSize: 16, color: color.text.tertiary }}>🔍</Text>
+              <Icon name="search" size={18} color={color.text.tertiary} />
               <TextInput
                 placeholder="Search Botox, filler, lasers…"
                 placeholderTextColor={color.text.tertiary}

@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ClaimedDealRow } from '../../features/claimed/ClaimedDealRow';
 import { useClaimedDeals } from '../../features/claimed/ClaimedDealsProvider';
 import { DealCard } from '../../features/discover/DealCard';
+import { Icon } from '../../features/icon/Icon';
 import { SegmentedControl } from '../../features/saved/SegmentedControl';
 import { useSavedDeals } from '../../features/saved/SavedDealsProvider';
 
@@ -140,7 +141,7 @@ function SavedEmpty({
           justifyContent: 'center',
         }}
       >
-        <Text style={{ fontSize: 48, color: color.brand[500] }}>♡</Text>
+        <Icon name="heart" size={44} color={color.brand[500]} strokeWidth={1.75} />
       </View>
       <Stack gap={2} align="center" style={{ maxWidth: 300 }}>
         <Text variant="display-sm" tone="primary" weight="medium" align="center">

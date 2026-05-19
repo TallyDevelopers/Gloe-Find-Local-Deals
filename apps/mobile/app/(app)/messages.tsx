@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { Image, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Icon } from '../../features/icon/Icon';
 import { mockThreads, type MockThread } from '../../features/messages/mockThreads';
 
 export default function MessagesScreen() {
@@ -61,7 +62,7 @@ function SignInGate({ onSignIn }: { onSignIn: () => void }) {
           justifyContent: 'center',
         }}
       >
-        <Text style={{ fontSize: 44, color: color.brand[500] }}>✉</Text>
+        <Icon name="tab.messages" size={44} color={color.brand[500]} strokeWidth={1.75} />
       </View>
       <Stack gap={2} align="center" style={{ maxWidth: 320 }}>
         <Text variant="display-sm" tone="primary" weight="medium" align="center">

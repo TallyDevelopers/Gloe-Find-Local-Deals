@@ -1,6 +1,8 @@
-import { Button, Stack, Text, color, radius, shadow, space } from '@gloe/ui';
+import { Button, Stack, color, radius, shadow, space } from '@gloe/ui';
 import { Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { Icon, type IconName } from '../icon/Icon';
 
 interface StickyActionBarProps {
   isSaved: boolean;
@@ -36,8 +38,13 @@ export function StickyActionBar({
       }}
     >
       <Stack direction="row" gap={3} align="center">
-        <IconButton onPress={onSave} icon={isSaved ? '♥' : '♡'} active={isSaved} />
-        <IconButton onPress={onShare} icon="↗" />
+        <IconButton
+          onPress={onSave}
+          iconName="heart"
+          iconColor={isSaved ? color.accent[500] : color.text.primary}
+          iconFill={isSaved ? color.accent[500] : 'none'}
+        />
+        <IconButton onPress={onShare} iconName="share" />
         <View style={{ flex: 1 }}>
           <Button label={ctaLabel} onPress={onRedeem} size="lg" fullWidth />
         </View>
@@ -48,11 +55,17 @@ export function StickyActionBar({
 
 interface IconButtonProps {
   onPress: () => void;
-  icon: string;
-  active?: boolean;
+  iconName: IconName;
+  iconColor?: string;
+  iconFill?: string;
 }
 
-function IconButton({ onPress, icon, active }: IconButtonProps) {
+function IconButton({
+  onPress,
+  iconName,
+  iconColor = color.text.primary,
+  iconFill = 'none',
+}: IconButtonProps) {
   return (
     <Pressable
       onPress={onPress}
@@ -67,15 +80,7 @@ function IconButton({ onPress, icon, active }: IconButtonProps) {
         justifyContent: 'center',
       }}
     >
-      <Text
-        style={{
-          fontSize: 22,
-          color: active ? color.accent[500] : color.text.primary,
-          fontWeight: '600',
-        }}
-      >
-        {icon}
-      </Text>
+      <Icon name={iconName} size={22} color={iconColor} fill={iconFill} strokeWidth={2.25} />
     </Pressable>
   );
 }

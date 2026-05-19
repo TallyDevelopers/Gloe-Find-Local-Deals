@@ -1,13 +1,14 @@
 import { color } from '@gloe/ui';
-import { Text } from 'react-native';
+
+import { Icon, type IconName } from '../icon/Icon';
 
 export type TabIconName = 'discover' | 'saved' | 'messages' | 'profile';
 
-const glyphs: Record<TabIconName, { active: string; inactive: string }> = {
-  discover: { active: '✦', inactive: '✦' },
-  saved: { active: '♥', inactive: '♡' },
-  messages: { active: '✉', inactive: '✉' },
-  profile: { active: '●', inactive: '○' },
+const iconForTab: Record<TabIconName, IconName> = {
+  discover: 'tab.discover',
+  saved: 'tab.saved',
+  messages: 'tab.messages',
+  profile: 'tab.profile',
 };
 
 interface TabIconProps {
@@ -17,22 +18,21 @@ interface TabIconProps {
 }
 
 /**
- * Minimal tab icons using glyphs tuned to our typography. Swap for a proper
- * icon library (Phosphor / Lucide via react-native-svg) in a later patch —
- * the surface area is just this file.
+ * Bottom tab icons. Lucide line icons; the active state gets a thicker
+ * stroke + brand-color fill on heart-shaped icons (saved tab).
  */
 export function TabIcon({ name, focused, size = 22 }: TabIconProps) {
-  const glyph = glyphs[name];
+  const iconName = iconForTab[name];
+  const tint = focused ? color.brand[500] : color.text.tertiary;
+  // The saved tab is the heart icon — fill it when focused so it reads as "active heart"
+  const fill = focused && name === 'saved' ? color.brand[500] : 'none';
   return (
-    <Text
-      style={{
-        fontSize: size,
-        color: focused ? color.brand[500] : color.text.tertiary,
-        fontWeight: focused ? '700' : '500',
-        lineHeight: size * 1.1,
-      }}
-    >
-      {focused ? glyph.active : glyph.inactive}
-    </Text>
+    <Icon
+      name={iconName}
+      size={size}
+      color={tint}
+      fill={fill}
+      strokeWidth={focused ? 2.25 : 1.75}
+    />
   );
 }

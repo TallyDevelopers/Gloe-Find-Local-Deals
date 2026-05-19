@@ -13,6 +13,8 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Icon, type IconName } from '../icon/Icon';
+
 interface HeroImageProps {
   images: string[];
   isSaved: boolean;
@@ -63,13 +65,14 @@ export function HeroImage({ images, isSaved, onSave, onShare }: HeroImageProps) 
           justifyContent: 'space-between',
         }}
       >
-        <FloatingButton onPress={() => router.back()} icon="←" />
+        <FloatingButton onPress={() => router.back()} iconName="chevronLeft" />
         <View style={{ flexDirection: 'row', gap: space[2] }}>
-          <FloatingButton onPress={onShare} icon="↗" />
+          <FloatingButton onPress={onShare} iconName="share" />
           <FloatingButton
             onPress={onSave}
-            icon={isSaved ? '♥' : '♡'}
+            iconName="heart"
             iconColor={isSaved ? color.accent[500] : color.text.primary}
+            iconFill={isSaved ? color.accent[500] : 'none'}
           />
         </View>
       </View>
@@ -125,11 +128,17 @@ export function HeroImage({ images, isSaved, onSave, onShare }: HeroImageProps) 
 
 interface FloatingButtonProps {
   onPress: () => void;
-  icon: string;
+  iconName: IconName;
   iconColor?: string;
+  iconFill?: string;
 }
 
-function FloatingButton({ onPress, icon, iconColor = color.text.primary }: FloatingButtonProps) {
+function FloatingButton({
+  onPress,
+  iconName,
+  iconColor = color.text.primary,
+  iconFill = 'none',
+}: FloatingButtonProps) {
   return (
     <Pressable
       onPress={onPress}
@@ -144,7 +153,7 @@ function FloatingButton({ onPress, icon, iconColor = color.text.primary }: Float
         ...shadow.sm,
       }}
     >
-      <Text style={{ fontSize: 18, color: iconColor, fontWeight: '600' }}>{icon}</Text>
+      <Icon name={iconName} size={20} color={iconColor} fill={iconFill} strokeWidth={2.25} />
     </Pressable>
   );
 }

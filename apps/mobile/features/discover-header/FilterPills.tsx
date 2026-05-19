@@ -1,6 +1,8 @@
 import { Text, color, radius, space } from '@gloe/ui';
 import { Pressable, ScrollView, View } from 'react-native';
 
+import { Icon } from '../icon/Icon';
+
 export interface CategoryOption {
   slug: string | null;  // null = "All"
   label: string;
@@ -85,9 +87,7 @@ export function FilterPills({ selectedSlug, onSelect, onOpenFilters }: FilterPil
             marginLeft: space[2],
           }}
         >
-          <Text style={{ fontSize: 14, color: color.text.primary, fontWeight: '700' }}>
-            ⚙
-          </Text>
+          <Icon name="filters" size={16} color={color.text.primary} strokeWidth={2.25} />
         </Pressable>
       ) : null}
     </View>

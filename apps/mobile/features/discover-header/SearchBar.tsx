@@ -1,6 +1,8 @@
 import { Text, color, radius, shadow, space } from '@gloe/ui';
 import { Pressable, View } from 'react-native';
 
+import { Icon } from '../icon/Icon';
+
 interface SearchBarProps {
   onPress: () => void;
 }
@@ -27,7 +29,7 @@ export function SearchBar({ onPress }: SearchBarProps) {
         ...shadow.sm,
       }}
     >
-      <Text style={{ fontSize: 16, color: color.text.tertiary }}>🔍</Text>
+      <Icon name="search" size={18} color={color.text.tertiary} />
       <View style={{ flex: 1 }}>
         <Text variant="body-md" tone="tertiary">
           Search Botox, filler, lasers…

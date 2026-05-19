@@ -3,6 +3,7 @@ import { Stack, Text, color, radius, shadow, space } from '@gloe/ui';
 import { useRouter } from 'expo-router';
 import { Dimensions, Image, Pressable, ScrollView, View } from 'react-native';
 
+import { Icon } from '../icon/Icon';
 import { formatPrice } from './format';
 
 interface FeaturedCarouselProps {
@@ -109,15 +110,13 @@ function FeaturedCard({ deal, width, isSaved, onSave }: FeaturedCardProps) {
             ...shadow.sm,
           }}
         >
-          <Text
-            style={{
-              fontSize: 18,
-              color: isSaved ? color.accent[500] : color.text.primary,
-              fontWeight: '600',
-            }}
-          >
-            {isSaved ? '♥' : '♡'}
-          </Text>
+          <Icon
+            name="heart"
+            size={18}
+            color={isSaved ? color.accent[500] : color.text.primary}
+            fill={isSaved ? color.accent[500] : 'none'}
+            strokeWidth={2.25}
+          />
         </Pressable>
         <View
           style={{
