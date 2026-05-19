@@ -6,7 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import QRCode from 'react-native-qrcode-svg';
 
 import { useClaimedDeals } from '../../../features/claimed/ClaimedDealsProvider';
-import { formatPrice } from '../../../features/discover/mockDeals';
+import { formatPrice } from '../../../features/discover/format';
 
 export default function MyDealScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();

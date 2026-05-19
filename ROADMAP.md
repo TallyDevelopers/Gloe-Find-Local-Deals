@@ -8,7 +8,13 @@
 ## Where we are right now
 
 ✅ **Done end-to-end:**
-- Turborepo monorepo (`apps/mobile`, `apps/api`, `packages/ui`, `packages/auth`, `packages/location`, `packages/api-client`)
+- Turborepo monorepo with locked-in **multi-app architecture** (see §"Apps in this monorepo" in product spec):
+  - `apps/mobile` — Gloe (consumer iOS app) — built
+  - `apps/api` — Hono+tRPC API server — built
+  - `apps/vendor` — Gloe for Business (vendor iOS app) — **not yet scaffolded**
+  - `apps/admin` — Gloe Admin (web ops tool) — **not yet scaffolded**
+  - `apps/web` — gloe.app marketing site — **not yet scaffolded**
+- Shared packages: `@gloe/ui`, `@gloe/auth`, `@gloe/location`, `@gloe/api-client` — used by every app once built
 - Native iOS build (`expo run:ios`) — no longer in Expo Go
 - Custom design system (warm ivory + champagne + dusty rose, Fraunces + Inter)
 - Discover feed (2-column grid + Featured carousel)
@@ -47,8 +53,8 @@ These are things the app fundamentally cannot work without.
 |---|---|---|---|
 | 1 | **Resolve Clerk sign-in** | We literally cannot test signed-in flows until 2FA-forcing config in the Clerk dashboard is resolved | 30 min |
 | 2 | **Real GPS + location selector** | Every distance is hardcoded to downtown SD coords. No city picker, no "use my location" prompt. | 1 patch |
-| 3 | **Vendor app skeleton** | Vendors can't sign up, post deals, edit listings, or scan claim QRs. No supply side = no marketplace. New `apps/vendor/` iOS app. | 2–3 patches |
-| 4 | **Admin tool** | No way to approve vendors, moderate deals, ban users, or moderate reviews. Running a marketplace from raw SQL queries doesn't scale past 5 vendors. New `apps/admin/` web app. | 2–3 patches |
+| 3 | **`apps/vendor/` — separate iOS app for vendors** | Locked architectural decision: vendors get their own App Store app ("Gloe for Business"), not a tab in the consumer app. Same monorepo, shares all packages + API. Without it: no vendor sign-up, no posting, no QR scanning, no marketplace. | 2–3 patches |
+| 4 | **`apps/admin/` — internal web tool** | No way to approve vendors, moderate deals, ban users, or moderate reviews. Running a marketplace from raw SQL queries doesn't scale past 5 vendors. Lives at `admin.gloe.app`. | 2–3 patches |
 | 5 | **Stripe integration** | Vendor subscriptions = our entire revenue model. Not wired. No way to charge anyone yet. | 1–2 patches |
 
 ---
@@ -121,8 +127,8 @@ This is the order I'd build if it were up to me. Reasoning: nothing on the consu
 | # | Patch | Why this order |
 |---|---|---|
 | 1 | Unblock Clerk sign-in | Can't test anything signed-in. Today. |
-| 2 | Vendor iOS app skeleton + QR scanner | Supply side > consumer side. Without vendors, no marketplace. |
-| 3 | Admin tool (web) | Approve vendors, moderate deals. Needed the moment we have >5 vendors. |
+| 2 | `apps/vendor/` scaffold + sign-up + post-a-deal + QR scanner | Locked: separate iOS app, same monorepo, shares all packages + API. Supply side > consumer side. Without vendors, no marketplace. |
+| 3 | `apps/admin/` scaffold + vendor approval + deal moderation | Web app at admin.gloe.app. Needed the moment we have >5 vendors. |
 | 4 | Stripe — vendor subscriptions | First real revenue line. Year-1-free trial logic. |
 | 5 | Real GPS + location selector + real maps | All three at once. Same native deps, similar surface area. |
 | 6 | Search + filters | Power-user discovery. Built on top of real location. |

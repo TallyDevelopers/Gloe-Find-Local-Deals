@@ -7,16 +7,19 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { formatPrice } from '../discover/format';
 import { useClaimedDeals } from './ClaimedDealsProvider';
 
-interface ClaimConfirmSheetDeal {
+/**
+ * Minimal subset of a deal that this sheet needs. Decoupled from the API
+ * shape so any caller (current or future) can use it.
+ */
+export interface ClaimConfirmDeal {
   id: string;
   title: string;
-  category: string;
-  subtype: string;
+  categoryLabel: string;       // e.g. "Botox" or "Botox · Dysport"
   vendorName: string;
-  vendorDistance: string;
+  vendorContextLine: string;   // e.g. "1.2 mi" or "San Diego"
 }
 
-interface ClaimConfirmSheetVariant {
+export interface ClaimConfirmVariant {
   id: string;
   label: string;
   originalPriceCents: number;
@@ -24,8 +27,8 @@ interface ClaimConfirmSheetVariant {
 }
 
 interface ClaimConfirmSheetProps {
-  deal: ClaimConfirmSheetDeal | null;
-  variant: ClaimConfirmSheetVariant | null;
+  deal: ClaimConfirmDeal | null;
+  variant: ClaimConfirmVariant | null;
   monthlyUsed: number;
   monthlyLimit: number;
   onClose: () => void;
@@ -162,13 +165,13 @@ export function ClaimConfirmSheet({
             >
               <Stack gap={1}>
                 <Text variant="caption" tone="tertiary" weight="medium">
-                  {deal.category.toUpperCase()} · {variant.label}
+                  {deal.categoryLabel.toUpperCase()} · {variant.label}
                 </Text>
                 <Text variant="body-lg" tone="primary" weight="semibold" numberOfLines={2}>
                   {deal.title}
                 </Text>
                 <Text variant="body-sm" tone="secondary">
-                  {deal.vendorName} · {deal.vendorDistance}
+                  {deal.vendorName} · {deal.vendorContextLine}
                 </Text>
               </Stack>
               <View

@@ -32,7 +32,54 @@
 
 ### Architecture in one sentence
 
-Expo iOS app + Next.js web app + a **dedicated TypeScript API server** that owns all business logic, talking to a **Postgres database**, with every third-party service (auth, payments, push, storage, search) sitting behind a thin adapter we can swap without touching the domain.
+A **single Turborepo monorepo** containing **two iOS apps** (consumer + vendor), **one Hono+tRPC API server**, and **shared design + auth + data packages**, talking to a **single Postgres database**, with every third-party service (auth, payments, push, storage, search) sitting behind a thin adapter we can swap without touching the domain.
+
+### The apps in this monorepo
+
+We ship **separate iOS apps** for consumers and vendors. This is the standard pattern for two-sided marketplaces (DoorDash + DoorDash Merchants, Uber + Uber Driver, Airbnb + Airbnb Host, OpenTable + OpenTable for Restaurants, Groupon + Groupon Merchant). They share infrastructure but ship to the App Store as separate apps with separate listings.
+
+```
+/GlowApp/                       ← one git repo, one folder
+├── apps/
+│   ├── mobile/                 ← Gloe — consumer iOS app
+│   │                             Bundle ID: com.gloe.app
+│   ├── vendor/                 ← Gloe for Business — vendor iOS app
+│   │                             Bundle ID: com.gloe.vendor
+│   ├── admin/                  ← Gloe Admin — internal web tool (future)
+│   ├── api/                    ← Hono + tRPC API server (BOTH iOS apps call this)
+│   └── web/                    ← gloe.app marketing site (future)
+└── packages/
+    ├── ui/                     ← design tokens + primitives — every app uses these
+    ├── auth/                   ← Clerk wrapped behind our interface — every app uses this
+    ├── location/               ← GPS adapter — every app uses this
+    ├── api-client/             ← typed tRPC client — every app uses this
+    └── domain/                 ← (future) shared business rules
+```
+
+### Why separate iOS apps (not one app with a "mode switch")
+
+| Reason | Why it matters |
+|---|---|
+| Different mental models | Consumers open the app to *find* deals. Vendors open it to *post* deals, scan QRs, run reports. These aren't tabs of the same product. |
+| Different login systems | Consumer = personal Clerk account. Vendor = business Clerk account with team members + role-based permissions. Mixing risks vendors accidentally claiming their own deals. |
+| Different native capabilities | Consumer needs GPS + Apple Pay (for Gloe Plus). Vendor needs camera with QR scanning + heavier auth + future thermal printer integration. Native modules diverge. |
+| Different App Store discovery | "Gloe — Botox deals near you" vs "Gloe for Business — Manage your med spa." Two listings, two SEO targets, two rating pools. One app trying to be both fails at both. |
+| Different release cadence | Consumer side iterates weekly. Vendors hate UI changes — they want consistency. Coupling means every consumer release risks breaking vendor workflows. |
+| Different security review | Vendor app handles revenue reports, redemption verification, possibly HIPAA-adjacent data. Tighter scope = tighter audit. |
+| Sales motion | "Download Gloe for Business" beats "download Gloe and toggle to vendor mode in settings" when walking into a med spa. |
+
+### Why same monorepo (not separate repos)
+
+| Reason | Why it matters |
+|---|---|
+| Shared code is shared automatically | Update a token in `packages/ui/tokens.ts` → both apps get the new color. No copy-paste, no version drift. |
+| One API server | Both apps hit `apps/api/` via tRPC. Shared types end-to-end. |
+| One git history | A PR touching a shared type shows breakage in both apps in the same diff. Can't accidentally break one and not notice. |
+| One `npm install` | All dependencies deduplicated and hoisted. |
+| One dev environment | `npm run dev` boots the API + both Metro bundlers from one command. |
+| Vendor app is ~30-40% the size | Reuses every package + the API server. Only screens are new. |
+
+This is the same pattern Vercel, Linear, Cal.com, and most YC-stage startups use today.
 
 ### Locked decisions (non-negotiable)
 
@@ -202,9 +249,16 @@ No email signup wall. Browse anonymously. Account only required at redemption.
 - Show code at vendor; vendor enters code in their dashboard to mark redeemed
 - User gets push notification to leave review 24h after redemption
 
-### 4.2 Vendor Web Dashboard (web-first; mobile responsive)
+### 4.2 Vendor App — "Gloe for Business"
 
-Vendors live on desktop. They have receptionists with computers. Don't force them into a phone app.
+**Updated architectural decision (2026-05-19): vendors get their own iOS app**, not a web-only dashboard. Web dashboard may come later as a v2 add-on for vendors who prefer desktop.
+
+Vendor iOS app lives in `apps/vendor/`. Bundle ID `com.gloe.vendor`. Same Clerk auth provider as consumers but with a different user model — vendor users belong to a `vendor` org, can have team roles (owner / manager / receptionist), and can never claim consumer deals.
+
+Key vendor-app-specific capabilities:
+- **QR scanner** (camera + `expo-camera`) — the entire redemption flow depends on this
+- **Push notifications for redemptions** — owner gets pinged when a coupon redeems
+- **Daily / weekly revenue summary** notifications
 
 #### Vendor signup flow (one-time, ~5 minutes)
 

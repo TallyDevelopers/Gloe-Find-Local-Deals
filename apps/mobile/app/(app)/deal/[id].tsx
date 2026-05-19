@@ -1,4 +1,4 @@
-import { trpc, type DealDetail, type DealVariant } from '@gloe/api-client';
+import { trpc, type DealVariant } from '@gloe/api-client';
 import { useAuth } from '@gloe/auth';
 import { Stack, Text, color, radius, space } from '@gloe/ui';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -369,8 +369,32 @@ export default function DealDetailScreen() {
       />
 
       <ClaimConfirmSheet
-        deal={confirmOpen ? toLegacyDealShape(deal) : null}
-        variant={confirmOpen ? toLegacyVariantShape(selectedVariant) : null}
+        deal={
+          confirmOpen
+            ? {
+                id: deal.id,
+                title: deal.title,
+                categoryLabel: deal.category.subtypeDisplayName
+                  ? `${deal.category.displayName} · ${deal.category.subtypeDisplayName}`
+                  : deal.category.displayName,
+                vendorName: deal.vendor.businessName,
+                vendorContextLine:
+                  deal.distanceMiles !== null
+                    ? `${deal.distanceMiles.toFixed(1)} mi`
+                    : deal.vendor.city,
+              }
+            : null
+        }
+        variant={
+          confirmOpen
+            ? {
+                id: selectedVariant.id,
+                label: selectedVariant.label,
+                originalPriceCents: selectedVariant.originalPriceCents,
+                dealPriceCents: selectedVariant.dealPriceCents,
+              }
+            : null
+        }
         monthlyUsed={activeClaims.length}
         monthlyLimit={5}
         onClose={() => setConfirmOpen(false)}
@@ -393,28 +417,3 @@ function formatDuration(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-// ClaimConfirmSheet was built against the mock shape — until we refactor it,
-// adapt here. Cleanly scoped to this file.
-function toLegacyDealShape(deal: DealDetail) {
-  return {
-    id: deal.id,
-    title: deal.title,
-    category: deal.category.displayName,
-    subtype: deal.category.subtypeDisplayName ?? '',
-    vendorId: deal.vendor.id,
-    vendorName: deal.vendor.businessName,
-    vendorDistance: deal.distanceMiles !== null ? `${deal.distanceMiles.toFixed(1)} mi` : '',
-  } as never;
-}
-function toLegacyVariantShape(v: DealVariant) {
-  return {
-    id: v.id,
-    label: v.label,
-    unitCount: v.unitCount ?? undefined,
-    unitLabel: v.unitLabel ?? undefined,
-    originalPriceCents: v.originalPriceCents,
-    dealPriceCents: v.dealPriceCents,
-    spotsTotal: v.spotsTotal ?? undefined,
-    spotsClaimed: v.spotsClaimed,
-  } as never;
-}

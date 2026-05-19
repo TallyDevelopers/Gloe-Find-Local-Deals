@@ -1,13 +1,19 @@
 import { Stack, Text, color, radius, shadow, space } from '@gloe/ui';
 import { Dimensions, Image, Pressable, ScrollView, View } from 'react-native';
 
-import type { MockCustomerVideo } from '../discover/mockDeals';
 import { Section } from './Section';
 
+export interface InsideVendorVideo {
+  id: string;
+  thumbnailUrl: string;
+  caption?: string;
+  duration?: string;
+}
+
 interface CustomerVideosProps {
-  videos: MockCustomerVideo[] | undefined;
+  videos: InsideVendorVideo[] | undefined;
   vendorName: string;
-  onPlay?: (video: MockCustomerVideo) => void;
+  onPlay?: (video: InsideVendorVideo) => void;
 }
 
 /**
@@ -52,7 +58,7 @@ export function CustomerVideos({ videos, vendorName, onPlay }: CustomerVideosPro
 }
 
 interface VideoCardProps {
-  video: MockCustomerVideo;
+  video: InsideVendorVideo;
   width: number;
   onPlay: () => void;
 }
