@@ -55,7 +55,7 @@ These are things the app fundamentally cannot work without.
 | 2 | **Real GPS + location selector** | Every distance is hardcoded to downtown SD coords. No city picker, no "use my location" prompt. | 1 patch |
 | 3 | **`apps/vendor/` — separate iOS app for vendors** | Locked architectural decision: vendors get their own App Store app ("Gloe for Business"), not a tab in the consumer app. Same monorepo, shares all packages + API. Without it: no vendor sign-up, no posting, no QR scanning, no marketplace. | 2–3 patches |
 | 4 | **`apps/admin/` — internal web tool** | No way to approve vendors, moderate deals, ban users, or moderate reviews. Running a marketplace from raw SQL queries doesn't scale past 5 vendors. Lives at `admin.gloe.app`. | 2–3 patches |
-| 5 | **Stripe integration** | Vendor subscriptions = our entire revenue model. Not wired. No way to charge anyone yet. | 1–2 patches |
+| 5 | **Stripe Connect — transactional payments** | LOCKED MODEL: consumers pay full deal price at claim time via Apple Pay/card. Gloe collects, holds funds, pays vendor out on redemption minus a tiered platform fee. NO subscription. Vendor = Stripe Connected Account with KYC. This is THE revenue model. | 2–3 patches |
 
 ---
 
@@ -84,7 +84,7 @@ What we'll discover we're missing once we start trying to actually onboard vendo
 
 | # | Item | Notes | Effort |
 |---|---|---|---|
-| 16 | **Sponsored deal management** | Vendors can't pay for sponsored placement. The chip just shows up wherever I flagged it in the DB. | Part of Stripe |
+| 16 | **Sponsored deal management** | Vendors can't pay for sponsored placement. The chip just shows up wherever I flagged it in the DB. Once Stripe Connect is in, this becomes an additive revenue line (vendors pay extra on top of base transaction fee). | Part of Stripe Connect work |
 | 17 | **Promoted post billing / ad builder** | "Vendor self-serve ad builder" mentioned in spec § 4.3. Major future revenue line. | 1 patch |
 | 18 | **Push blast composer** | Vendors can pay to push a flash deal to opted-in locals. Specced as v1.2 in spec. | 1 patch |
 | 19 | **Before/after photo uploads** | With required consent attestation. Specced; not built. | 0.5 patch |
@@ -129,7 +129,7 @@ This is the order I'd build if it were up to me. Reasoning: nothing on the consu
 | 1 | Unblock Clerk sign-in | Can't test anything signed-in. Today. |
 | 2 | `apps/vendor/` scaffold + sign-up + post-a-deal + QR scanner | Locked: separate iOS app, same monorepo, shares all packages + API. Supply side > consumer side. Without vendors, no marketplace. |
 | 3 | `apps/admin/` scaffold + vendor approval + deal moderation | Web app at admin.gloe.app. Needed the moment we have >5 vendors. |
-| 4 | Stripe — vendor subscriptions | First real revenue line. Year-1-free trial logic. |
+| 4 | Stripe Connect — pay-per-transaction | Consumer pays at claim, Gloe holds funds, vendor paid out on redemption minus tiered fee. THE revenue model. Includes vendor KYC, payout tracking, refund flow. |
 | 5 | Real GPS + location selector + real maps | All three at once. Same native deps, similar surface area. |
 | 6 | Search + filters | Power-user discovery. Built on top of real location. |
 | 7 | Vendor profile screen | Tap vendor name → see full menu grouped by category. Critical for cross-deal discovery. |

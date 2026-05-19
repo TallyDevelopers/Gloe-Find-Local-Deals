@@ -850,60 +850,105 @@ saved_deals (
 
 ---
 
-## 8. Monetization & Pricing
+## 8. Monetization & Pricing — Pay-per-transaction model
 
-**Status: open. Pricing is a year-2 problem.** Year 1 is free for all vendors to seed supply, so we have time to test what actually converts before committing to a model.
+**LOCKED DECISION (2026-05-19): Gloe is a transactional marketplace, not a subscription marketplace.**
 
-### Revenue lines being considered
+Consumers pay full deal price in-app via Apple Pay / card at claim time. Gloe collects, holds the funds, and pays the vendor out on redemption minus a tiered platform fee. **No vendor subscription. No monthly fee. Vendors only pay when a customer pays.**
 
-These are not mutually exclusive — the final model will likely be a mix of subscription + usage + ads.
+### Why this model
 
-#### A. Flat-fee subscription
-- One monthly price, unlimited posts. Simplest to sell ("$X/mo, no surprises").
-- Risk: heavy users get an unfair deal, light users feel they're overpaying.
+The previous draft of this section proposed $99-199/month vendor subscriptions. We pivoted because:
 
-#### B. Per-post pricing
-- Flat-fee subscription gets you a small allotment, then per-post charges.
-- Example shape: $99/mo includes 1 active deal at a time, each additional simultaneous deal is +$80/mo.
-- Or pure per-post: $X per deal posted, no subscription floor.
-- Aligns price with vendor activity — heavy posters pay more, which is fair.
+> "If customers just sign up for a subscription and pay but there's not enough clients, they're gonna feel like they're paying for nothing. As opposed to: you just sign up, you don't pay anything until someone pays."
 
-#### C. Promoted posts / paid placement (v1.3)
-- On top of any base plan. Vendor picks one of their existing deals and pays to boost it.
-- Pricing options to test: per-day, per-impression, per-click, or auction-style bidding.
-- High intent platform + clear ROI for vendors = real revenue. This may end up being the biggest line.
+Pay-as-you-earn:
+- Removes 100% of vendor onboarding friction ("post for free, we only get paid when you do")
+- Aligns incentives — Gloe makes money only when vendors make money
+- Eliminates the "I paid $99 and got nothing" churn moment
+- Lets the platform fee scale with deal value (a $500 Sculptra vs a $50 IV → different absolute revenue, similar % friction)
 
-#### D. Push notification blasts
-- Vendor pays to push a deal to opted-in consumers in their area.
-- Either included in a high tier or charged per-blast (e.g., $X per 1,000 recipients).
-- Per-blast scales revenue but adds friction.
+### The vendor pitch (updated)
 
-#### E. Redemption-cap upsell
-- Vendors can cap how many people redeem a deal (already a v1 feature).
-- Higher caps could cost more — e.g., 20 redemptions free, additional redemptions $X each.
-- Possibly too clever for v1. Park it.
+**Old pitch (subscription):** "Groupon takes 30-50% per deal. We charge a flat $99/month — you keep 100%."
 
-#### F. Consumer-side (v3+)
-- "Gloe Plus" consumer subscription — more monthly redemptions, early access, exclusive flash drops.
-- Pure upside, doesn't affect vendor side.
+**New pitch (transactional):** "Post free. Pay nothing up front. When a customer claims a deal, we take a small fee — way less than Groupon's 30-50%. If no one claims, you owe nothing."
 
-### What to decide and when
+This pitch is stronger because: free to start, fee is contingent on revenue, and we still meaningfully undercut Groupon.
 
-| Decision | When |
+### Platform fee structure
+
+Fees live in a `platform_fees` database table and are managed from the admin tool — no code deploys to adjust. Tiered by **what the consumer pays**:
+
+| Consumer pays | Initial fee tier (placeholder — Ryan sets actuals) |
 |---|---|
-| Year 1 is free for everyone | ✅ Decided |
-| Base model after year 1 (flat vs per-post vs hybrid) | Decide by month 9 of pilot — use real posting-frequency data |
-| Promoted posts pricing | A/B test in v1.3 — start with one simple option, iterate |
-| Push blast pricing | Decide alongside v1.2 launch |
-| Consumer subscription | Year 2+, only if engagement metrics support it |
+| Under $100 | 8% (min $4) |
+| $100–$249 | 9% |
+| $250–$499 | 11% |
+| $500+ | 13% |
 
-### Guiding principle
+Fee can be overridden per-vendor (loyalty discounts, launch promos), per-category, or globally (e.g., "5% fees week" promo).
 
-Whatever the model ends up being, it has to clear two bars:
-1. **Cheaper than the equivalent on Instagram/Google ads** for the vendor — that's the ceiling.
-2. **Way better economics than Groupon's 50% cut** — that's the floor, and it's a huge gap.
+For comparison: Groupon takes 30-50%. We're at roughly **a quarter of their take** while delivering a more targeted audience (aesthetics-only).
 
-There's a lot of room to land between those two.
+### Money flow
+
+1. Consumer taps "Get this deal" → confirmation modal shows total price + Apple Pay sheet
+2. Apple Pay / card auth — Stripe charges the consumer
+3. Gloe collects funds; QR code issued, claim marked `active`
+4. Consumer shows QR at the spa → vendor scans → claim marked `redeemed`
+5. **On redemption**, Stripe Connect releases funds to the vendor's connected account minus the platform fee
+6. If the claim expires without redemption: full refund to the consumer (configurable — could be "non-refundable deposit" in a later patch)
+
+### Stripe Connect
+
+Vendors are **Connected Accounts** on Gloe's Stripe platform. At signup:
+- Vendor completes Stripe-hosted KYC (bank account, tax ID, business info)
+- Stripe issues a `stripe_account_id` we store on `vendors.stripe_account_id`
+- Stripe handles: payouts, 1099-K tax forms, refunds, chargebacks, dispute resolution, fraud detection
+
+This is the same model Lyft, DoorDash, Substack, Cameo, and basically every modern marketplace uses. Mature, well-documented, $0 to start.
+
+### Other revenue lines (additive, on top of transaction fees)
+
+#### Sponsored / promoted placement
+- Vendors can pay extra to boost specific deals to the Featured carousel
+- Either fixed daily rate ($X/day) or auction-style bidding
+- Lives in `promoted_deals` table (future migration)
+
+#### Push notification blasts
+- Vendor pays per-blast ($X per 1,000 opted-in recipients within their geofence)
+- Premium revenue line — vendors with sufficient ad budget pay for direct push to nearby consumers
+
+#### Gloe Plus consumer subscription (v3+)
+- $9.99/mo: more monthly redemptions, early access to flash drops, exclusive deals
+- Pure upside on the consumer side, no vendor impact
+
+### What this changes in the codebase
+
+- `vendors.subscription_tier` and `vendors.trial_ends_at` columns become legacy / unused
+- New `platform_fees` table — admin-managed tiers
+- New `transactions` table — records every consumer charge with fee breakdown
+- New `payouts` table — records every vendor payout from Stripe Connect
+- `vendors.stripe_account_id` (Connect account) replaces `vendors.stripe_customer_id`
+- Claim flow: consumer must complete payment before QR is issued (no payment = no claim)
+
+### What about non-priced deals?
+There aren't any. **Every deal has a price** (it's a deal *on* a treatment). Free consultations would be the only edge case — if we ever support those, they bypass payment entirely.
+
+### What if a vendor never sets spots / quantity caps?
+Doesn't matter for billing. Fees are calculated per individual claim, regardless of caps. The cap is purely an urgency / UX feature.
+
+### Legal & compliance
+
+Marketplaces holding consumer funds have additional requirements vs simple lead-gen platforms. Stripe Connect handles most of the compliance burden, but Ryan still needs (per his accountant/lawyer):
+
+- General + cyber + E&O insurance
+- State money transmitter check (a handful of states require licenses if we hold funds >24 hours)
+- Updated Terms of Service that establish Gloe as a marketplace facilitator + Stripe as the payment processor
+- Vendor agreement that includes the fee schedule + payout terms
+
+Ryan said his lawyer/accountant will handle this. Don't ship to production without their sign-off.
 
 ---
 
