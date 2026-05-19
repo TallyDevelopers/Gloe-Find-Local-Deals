@@ -1,0 +1,28 @@
+{
+  "name": "@gloe/api",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@clerk/backend": "^1.18.0",
+    "@hono/node-server": "^1.13.7",
+    "@hono/trpc-server": "^0.3.4",
+    "@trpc/server": "^11.0.0-rc.660",
+    "dotenv": "^16.4.7",
+    "hono": "^4.6.13",
+    "postgres": "^3.4.5",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

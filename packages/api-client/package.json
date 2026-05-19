@@ -1,0 +1,22 @@
+{
+  "name": "@gloe/api-client",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@gloe/api": "*",
+    "@tanstack/react-query": "^5.62.7",
+    "@trpc/client": "^11.0.0-rc.660",
+    "@trpc/react-query": "^11.0.0-rc.660",
+    "react": "18.3.1",
+    "superjson": "^2.2.2"
+  },
+  "devDependencies": {
+    "@types/react": "~18.3.12",
+    "typescript": "^5.6.3"
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "expo": {
+    "name": "Gloe",
+    "slug": "gloe",
+    "version": "0.0.1",
+    "orientation": "portrait",
+    "scheme": "gloe",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": false,
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#FBF8F3"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.gloe.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Gloe uses your location to show aesthetic deals near you."
+      }
+    },
+    "android": {
+      "package": "com.gloe.app"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-font",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Gloe uses your location to show aesthetic deals near you."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm -v)",
+      "Bash(xcode-select -p)",
+      "Bash(npm install *)",
+      "Bash(corepack enable *)",
+      "Bash(corepack prepare *)",
+      "Bash(curl -fsSL https://get.pnpm.io/install.sh)",
+      "Bash(sh -)",
+      "Bash(rm -rf node_modules apps/*/node_modules packages/*/node_modules pnpm-lock.yaml .npmrc pnpm-workspace.yaml && echo \"cleaned\")",
+      "Bash(head -c 4000 /tmp/bundle4.js)",
+      "Read(//private/tmp/**)",
+      "Bash(xcrun simctl *)",
+      "Bash(curl -L -o ExpoGo.tar.gz \"https://dpq5q02fu5f55.cloudfront.net/Exponent-2.32.21.tar.gz\" -w \"HTTP: %{http_code}\\\\n\" --max-time 120)",
+      "Bash(rm -f ExpoGo.tar.gz)",
+      "Bash(curl -L -o ExpoGo.tar.gz \"https://github.com/expo/expo-go-releases/releases/download/Expo-Go-2.32.18/Expo-Go-2.32.18.tar.gz\" -w \"HTTP: %{http_code}, size: %{size_download}\\\\n\" --max-time 180)",
+      "Bash(mkdir -p expo-go-extract)",
+      "Bash(tar -xzf ExpoGo.tar.gz -C expo-go-extract)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8081/status)",
+      "Bash(curl -s 'http://localhost:4000/trpc/deals.list?batch=1&input=%7B%220%22%3A%7B%22userLat%22%3A32.7157%2C%22userLng%22%3A-117.1611%7D%7D')",
+      "Bash(python3 -c ' *)"
+    ],
+    "additionalDirectories": [
+      "/Users/admin/Desktop/GlowApp/apps/*"
+    ]
+  }
+}

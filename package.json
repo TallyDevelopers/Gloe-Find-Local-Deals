@@ -1,0 +1,20 @@
+{
+  "name": "gloe",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Gloe — local aesthetic deals marketplace",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "ios": "npm run ios --workspace=@gloe/mobile",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
