@@ -7,16 +7,19 @@ import { Button, Card, Field, TextInput } from '../../components/ui';
 import { trpc } from '../../lib/trpc';
 
 const CATEGORIES = [
-  { slug: 'botox', label: 'Botox' },
-  { slug: 'filler', label: 'Filler' },
+  { slug: 'injectables', label: 'Injectables' },
   { slug: 'skin', label: 'Skin' },
+  { slug: 'laser', label: 'Laser' },
   { slug: 'body', label: 'Body' },
   { slug: 'wellness', label: 'Wellness' },
-  { slug: 'hair', label: 'Hair' },
+  { slug: 'other', label: 'Other' },
 ];
 
-interface GeocodeResult {
-  label: string;
+interface ResolvedAddress {
+  addressLine1: string;
+  city: string;
+  region: string;
+  postalCode: string;
   latitude: number;
   longitude: number;
 }
@@ -25,22 +28,43 @@ export function VendorSignupForm({ onCreated }: { onCreated: () => void }) {
   const [businessName, setBusinessName] = useState('');
   const [phone, setPhone] = useState('');
   const [addressQuery, setAddressQuery] = useState('');
-  const [selectedAddress, setSelectedAddress] = useState<GeocodeResult | null>(null);
-  const [city, setCity] = useState('');
-  const [region, setRegion] = useState('');
-  const [postalCode, setPostalCode] = useState('');
+  const [resolved, setResolved] = useState<ResolvedAddress | null>(null);
+  const [resolvingPlaceId, setResolvingPlaceId] = useState<string | null>(null);
   const [categories, setCategories] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
 
-  const geocode = trpc.geocode.forward.useQuery(
+  const utils = trpc.useUtils();
+
+  // Live autocomplete as they type (Google Places)
+  const autocomplete = trpc.geocode.autocomplete.useQuery(
     { query: addressQuery },
-    { enabled: addressQuery.length > 4, staleTime: 60_000 },
+    { enabled: addressQuery.length >= 3 && !resolved, staleTime: 30_000 },
   );
 
   const signup = trpc.vendor.signup.useMutation({
     onSuccess: () => onCreated(),
     onError: (e) => setError(e.message),
   });
+
+  const selectPlace = async (placeId: string, description: string) => {
+    setResolvingPlaceId(placeId);
+    setAddressQuery(description);
+    try {
+      const details = await utils.geocode.placeDetails.fetch({ placeId });
+      setResolved({
+        addressLine1: details.addressLine1 || description,
+        city: details.city,
+        region: details.region,
+        postalCode: details.postalCode,
+        latitude: details.latitude,
+        longitude: details.longitude,
+      });
+    } catch {
+      setError('Could not load that address. Pick another.');
+    } finally {
+      setResolvingPlaceId(null);
+    }
+  };
 
   const toggleCategory = (slug: string) => {
     setCategories((prev) => {
@@ -51,26 +75,20 @@ export function VendorSignupForm({ onCreated }: { onCreated: () => void }) {
     });
   };
 
-  const canSubmit =
-    businessName.length >= 2 &&
-    phone.length >= 7 &&
-    selectedAddress !== null &&
-    city &&
-    region &&
-    postalCode;
+  const canSubmit = businessName.length >= 2 && phone.length >= 7 && resolved !== null;
 
   const handleSubmit = () => {
-    if (!selectedAddress) return;
+    if (!resolved) return;
     setError(null);
     signup.mutate({
       businessName,
       phone,
-      addressLine1: addressQuery,
-      city,
-      region,
-      postalCode,
-      latitude: selectedAddress.latitude,
-      longitude: selectedAddress.longitude,
+      addressLine1: resolved.addressLine1,
+      city: resolved.city,
+      region: resolved.region,
+      postalCode: resolved.postalCode,
+      latitude: resolved.latitude,
+      longitude: resolved.longitude,
       categorySlugs: [...categories],
     });
   };
@@ -123,64 +141,80 @@ export function VendorSignupForm({ onCreated }: { onCreated: () => void }) {
           </Field>
 
           <Field
-            label="Address"
-            hint={selectedAddress ? `✓ ${selectedAddress.label}` : 'Start typing, then pick a match'}
+            label="Business address"
+            hint={resolved ? undefined : 'Start typing — pick your address from the list'}
           >
-            <TextInput
-              value={addressQuery}
-              onChange={(e) => {
-                setAddressQuery(e.target.value);
-                setSelectedAddress(null);
-              }}
-              placeholder="7777 Girard Ave, La Jolla, CA"
-            />
-            {addressQuery.length > 4 && !selectedAddress && geocode.data && geocode.data.length > 0 ? (
-              <div
-                style={{
-                  border: '1px solid var(--border-subtle)',
-                  borderRadius: 'var(--radius-md)',
-                  marginTop: 4,
-                  overflow: 'hidden',
+            <div style={{ position: 'relative' }}>
+              <TextInput
+                style={{ width: '100%' }}
+                value={addressQuery}
+                onChange={(e) => {
+                  setAddressQuery(e.target.value);
+                  setResolved(null);
                 }}
-              >
-                {geocode.data.map((r) => (
-                  <button
-                    key={`${r.latitude},${r.longitude}`}
-                    type="button"
-                    onClick={() => {
-                      setSelectedAddress(r);
-                      setAddressQuery(r.label.split(',').slice(0, 2).join(', '));
-                    }}
-                    style={{
-                      display: 'block',
-                      width: '100%',
-                      textAlign: 'left',
-                      padding: '10px 14px',
-                      background: 'var(--surface-elevated)',
-                      border: 'none',
-                      borderBottom: '1px solid var(--border-subtle)',
-                      fontSize: 14,
-                      color: 'var(--text-secondary)',
-                    }}
-                  >
-                    {r.label}
-                  </button>
-                ))}
-              </div>
-            ) : null}
+                placeholder="Start typing your address…"
+              />
+              {addressQuery.length >= 3 && !resolved && autocomplete.data && autocomplete.data.length > 0 ? (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    right: 0,
+                    zIndex: 10,
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: 'var(--radius-md)',
+                    marginTop: 4,
+                    overflow: 'hidden',
+                    background: 'var(--surface-elevated)',
+                    boxShadow: '0 8px 24px rgba(43,32,25,0.12)',
+                  }}
+                >
+                  {autocomplete.data.map((p) => (
+                    <button
+                      key={p.placeId}
+                      type="button"
+                      onClick={() => selectPlace(p.placeId, p.description)}
+                      disabled={resolvingPlaceId !== null}
+                      style={{
+                        display: 'block',
+                        width: '100%',
+                        textAlign: 'left',
+                        padding: '12px 14px',
+                        background: 'var(--surface-elevated)',
+                        border: 'none',
+                        borderBottom: '1px solid var(--border-subtle)',
+                        fontSize: 15,
+                        color: 'var(--text-primary)',
+                      }}
+                    >
+                      {p.description}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           </Field>
 
-          <div style={{ display: 'flex', gap: 12 }}>
-            <Field label="City">
-              <TextInput value={city} onChange={(e) => setCity(e.target.value)} placeholder="La Jolla" />
-            </Field>
-            <Field label="State">
-              <TextInput value={region} onChange={(e) => setRegion(e.target.value)} placeholder="CA" />
-            </Field>
-            <Field label="ZIP">
-              <TextInput value={postalCode} onChange={(e) => setPostalCode(e.target.value)} placeholder="92037" />
-            </Field>
-          </div>
+          {resolved ? (
+            <div
+              style={{
+                background: 'var(--surface-secondary)',
+                borderRadius: 'var(--radius-md)',
+                padding: '12px 16px',
+                fontSize: 14,
+                color: 'var(--text-secondary)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+              }}
+            >
+              <span style={{ color: 'var(--success)', fontWeight: 700 }}>✓</span>
+              <span>
+                {resolved.addressLine1}, {resolved.city}, {resolved.region} {resolved.postalCode}
+              </span>
+            </div>
+          ) : null}
 
           <Field label="What do you offer?" hint="Pick all that apply">
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>

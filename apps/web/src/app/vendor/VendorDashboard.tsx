@@ -49,26 +49,33 @@ export function VendorDashboard({ vendor }: VendorDashboardProps) {
       {/* Top bar */}
       <header
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '16px 32px',
           borderBottom: '1px solid var(--border-subtle)',
           background: 'var(--surface-elevated)',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-          <Wordmark size={24} tone="gold" />
-          <span style={{ fontSize: 12, letterSpacing: '0.08em', color: 'var(--text-tertiary)' }}>
-            FOR BUSINESS
-          </span>
+        <div
+          style={{
+            maxWidth: 960,
+            margin: '0 auto',
+            padding: '16px 32px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+            <Wordmark size={24} tone="gold" />
+            <span style={{ fontSize: 12, letterSpacing: '0.08em', color: 'var(--text-tertiary)' }}>
+              FOR BUSINESS
+            </span>
+          </div>
+          <UserButton />
         </div>
-        <UserButton />
       </header>
 
-      <main style={{ maxWidth: 900, margin: '0 auto', padding: '40px 32px', display: 'flex', flexDirection: 'column', gap: 24 }}>
+      <main className="page-main" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div className="dash-header">
           <div>
             <h1 style={{ fontSize: 36 }}>{vendor.businessName}</h1>
             <span style={{ color: status.color, fontWeight: 600, fontSize: 15 }}>● {status.label}</span>
@@ -123,7 +130,7 @@ export function VendorDashboard({ vendor }: VendorDashboardProps) {
         </Card>
 
         {/* Stats placeholder */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+        <div className="stat-grid">
           {[
             { label: 'Active deals', value: '0' },
             { label: 'Redemptions this month', value: '0' },

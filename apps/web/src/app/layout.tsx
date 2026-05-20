@@ -1,5 +1,5 @@
 import { ClerkProvider } from '@clerk/nextjs';
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { Fraunces, Inter, Outfit } from 'next/font/google';
 import type { ReactNode } from 'react';
 
@@ -19,6 +19,12 @@ const outfit = Outfit({
 export const metadata: Metadata = {
   title: 'Gloē for Business',
   description: 'Post deals, manage redemptions, and get paid — for med spas and aesthetic providers.',
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

@@ -14,12 +14,12 @@ export interface CategoryOption {
  */
 export const CATEGORY_OPTIONS: CategoryOption[] = [
   { slug: null, label: 'All' },
-  { slug: 'botox', label: 'Botox' },
-  { slug: 'filler', label: 'Filler' },
+  { slug: 'injectables', label: 'Injectables' },
   { slug: 'skin', label: 'Skin' },
+  { slug: 'laser', label: 'Laser' },
   { slug: 'body', label: 'Body' },
   { slug: 'wellness', label: 'Wellness' },
-  { slug: 'hair', label: 'Hair' },
+  { slug: 'other', label: 'Other' },
 ];
 
 interface FilterPillsProps {
