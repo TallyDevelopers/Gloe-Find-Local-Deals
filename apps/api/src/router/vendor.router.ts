@@ -1,12 +1,15 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { createVendor, getVendorForOwner } from '../domain/vendorSignup';
+import { createVendor, getSetupStatus, getVendorForOwner } from '../domain/vendorSignup';
 import { protectedProcedure, router } from './trpc';
 
 export const vendorRouter = router({
   /** The vendor owned by the current signed-in user (null if they haven't signed up as a vendor). */
   me: protectedProcedure.query(({ ctx }) => getVendorForOwner(ctx.sql, ctx.auth.userId)),
+
+  /** Setup completion + whether they can post deals yet. */
+  setupStatus: protectedProcedure.query(({ ctx }) => getSetupStatus(ctx.sql, ctx.auth.userId)),
 
   /** Minimal "get through the door" signup. Creates a pending_approval vendor. */
   signup: protectedProcedure

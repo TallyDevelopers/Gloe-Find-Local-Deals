@@ -93,3 +93,58 @@ export async function getVendorForOwner(sql: Sql, ownerUserId: string): Promise<
   const v = rows[0];
   return v ? { id: v.id, businessName: v.business_name, slug: v.slug, status: v.status } : null;
 }
+
+export interface VendorSetupStatus {
+  status: string;
+  isApproved: boolean;
+  steps: {
+    businessDetails: boolean;
+    license: boolean;   // REQUIRED to post
+    stripe: boolean;    // REQUIRED to post
+    provider: boolean;  // nice-to-have
+    photos: boolean;    // nice-to-have
+  };
+  canPostDeals: boolean;
+}
+
+/**
+ * Computes setup completion from existing columns + related rows.
+ * Required-to-post = approved + license verified + Stripe active.
+ */
+export async function getSetupStatus(
+  sql: Sql,
+  ownerUserId: string,
+): Promise<VendorSetupStatus | null> {
+  const rows = await sql<{
+    status: string;
+    license_number: string | null;
+    verified_at: string | null;
+    stripe_account_status: string | null;
+    logo_url: string | null;
+    hero_image_url: string | null;
+    provider_count: number;
+  }[]>`
+    SELECT
+      v.status, v.license_number, v.verified_at,
+      v.stripe_account_status, v.logo_url, v.hero_image_url,
+      (SELECT COUNT(*) FROM public.providers p WHERE p.vendor_id = v.id)::int AS provider_count
+    FROM public.vendors v
+    WHERE v.owner_user_id = ${ownerUserId}
+    LIMIT 1
+  `;
+  const v = rows[0];
+  if (!v) return null;
+
+  const license = Boolean(v.license_number && v.verified_at);
+  const stripe = v.stripe_account_status === 'active';
+  const provider = v.provider_count > 0;
+  const photos = Boolean(v.logo_url || v.hero_image_url);
+  const isApproved = v.status === 'active';
+
+  return {
+    status: v.status,
+    isApproved,
+    steps: { businessDetails: true, license, stripe, provider, photos },
+    canPostDeals: isApproved && license && stripe,
+  };
+}
