@@ -1,6 +1,7 @@
 'use client';
 
 import { UserButton } from '@clerk/nextjs';
+import { useRouter } from 'next/navigation';
 
 import type { RouterOutputs } from '@gloe/api-client';
 
@@ -28,8 +29,11 @@ const STEPS: StepDef[] = [
 ];
 
 export function VendorDashboard({ vendor }: VendorDashboardProps) {
+  const router = useRouter();
   const setupQuery = trpc.vendor.setupStatus.useQuery();
+  const dealsQuery = trpc.vendor.listDeals.useQuery();
   const setup = setupQuery.data;
+  const deals = dealsQuery.data ?? [];
 
   return (
     <div style={{ minHeight: '100vh' }}>
@@ -55,8 +59,14 @@ export function VendorDashboard({ vendor }: VendorDashboardProps) {
       </header>
 
       <main className="page-main" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-        <Hero vendor={vendor} setup={setup} loading={setupQuery.isLoading} />
+        <Hero
+          vendor={vendor}
+          setup={setup}
+          loading={setupQuery.isLoading}
+          onPost={() => router.push('/vendor/post')}
+        />
         {setup?.canPostDeals ? null : <SetupChecklist setup={setup} />}
+        {setup?.canPostDeals ? <DealList deals={deals} loading={dealsQuery.isLoading} /> : null}
         <StatRow />
       </main>
     </div>
@@ -67,10 +77,12 @@ function Hero({
   vendor,
   setup,
   loading,
+  onPost,
 }: {
   vendor: VendorDashboardProps['vendor'];
   setup: SetupData;
   loading: boolean;
+  onPost: () => void;
 }) {
   const pending = vendor.status === 'pending_approval' || vendor.status === 'rejected';
   const approved = setup?.isApproved ?? vendor.status === 'active';
@@ -117,7 +129,9 @@ function Hero({
           <h1 style={{ fontSize: 36 }}>{vendor.businessName}</h1>
           <span style={{ color: eyebrowColor, fontWeight: 600, fontSize: 15 }}>{eyebrow}</span>
         </div>
-        <Button disabled={ctaDisabled || loading}>{ctaLabel}</Button>
+        <Button disabled={ctaDisabled || loading} onClick={ctaDisabled ? undefined : onPost}>
+          {ctaLabel}
+        </Button>
       </div>
 
       <Card style={{ background: approved && !canPost ? 'var(--brand-50)' : 'var(--surface-secondary)' }}>
@@ -215,6 +229,70 @@ function Row({
         </Button>
       ) : null}
     </div>
+  );
+}
+
+type VendorDeal = RouterOutputs['vendor']['listDeals'][number];
+
+const DEAL_STATUS_LABEL: Record<string, { label: string; color: string }> = {
+  active: { label: 'Live', color: 'var(--success)' },
+  pending_review: { label: 'In review', color: 'var(--brand-500)' },
+  draft: { label: 'Draft', color: 'var(--text-tertiary)' },
+  paused: { label: 'Paused', color: 'var(--text-tertiary)' },
+  expired: { label: 'Expired', color: 'var(--text-tertiary)' },
+  sold_out: { label: 'Sold out', color: 'var(--accent-500)' },
+  rejected: { label: 'Rejected', color: 'var(--error)' },
+};
+
+function DealList({ deals, loading }: { deals: VendorDeal[]; loading: boolean }) {
+  if (loading) return null;
+  return (
+    <Card>
+      <h2 style={{ fontSize: 22, marginBottom: 16 }}>Your deals</h2>
+      {deals.length === 0 ? (
+        <p style={{ color: 'var(--text-tertiary)', fontSize: 15 }}>
+          No deals yet. Tap “+ Post a deal” to create your first one.
+        </p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {deals.map((deal, i) => {
+            const status = DEAL_STATUS_LABEL[deal.status] ?? DEAL_STATUS_LABEL.draft;
+            const price = deal.headlinePriceCents != null ? `$${(deal.headlinePriceCents / 100).toFixed(0)}` : '—';
+            return (
+              <div
+                key={deal.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 14,
+                  padding: '14px 0',
+                  borderBottom: i === deals.length - 1 ? 'none' : '1px solid var(--border-subtle)',
+                }}
+              >
+                <div
+                  style={{
+                    width: 56,
+                    height: 56,
+                    borderRadius: 'var(--radius-md)',
+                    background: deal.primaryPhotoUrl
+                      ? `center/cover url(${deal.primaryPhotoUrl})`
+                      : 'var(--surface-secondary)',
+                    flexShrink: 0,
+                  }}
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 16, fontWeight: 600 }}>{deal.title}</div>
+                  <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>
+                    {deal.categoryName} · {price} · {deal.variantCount} option{deal.variantCount === 1 ? '' : 's'}
+                  </div>
+                </div>
+                <span style={{ color: status?.color, fontSize: 13, fontWeight: 600 }}>{status?.label}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Card>
   );
 }
 

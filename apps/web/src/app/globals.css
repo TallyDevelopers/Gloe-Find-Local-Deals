@@ -134,3 +134,16 @@ textarea {
     font-size: 32px !important;
   }
 }
+
+/* Post-a-deal split: preview shows on desktop, Preview button on mobile */
+.preview-toggle {
+  display: none;
+}
+@media (max-width: 1040px) {
+  .post-preview-col {
+    display: none !important;
+  }
+  .preview-toggle {
+    display: inline-block !important;
+  }
+}

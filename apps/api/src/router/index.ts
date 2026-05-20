@@ -1,3 +1,4 @@
+import { categoriesRouter } from './categories.router';
 import { claimsRouter } from './claims.router';
 import { dealsRouter } from './deals.router';
 import { geocodeRouter } from './geocode.router';
@@ -17,6 +18,7 @@ export const appRouter = router({
   reviews: reviewsRouter,
   me: meRouter,
   geocode: geocodeRouter,
+  categories: categoriesRouter,
 });
 
 export type AppRouter = typeof appRouter;
