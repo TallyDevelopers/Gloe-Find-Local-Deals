@@ -12,9 +12,9 @@
 
   --accent-500: #b25d40;
 
-  /* Brand gold for the Gloē wordmark — champagne gold, more luminous than the bronze brand-500 */
-  --gold: #c9a961;
-  --gold-deep: #b8943f;
+  /* Brand gold for the Gloē wordmark — rose gold, leaning into the beauty/aesthetic palette */
+  --gold: #c89a8c;
+  --gold-deep: #b8806f;
 
   --text-primary: #2b2019;
   --text-secondary: #5e5147;
@@ -132,6 +132,77 @@ textarea {
   }
   h1 {
     font-size: 32px !important;
+  }
+}
+
+/* Admin console shell: fixed-width sidebar + scrolling main area */
+.admin-shell {
+  display: flex;
+  align-items: stretch;
+  min-height: calc(100vh - 57px); /* minus header */
+}
+.admin-sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border-subtle);
+  background: var(--surface-elevated);
+  padding: 20px 14px;
+  display: flex;
+  flex-direction: column;
+}
+.admin-main {
+  flex: 1;
+  min-width: 0;
+  padding: 32px;
+  max-width: 1000px;
+}
+.admin-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+@media (max-width: 860px) {
+  .admin-shell {
+    flex-direction: column;
+  }
+  .admin-sidebar {
+    width: 100%;
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 10px 14px;
+    border-right: none;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .admin-sidebar nav {
+    flex-direction: row !important;
+  }
+  .admin-sidebar > div:last-child {
+    margin-top: 0 !important;
+    margin-left: auto;
+    padding-top: 0 !important;
+  }
+  .admin-main {
+    padding: 20px 18px;
+  }
+  .admin-two-col {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Admin income cards: 3-up desktop, 2-up tablet, 1-up phone */
+.admin-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+@media (max-width: 880px) {
+  .admin-stat-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 520px) {
+  .admin-stat-grid {
+    grid-template-columns: 1fr;
   }
 }
 

@@ -40,6 +40,8 @@ export interface DealVendor {
   reviewCount: number;
   hoursSummary: string | null;
   address: string;
+  /** Google Place ID, if known — enables the live Google reviews tab. */
+  googlePlaceId: string | null;
 }
 
 export interface DealProvider {
@@ -71,15 +73,28 @@ export interface DealSummary {
   headlineVariant: DealVariant | null;
 }
 
+export interface DealRedemption {
+  /** Full address string, or null if the vendor has none on file. */
+  address: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  /** True when the deal overrides the vendor's business address. */
+  isCustom: boolean;
+  /** Cached static-map image URL (our storage), or null if not generated. */
+  mapUrl: string | null;
+}
+
 export interface DealDetail extends DealSummary {
   description: string;
   whatsIncluded: string[];
   restrictions: string[];
   finePrint: string | null;
+  redemption: DealRedemption;
   variants: DealVariant[];
   photos: DealPhoto[];
   videos: DealVideo[];
   providers: DealProvider[];
+  perCustomerLimit: number;
 }
 
 // ============================================================
@@ -92,10 +107,18 @@ interface ListParams {
   maxDistanceMiles?: number;
   category?: string;
   limit?: number;
+  offset?: number;
 }
 
-export async function listDeals(sql: Sql, params: ListParams = {}): Promise<DealSummary[]> {
-  const { userLat, userLng, maxDistanceMiles = 50, category, limit = 50 } = params;
+export interface DealPage {
+  deals: DealSummary[];
+  /** True if there are more deals past this page (for horizontal lazy-load). */
+  hasMore: boolean;
+  nextOffset: number;
+}
+
+export async function listDeals(sql: Sql, params: ListParams = {}): Promise<DealPage> {
+  const { userLat, userLng, maxDistanceMiles = 50, category, limit = 50, offset = 0 } = params;
   const hasUserLocation = typeof userLat === 'number' && typeof userLng === 'number';
   const radiusMeters = maxDistanceMiles * 1609.344;
 
@@ -154,13 +177,17 @@ export async function listDeals(sql: Sql, params: ListParams = {}): Promise<Deal
           ? sql`v.location <-> ST_SetSRID(ST_MakePoint(${userLng}, ${userLat}), 4326)::geography`
           : sql`d.created_at DESC`
       }
-    LIMIT ${limit}
+    LIMIT ${limit + 1} OFFSET ${offset}
   `;
 
-  const dealIds = rows.map((r) => r.id);
+  // Fetched one extra to know if another page exists; trim it off.
+  const hasMore = rows.length > limit;
+  const pageRows = hasMore ? rows.slice(0, limit) : rows;
+
+  const dealIds = pageRows.map((r) => r.id);
   const headlineVariants = await fetchHeadlineVariants(sql, dealIds);
 
-  return rows.map((r) => ({
+  const deals = pageRows.map((r) => ({
     id: r.id,
     title: r.title,
     expiresAt: r.expires_at,
@@ -179,18 +206,22 @@ export async function listDeals(sql: Sql, params: ListParams = {}): Promise<Deal
       reviewCount: r.vendor_review_count,
       hoursSummary: r.vendor_hours_summary,
       address: r.vendor_address_line1,
+      googlePlaceId: null,
     },
     primaryPhotoUrl: r.primary_photo_url,
     distanceMiles: r.distance_miles !== null ? Number(r.distance_miles) : null,
     headlineVariant: headlineVariants.get(r.id) ?? null,
   }));
+
+  return { deals, hasMore, nextOffset: offset + deals.length };
 }
 
 export async function getDeal(sql: Sql, dealId: string): Promise<DealDetail | null> {
   const dealRows = await sql<DealDetailRow[]>`
     SELECT
       d.id, d.title, d.description, d.whats_included, d.restrictions, d.fine_print,
-      d.expires_at, d.is_sponsored,
+      d.expires_at, d.is_sponsored, d.per_customer_limit,
+      d.redemption_address, d.redemption_lat, d.redemption_lng, d.redemption_map_url,
       c.slug AS category_slug, c.display_name AS category_display_name,
       s.slug AS subtype_slug, s.display_name AS subtype_display_name,
       v.id            AS vendor_id,
@@ -199,7 +230,12 @@ export async function getDeal(sql: Sql, dealId: string): Promise<DealDetail | nu
       v.rating_avg    AS vendor_rating_avg,
       v.review_count  AS vendor_review_count,
       v.hours_summary AS vendor_hours_summary,
-      v.address_line1 AS vendor_address_line1
+      v.address_line1 AS vendor_address_line1,
+      v.google_place_id AS vendor_google_place_id,
+      v.region        AS vendor_region,
+      v.postal_code   AS vendor_postal_code,
+      ST_Y(v.location::geometry) AS vendor_lat,
+      ST_X(v.location::geometry) AS vendor_lng
     FROM public.deals d
     JOIN public.vendors v ON v.id = d.vendor_id
     JOIN public.service_categories c ON c.id = d.category_id
@@ -261,11 +297,14 @@ export async function getDeal(sql: Sql, dealId: string): Promise<DealDetail | nu
       reviewCount: deal.vendor_review_count,
       hoursSummary: deal.vendor_hours_summary,
       address: deal.vendor_address_line1,
+      googlePlaceId: deal.vendor_google_place_id,
     },
+    redemption: resolveRedemption(deal),
     primaryPhotoUrl: photos[0]?.url ?? null,
     distanceMiles: null,
     headlineVariant: variants[0] ? toVariant(variants[0]) : null,
     variants: variants.map(toVariant),
+    perCustomerLimit: deal.per_customer_limit,
     photos: photos.map((p) => ({
       id: p.id,
       url: p.url,
@@ -304,6 +343,28 @@ async function fetchHeadlineVariants(sql: Sql, dealIds: string[]): Promise<Map<s
     map.set(r.deal_id, toVariant(r));
   }
   return map;
+}
+
+/**
+ * Where the customer redeems. Uses the deal's explicit redemption location if
+ * set, otherwise falls back to the vendor's business address + coordinates.
+ */
+function resolveRedemption(deal: DealDetailRow) {
+  const hasCustom = deal.redemption_lat != null && deal.redemption_lng != null;
+  const lat = hasCustom ? deal.redemption_lat : deal.vendor_lat;
+  const lng = hasCustom ? deal.redemption_lng : deal.vendor_lng;
+  const address = hasCustom
+    ? (deal.redemption_address ?? '')
+    : [deal.vendor_address_line1, deal.vendor_city, deal.vendor_region, deal.vendor_postal_code]
+        .filter(Boolean)
+        .join(', ');
+  return {
+    address: address || null,
+    latitude: lat,
+    longitude: lng,
+    isCustom: hasCustom,
+    mapUrl: deal.redemption_map_url,
+  };
 }
 
 function toVariant(r: VariantRow): DealVariant {
@@ -348,6 +409,16 @@ interface DealDetailRow extends Omit<DealListRow, 'primary_photo_url' | 'distanc
   whats_included: unknown;
   restrictions: unknown;
   fine_print: string | null;
+  redemption_address: string | null;
+  redemption_lat: number | null;
+  redemption_lng: number | null;
+  redemption_map_url: string | null;
+  vendor_google_place_id: string | null;
+  vendor_region: string | null;
+  vendor_postal_code: string | null;
+  vendor_lat: number | null;
+  vendor_lng: number | null;
+  per_customer_limit: number;
 }
 
 interface VariantRow {

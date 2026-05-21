@@ -1,15 +1,29 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
+
 import { trpc } from '../../lib/trpc';
 import { VendorDashboard } from './VendorDashboard';
 import { VendorSignupForm } from './VendorSignupForm';
 
 /**
- * Vendor home. Routes between signup (no vendor record yet) and dashboard
- * (already a vendor). One URL, two states.
+ * Vendor home. Same login as admin: an admin gets redirected to the founder
+ * console; everyone else routes between vendor signup and dashboard.
  */
 export default function VendorPage() {
-  const meQuery = trpc.vendor.me.useQuery();
+  const router = useRouter();
+  const whoamiQuery = trpc.admin.whoami.useQuery();
+  const isAdmin = whoamiQuery.data?.isAdmin ?? false;
+  const meQuery = trpc.vendor.me.useQuery(undefined, { enabled: !whoamiQuery.isLoading && !isAdmin });
+
+  useEffect(() => {
+    if (isAdmin) router.replace('/admin');
+  }, [isAdmin, router]);
+
+  if (whoamiQuery.isLoading || isAdmin) {
+    return <CenteredMessage>Loading…</CenteredMessage>;
+  }
 
   if (meQuery.isLoading) {
     return <CenteredMessage>Loading…</CenteredMessage>;

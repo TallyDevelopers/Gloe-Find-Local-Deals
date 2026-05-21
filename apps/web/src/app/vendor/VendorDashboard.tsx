@@ -2,6 +2,7 @@
 
 import { UserButton } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 
 import type { RouterOutputs } from '@gloe/api-client';
 
@@ -30,10 +31,20 @@ const STEPS: StepDef[] = [
 
 export function VendorDashboard({ vendor }: VendorDashboardProps) {
   const router = useRouter();
+  const utils = trpc.useUtils();
   const setupQuery = trpc.vendor.setupStatus.useQuery();
   const dealsQuery = trpc.vendor.listDeals.useQuery();
   const setup = setupQuery.data;
   const deals = dealsQuery.data ?? [];
+
+  // Sweep any elapsed deals to 'expired' on load so the list is accurate.
+  const sweep = trpc.vendor.sweepExpired.useMutation();
+  useEffect(() => {
+    sweep.mutateAsync().then((r) => {
+      if (r.expired > 0) void utils.vendor.listDeals.invalidate();
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div style={{ minHeight: '100vh' }}>
@@ -142,6 +153,17 @@ function Hero({
 }
 
 function SetupChecklist({ setup }: { setup: SetupData }) {
+  const onboard = trpc.vendor.startStripeOnboarding.useMutation({
+    onSuccess: ({ onboardingUrl }) => {
+      window.location.href = onboardingUrl;
+    },
+  });
+
+  const startStripe = () => {
+    const base = window.location.origin + '/vendor';
+    onboard.mutate({ refreshUrl: base, returnUrl: base });
+  };
+
   return (
     <Card>
       <h2 style={{ fontSize: 22, marginBottom: 4 }}>Finish your setup</h2>
@@ -157,6 +179,8 @@ function SetupChecklist({ setup }: { setup: SetupData }) {
             required={step.required}
             done={setup?.steps[step.key] ?? false}
             last={i === STEPS.length - 1}
+            actionLabel={step.key === 'stripe' ? (onboard.isPending ? 'Opening…' : 'Connect bank') : 'Set up'}
+            onAction={step.key === 'stripe' ? startStripe : undefined}
           />
         ))}
       </div>
@@ -169,11 +193,15 @@ function Row({
   done,
   required,
   last,
+  actionLabel = 'Set up',
+  onAction,
 }: {
   label: string;
   done: boolean;
   required: boolean;
   last: boolean;
+  actionLabel?: string;
+  onAction?: () => void;
 }) {
   return (
     <div
@@ -224,8 +252,8 @@ function Row({
         ) : null}
       </div>
       {!done ? (
-        <Button variant="ghost" style={{ padding: '6px 14px', fontSize: 14 }}>
-          Set up
+        <Button variant="ghost" style={{ padding: '6px 14px', fontSize: 14 }} onClick={onAction}>
+          {actionLabel}
         </Button>
       ) : null}
     </div>
@@ -245,6 +273,12 @@ const DEAL_STATUS_LABEL: Record<string, { label: string; color: string }> = {
 };
 
 function DealList({ deals, loading }: { deals: VendorDeal[]; loading: boolean }) {
+  const router = useRouter();
+  const utils = trpc.useUtils();
+  const setStatus = trpc.vendor.setDealStatus.useMutation({
+    onSuccess: () => utils.vendor.listDeals.invalidate(),
+  });
+
   if (loading) return null;
   return (
     <Card>
@@ -258,15 +292,22 @@ function DealList({ deals, loading }: { deals: VendorDeal[]; loading: boolean })
           {deals.map((deal, i) => {
             const status = DEAL_STATUS_LABEL[deal.status] ?? DEAL_STATUS_LABEL.draft;
             const price = deal.headlinePriceCents != null ? `$${(deal.headlinePriceCents / 100).toFixed(0)}` : '—';
+            const editable = deal.status !== 'expired' && deal.status !== 'sold_out';
+            const expiry = expiryNote(deal.status, deal.expiresAt);
             return (
               <div
                 key={deal.id}
+                style={{
+                  borderBottom: i === deals.length - 1 ? 'none' : '1px solid var(--border-subtle)',
+                }}
+              >
+              <div
                 style={{
                   display: 'flex',
                   alignItems: 'center',
                   gap: 14,
                   padding: '14px 0',
-                  borderBottom: i === deals.length - 1 ? 'none' : '1px solid var(--border-subtle)',
+                  flexWrap: 'wrap',
                 }}
               >
                 <div
@@ -280,13 +321,39 @@ function DealList({ deals, loading }: { deals: VendorDeal[]; loading: boolean })
                     flexShrink: 0,
                   }}
                 />
-                <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ flex: 1, minWidth: 120 }}>
                   <div style={{ fontSize: 16, fontWeight: 600 }}>{deal.title}</div>
                   <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>
                     {deal.categoryName} · {price} · {deal.variantCount} option{deal.variantCount === 1 ? '' : 's'}
+                    {expiry ? ` · ${expiry}` : ''}
                   </div>
                 </div>
                 <span style={{ color: status?.color, fontSize: 13, fontWeight: 600 }}>{status?.label}</span>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {deal.status === 'active' ? (
+                    <DealAction label="Pause" onClick={() => setStatus.mutate({ dealId: deal.id, to: 'paused' })} disabled={setStatus.isPending} />
+                  ) : null}
+                  {deal.status === 'paused' ? (
+                    <DealAction label="Resume" onClick={() => setStatus.mutate({ dealId: deal.id, to: 'active' })} disabled={setStatus.isPending} />
+                  ) : null}
+                  {deal.status === 'draft' ? (
+                    <DealAction label="Submit" onClick={() => setStatus.mutate({ dealId: deal.id, to: 'pending_review' })} disabled={setStatus.isPending} />
+                  ) : null}
+                  {editable ? (
+                    <DealAction label={deal.status === 'rejected' ? 'Fix & resubmit' : 'Edit'} onClick={() => router.push(`/vendor/post?edit=${deal.id}`)} />
+                  ) : null}
+                </div>
+              </div>
+
+              {deal.status === 'rejected' && deal.rejectionReason ? (
+                <div style={{ background: 'rgba(178,69,69,0.08)', border: '1px solid rgba(178,69,69,0.25)', borderRadius: 'var(--radius-md)', padding: '10px 14px', marginBottom: 14, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                  <span style={{ color: 'var(--error)', fontWeight: 700, fontSize: 14 }}>⚠</span>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--error)' }}>Needs changes before it can go live</div>
+                    <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 2 }}>{deal.rejectionReason}</div>
+                  </div>
+                </div>
+              ) : null}
               </div>
             );
           })}
@@ -294,6 +361,38 @@ function DealList({ deals, loading }: { deals: VendorDeal[]; loading: boolean })
       )}
     </Card>
   );
+}
+
+function DealAction({ label, onClick, disabled }: { label: string; onClick: () => void; disabled?: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        padding: '6px 12px',
+        fontSize: 13,
+        fontWeight: 600,
+        borderRadius: 999,
+        border: '1px solid var(--border-default)',
+        background: 'var(--surface-elevated)',
+        color: 'var(--text-primary)',
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+/** Friendly expiry hint for live/paused deals. */
+function expiryNote(status: string, expiresAt: string): string | null {
+  if (status !== 'active' && status !== 'paused') return null;
+  const ms = new Date(expiresAt).getTime() - Date.now();
+  if (ms <= 0) return 'expired';
+  const days = Math.floor(ms / 86400_000);
+  if (days >= 1) return `ends in ${days}d`;
+  const hours = Math.max(1, Math.floor(ms / 3600_000));
+  return `ends in ${hours}h`;
 }
 
 function StatRow() {

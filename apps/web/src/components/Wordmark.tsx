@@ -6,7 +6,7 @@ interface WordmarkProps {
 
 /**
  * The Gloē wordmark. Modern geometric sans (Outfit), wide letter-spacing,
- * champagne gold. The ē carries the macron (U+0113) — Outfit's latin-ext
+ * rose gold. The ē carries the macron (U+0113) — Outfit's latin-ext
  * subset has the glyph.
  */
 export function Wordmark({ size = 28, tone = 'gold' }: WordmarkProps) {
@@ -16,7 +16,7 @@ export function Wordmark({ size = 28, tone = 'gold' }: WordmarkProps) {
     <span
       style={{
         fontFamily: 'var(--font-wordmark)',
-        fontWeight: 500,
+        fontWeight: 600,
         fontSize: size,
         letterSpacing: '0.18em',
         color,
