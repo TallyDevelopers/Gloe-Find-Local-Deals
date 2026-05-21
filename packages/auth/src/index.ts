@@ -1,6 +1,7 @@
 export { AuthProvider, useAuth } from './AuthProvider';
 export { useSignInFlow } from './useSignInFlow';
 export { useSignUpFlow } from './useSignUpFlow';
+export { useSocialAuth } from './useSocialAuth';
 export type {
   AuthContextValue,
   AuthError,

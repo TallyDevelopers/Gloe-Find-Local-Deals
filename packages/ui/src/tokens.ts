@@ -35,6 +35,12 @@ export const color = {
     900: '#382415',
   },
 
+  // Rose gold — the Gloē wordmark + premium brand moments
+  gold: {
+    DEFAULT: '#C89A8C',
+    deep: '#B8806F',
+  },
+
   // Accent — dusty rose
   accent: {
     50: '#FBF1EE',

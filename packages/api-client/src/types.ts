@@ -7,7 +7,7 @@ export type RouterInputs = inferRouterInputs<AppRouter>;
 export type RouterOutputs = inferRouterOutputs<AppRouter>;
 
 // Convenience aliases for common shapes
-export type DealSummary = RouterOutputs['deals']['list'][number];
+export type DealSummary = RouterOutputs['deals']['list']['deals'][number];
 export type DealDetail = RouterOutputs['deals']['byId'];
 export type DealVariant = DealDetail['variants'][number];
 export type DealPhoto = DealDetail['photos'][number];

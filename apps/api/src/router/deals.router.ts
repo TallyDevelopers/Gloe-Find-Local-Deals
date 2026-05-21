@@ -14,6 +14,7 @@ export const dealsRouter = router({
           maxDistanceMiles: z.number().positive().optional(),
           category: z.string().optional(),
           limit: z.number().int().positive().max(100).optional(),
+          offset: z.number().int().min(0).optional(),
         })
         .optional(),
     )

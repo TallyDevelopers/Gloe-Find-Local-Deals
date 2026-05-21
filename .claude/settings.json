@@ -19,7 +19,17 @@
       "Bash(tar -xzf ExpoGo.tar.gz -C expo-go-extract)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:8081/status)",
       "Bash(curl -s 'http://localhost:4000/trpc/deals.list?batch=1&input=%7B%220%22%3A%7B%22userLat%22%3A32.7157%2C%22userLng%22%3A-117.1611%7D%7D')",
-      "Bash(python3 -c ' *)"
+      "Bash(python3 -c ' *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:4000/health)",
+      "mcp__supabase__execute_sql",
+      "Bash(curl -s -o /dev/null -w \"API on new IP: %{http_code}\\\\n\" --max-time 4 \"http://192.168.114.113:4000/\")",
+      "Bash(curl -s -o /dev/null -w \"Metro on new IP: %{http_code}\\\\n\" --max-time 4 \"http://192.168.114.113:8081/status\")",
+      "Bash(lsof -ti:8081)",
+      "Bash(lsof -ti:4000)",
+      "Bash(awk '{print $2, $11, $12, $13}')",
+      "Bash(ipconfig getifaddr *)",
+      "Bash(curl -s -o /dev/null -w '%{http_code}\\\\n' --max-time 5 http://__TRACKED_VAR__:4000/)",
+      "Bash(npx tsc *)"
     ],
     "additionalDirectories": [
       "/Users/admin/Desktop/GlowApp/apps/*"

@@ -1,7 +1,8 @@
 import type { Sql } from '../db/client';
 
 export interface VendorSignupInput {
-  ownerUserId: string;
+  /** Null for admin-created (unclaimed) vendors; the spa claims it later. */
+  ownerUserId: string | null;
   businessName: string;
   phone: string;
   addressLine1: string;
@@ -10,6 +11,7 @@ export interface VendorSignupInput {
   postalCode: string;
   latitude: number;
   longitude: number;
+  googlePlaceId?: string | null;
   categorySlugs: string[];
 }
 
@@ -18,6 +20,15 @@ export interface VendorRecord {
   businessName: string;
   slug: string;
   status: string;
+  /** Business address — present on getVendorForOwner, used as the default redemption location. */
+  address?: {
+    line1: string;
+    city: string;
+    region: string;
+    postalCode: string;
+    latitude: number | null;
+    longitude: number | null;
+  } | null;
 }
 
 function slugify(name: string): string {
@@ -51,12 +62,12 @@ export async function createVendor(sql: Sql, input: VendorSignupInput): Promise<
     INSERT INTO public.vendors (
       owner_user_id, business_name, slug, phone,
       address_line1, city, region, postal_code, country,
-      location, status
+      location, google_place_id, status
     ) VALUES (
       ${input.ownerUserId}, ${input.businessName}, ${slug}, ${input.phone},
       ${input.addressLine1}, ${input.city}, ${input.region}, ${input.postalCode}, 'US',
       ST_SetSRID(ST_MakePoint(${input.longitude}, ${input.latitude}), 4326)::geography,
-      'pending_approval'
+      ${input.googlePlaceId ?? null}, 'pending_approval'
     )
     RETURNING id, business_name, slug, status
   `;
@@ -84,14 +95,41 @@ export async function createVendor(sql: Sql, input: VendorSignupInput): Promise<
 
 /** The vendor owned by the current user, if any. */
 export async function getVendorForOwner(sql: Sql, ownerUserId: string): Promise<VendorRecord | null> {
-  const rows = await sql<{ id: string; business_name: string; slug: string; status: string }[]>`
-    SELECT id, business_name, slug, status
+  const rows = await sql<{
+    id: string;
+    business_name: string;
+    slug: string;
+    status: string;
+    address_line1: string;
+    city: string;
+    region: string;
+    postal_code: string;
+    lat: number | null;
+    lng: number | null;
+  }[]>`
+    SELECT id, business_name, slug, status,
+           address_line1, city, region, postal_code,
+           ST_Y(location::geometry) AS lat, ST_X(location::geometry) AS lng
     FROM public.vendors
     WHERE owner_user_id = ${ownerUserId}
     LIMIT 1
   `;
   const v = rows[0];
-  return v ? { id: v.id, businessName: v.business_name, slug: v.slug, status: v.status } : null;
+  if (!v) return null;
+  return {
+    id: v.id,
+    businessName: v.business_name,
+    slug: v.slug,
+    status: v.status,
+    address: {
+      line1: v.address_line1,
+      city: v.city,
+      region: v.region,
+      postalCode: v.postal_code,
+      latitude: v.lat,
+      longitude: v.lng,
+    },
+  };
 }
 
 export interface VendorSetupStatus {
@@ -122,11 +160,12 @@ export async function getSetupStatus(
     stripe_account_status: string | null;
     logo_url: string | null;
     hero_image_url: string | null;
+    admin_bypass: boolean;
     provider_count: number;
   }[]>`
     SELECT
       v.status, v.license_number, v.verified_at,
-      v.stripe_account_status, v.logo_url, v.hero_image_url,
+      v.stripe_account_status, v.logo_url, v.hero_image_url, v.admin_bypass,
       (SELECT COUNT(*) FROM public.providers p WHERE p.vendor_id = v.id)::int AS provider_count
     FROM public.vendors v
     WHERE v.owner_user_id = ${ownerUserId}
@@ -145,6 +184,7 @@ export async function getSetupStatus(
     status: v.status,
     isApproved,
     steps: { businessDetails: true, license, stripe, provider, photos },
-    canPostDeals: isApproved && license && stripe,
+    // Admin bypass lets a founder-onboarded spa post without license/Stripe yet.
+    canPostDeals: v.admin_bypass || (isApproved && license && stripe),
   };
 }

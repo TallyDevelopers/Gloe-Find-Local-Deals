@@ -28,7 +28,7 @@ export interface SignUpWithPasswordInput {
   lastName?: string;
 }
 
-export type SocialProvider = 'apple' | 'google';
+export type SocialProvider = 'apple' | 'google' | 'facebook' | 'tiktok';
 
 export interface AuthError {
   code: string;

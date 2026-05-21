@@ -38,6 +38,10 @@ export function useSignUpFlow(): SignUpFlow {
           password,
           firstName,
           lastName,
+          // Some Clerk instances require a username. Consumers never see/pick
+          // one, so auto-derive a unique handle from the email. Harmless if the
+          // instance doesn't require it (Clerk ignores extra fields it allows).
+          username: deriveUsername(email),
         });
         await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
         setStage('awaiting-verification');
@@ -67,7 +71,15 @@ export function useSignUpFlow(): SignUpFlow {
           setStage('complete');
           return { success: true };
         }
-        setError({ code: 'verification_incomplete', message: 'Invalid code. Please try again.' });
+        // Code was accepted but the signup still can't complete — surface the
+        // real reason (a missing required field) instead of blaming the code.
+        const missing = attempt.missingFields?.join(', ');
+        setError({
+          code: 'verification_incomplete',
+          message: missing
+            ? `Almost there — still needs: ${missing}.`
+            : 'Could not finish sign-up. Please try again.',
+        });
         return { success: false };
       } catch (e: unknown) {
         setError({ code: 'verification_failed', message: extractClerkErrorMessage(e) });
@@ -90,6 +102,12 @@ export function useSignUpFlow(): SignUpFlow {
       setStage('idle');
     },
   };
+}
+
+/** Derives a hidden, unique username from an email (some Clerk instances require one). */
+function deriveUsername(email: string): string {
+  const base = (email.split('@')[0] ?? 'user').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 16) || 'user';
+  return `${base}${Math.random().toString(36).slice(2, 7)}`;
 }
 
 function extractClerkErrorMessage(e: unknown): string {

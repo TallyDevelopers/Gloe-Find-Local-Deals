@@ -10,4 +10,7 @@ export type { StackProps } from './Stack';
 export { Text } from './Text';
 export type { TextProps } from './Text';
 
+export { Wordmark } from './Wordmark';
+export type { WordmarkProps } from './Wordmark';
+
 export * from './tokens';
