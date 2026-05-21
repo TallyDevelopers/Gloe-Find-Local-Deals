@@ -6,14 +6,15 @@ import { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useRequireAuth } from '../../features/auth-gate/useRequireAuth';
-import { DealCard } from '../../features/discover/DealCard';
-import { FeaturedCarousel } from '../../features/discover/FeaturedCarousel';
-import { FilterPills } from '../../features/discover-header/FilterPills';
-import { LocationPill } from '../../features/discover-header/LocationPill';
-import { SearchBar } from '../../features/discover-header/SearchBar';
-import { useSelectedLocation } from '../../features/discover-header/SelectedLocationProvider';
-import { useSavedDeals } from '../../features/saved/SavedDealsProvider';
+import { useRequireAuth } from '../../../features/auth-gate/useRequireAuth';
+import { CategoryRail } from '../../../features/discover/CategoryRail';
+import { DealCardLarge } from '../../../features/discover/DealCardLarge';
+import { FeaturedCarousel } from '../../../features/discover/FeaturedCarousel';
+import { CATEGORY_OPTIONS, FilterPills } from '../../../features/discover-header/FilterPills';
+import { LocationPill } from '../../../features/discover-header/LocationPill';
+import { SearchBar } from '../../../features/discover-header/SearchBar';
+import { useSelectedLocation } from '../../../features/discover-header/SelectedLocationProvider';
+import { useSavedDeals } from '../../../features/saved/SavedDealsProvider';
 
 export default function DiscoverScreen() {
   const insets = useSafeAreaInsets();
@@ -25,6 +26,8 @@ export default function DiscoverScreen() {
 
   const [categorySlug, setCategorySlug] = useState<string | null>(null);
 
+  // Featured (sponsored) carousel + the filtered grid both read this query.
+  // When "All" is selected the body shows category rails instead of the grid.
   const dealsQuery = trpc.deals.list.useQuery({
     userLat: location.latitude,
     userLng: location.longitude,
@@ -34,7 +37,7 @@ export default function DiscoverScreen() {
   });
 
   const isSignedIn = status === 'signed-in';
-  const allDeals = dealsQuery.data ?? [];
+  const allDeals = dealsQuery.data?.deals ?? [];
   const featured = allDeals.filter((d) => d.isSponsored);
   const rest = allDeals;
 
@@ -96,36 +99,45 @@ export default function DiscoverScreen() {
                 Couldn't load deals. Pull to refresh.
               </Text>
             </View>
-          ) : (
-            <Stack gap={6} style={{ marginTop: space[2] }}>
+          ) : categorySlug === null ? (
+            /* "All" view — Featured carousel + a horizontal rail per category. */
+            <Stack gap={8} style={{ marginTop: space[2] }}>
               {featured.length > 0 ? (
                 <View style={{ paddingLeft: space[5] }}>
                   <FeaturedCarousel deals={featured} onSave={toggleSave} savedIds={savedIds} />
                 </View>
               ) : null}
 
-              <Stack gap={3} paddingX={5}>
-                <Text variant="display-sm" tone="primary" weight="medium">
-                  {categorySlug ? 'Filtered results' : 'Near you'}
+              {CATEGORY_OPTIONS.filter((c) => c.slug !== null).map((c) => (
+                <CategoryRail
+                  key={c.slug}
+                  categorySlug={c.slug as string}
+                  label={c.label}
+                  userLat={location.latitude}
+                  userLng={location.longitude}
+                  savedIds={savedIds}
+                  onSave={toggleSave}
+                  onSeeAll={(slug) => setCategorySlug(slug)}
+                />
+              ))}
+            </Stack>
+          ) : (
+            /* Filtered view — big full-width cards, vertical scroll. */
+            <Stack gap={4} paddingX={5} style={{ marginTop: space[2] }}>
+              {rest.length === 0 ? (
+                <Text variant="body-md" tone="secondary">
+                  No deals match your filters in {location.label}.
                 </Text>
-                {rest.length === 0 ? (
-                  <Text variant="body-md" tone="secondary">
-                    No deals match your filters in {location.label}.
-                  </Text>
-                ) : (
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[3] }}>
-                    {rest.map((deal) => (
-                      <View key={deal.id} style={{ width: '48.5%' }}>
-                        <DealCard
-                          deal={deal}
-                          isSaved={savedIds.has(deal.id)}
-                          onSave={() => toggleSave(deal.id)}
-                        />
-                      </View>
-                    ))}
-                  </View>
-                )}
-              </Stack>
+              ) : (
+                rest.map((deal) => (
+                  <DealCardLarge
+                    key={deal.id}
+                    deal={deal}
+                    isSaved={savedIds.has(deal.id)}
+                    onSave={() => toggleSave(deal.id)}
+                  />
+                ))
+              )}
             </Stack>
           )}
         </Stack>

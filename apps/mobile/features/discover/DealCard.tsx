@@ -10,13 +10,15 @@ interface DealCardProps {
   deal: DealSummary;
   onSave: () => void;
   isSaved?: boolean;
+  /** Fixed width for horizontal rails; omit to fill its column in the grid. */
+  width?: number;
 }
 
 /**
- * Compact grid card. Designed to fit 2 per row on phone widths, image-dominant.
- * Tap anywhere → deal detail. Tap heart → save (gated for anonymous users).
+ * Compact image-dominant card. Fills its column in the 2-up grid, or takes a
+ * fixed width inside a horizontal category rail. Tap → deal detail; heart → save.
  */
-export function DealCard({ deal, onSave, isSaved = false }: DealCardProps) {
+export function DealCard({ deal, onSave, isSaved = false, width }: DealCardProps) {
   const router = useRouter();
   const variant = deal.headlineVariant;
   if (!variant) return null;
@@ -37,6 +39,7 @@ export function DealCard({ deal, onSave, isSaved = false }: DealCardProps) {
         backgroundColor: color.surface.elevated,
         borderRadius: radius.lg,
         overflow: 'hidden',
+        ...(width ? { width } : {}),
         ...shadow.sm,
       }}
     >

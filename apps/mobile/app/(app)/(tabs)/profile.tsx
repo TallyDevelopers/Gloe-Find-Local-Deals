@@ -4,7 +4,7 @@ import { useRouter } from 'expo-router';
 import { Image, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useClaimedDeals } from '../../features/claimed/ClaimedDealsProvider';
+import { useClaimedDeals } from '../../../features/claimed/ClaimedDealsProvider';
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
@@ -49,7 +49,7 @@ export default function ProfileScreen() {
                 }}
               >
                 <Pressable
-                  onPress={() => router.push('/(app)/saved')}
+                  onPress={() => router.push('/(app)/(tabs)/saved')}
                   style={{
                     paddingVertical: space[4],
                     paddingHorizontal: space[5],

@@ -4,8 +4,8 @@ import { useRouter } from 'expo-router';
 import { Image, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Icon } from '../../features/icon/Icon';
-import { mockThreads, type MockThread } from '../../features/messages/mockThreads';
+import { Icon } from '../../../features/icon/Icon';
+import { mockThreads, type MockThread } from '../../../features/messages/mockThreads';
 
 export default function MessagesScreen() {
   const insets = useSafeAreaInsets();

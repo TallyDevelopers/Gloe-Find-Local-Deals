@@ -1,6 +1,5 @@
 import { Button, Stack, color, radius, shadow, space } from '@gloe/ui';
 import { Pressable, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, type IconName } from '../icon/Icon';
 
@@ -19,8 +18,6 @@ export function StickyActionBar({
   onRedeem,
   ctaLabel,
 }: StickyActionBarProps) {
-  const insets = useSafeAreaInsets();
-
   return (
     <View
       style={{
@@ -33,7 +30,9 @@ export function StickyActionBar({
         borderTopColor: color.border.subtle,
         paddingHorizontal: space[5],
         paddingTop: space[3],
-        paddingBottom: insets.bottom + space[3],
+        // Sits just above the tab bar, which already clears the home indicator —
+        // so only a small bottom pad, not the full safe-area inset.
+        paddingBottom: space[3],
         ...shadow.lg,
       }}
     >

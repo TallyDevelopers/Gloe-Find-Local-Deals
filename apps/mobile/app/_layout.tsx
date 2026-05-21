@@ -10,13 +10,15 @@ import {
   Inter_700Bold,
   useFonts,
 } from '@expo-google-fonts/inter';
+import { Outfit_500Medium, Outfit_600SemiBold } from '@expo-google-fonts/outfit';
 import { color } from '@gloe/ui';
 import { Slot } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 import { GloeProviders } from '../features/providers/GloeProviders';
+import { SplashShimmer } from '../features/splash/SplashShimmer';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -35,6 +37,8 @@ export default function RootLayout() {
     Inter_500Medium,
     Inter_600SemiBold,
     Inter_700Bold,
+    Outfit_500Medium,
+    Outfit_600SemiBold,
   });
 
   useEffect(() => {
@@ -43,15 +47,19 @@ export default function RootLayout() {
     }
   }, [fontsLoaded, fontError]);
 
+  const [showSplash, setShowSplash] = useState(true);
+
   if (!fontsLoaded && !fontError) return null;
 
   return (
     <GloeProviders
       clerkPublishableKey={requireEnv('EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY')}
+      stripePublishableKey={requireEnv('EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY')}
       apiUrl={requireEnv('EXPO_PUBLIC_API_URL')}
     >
       <StatusBar style="dark" backgroundColor={color.surface.primary} />
       <Slot />
+      {showSplash ? <SplashShimmer onDone={() => setShowSplash(false)} /> : null}
     </GloeProviders>
   );
 }

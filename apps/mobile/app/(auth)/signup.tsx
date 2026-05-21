@@ -1,14 +1,22 @@
-import { useSignUpFlow } from '@gloe/auth';
-import { Button, Input, Stack, Text, color, radius, space } from '@gloe/ui';
+import { useSignUpFlow, useSocialAuth } from '@gloe/auth';
+import { Button, Input, Stack, Text, Wordmark, color, radius, space } from '@gloe/ui';
 import { Link, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { SocialAuthButtons } from '../../features/auth-gate/SocialAuthButtons';
+
 export default function SignUpScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { stage, signUp, verifyCode, isLoading, error } = useSignUpFlow();
+  const social = useSocialAuth();
+
+  const handleSocial = async (provider: Parameters<typeof social.signInWithSocial>[0]) => {
+    const result = await social.signInWithSocial(provider);
+    if (result.success) router.replace('/');
+  };
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -27,7 +35,7 @@ export default function SignUpScreen() {
 
   const handleClose = () => {
     if (router.canGoBack()) router.back();
-    else router.replace('/(app)/discover');
+    else router.replace('/(app)/(tabs)/discover');
   };
 
   const isVerifying = stage === 'awaiting-verification';
@@ -68,9 +76,7 @@ export default function SignUpScreen() {
           </View>
 
           <Stack gap={3} align="flex-start">
-            <Text variant="display-xl" tone="primary" weight="medium">
-              Gloe
-            </Text>
+            <Wordmark size={44} />
             <Text variant="body-lg" tone="secondary">
               {isVerifying ? 'Check your email.' : 'Create your account.'}
             </Text>
@@ -151,6 +157,12 @@ export default function SignUpScreen() {
                 loading={isLoading}
                 size="lg"
                 fullWidth
+              />
+
+              <SocialAuthButtons
+                onPress={handleSocial}
+                pending={social.pending}
+                error={social.error?.message ?? null}
               />
             </Stack>
           )}

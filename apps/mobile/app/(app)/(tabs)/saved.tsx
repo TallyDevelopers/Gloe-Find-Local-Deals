@@ -6,12 +6,12 @@ import { useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ClaimedDealRow } from '../../features/claimed/ClaimedDealRow';
-import { useClaimedDeals } from '../../features/claimed/ClaimedDealsProvider';
-import { DealCard } from '../../features/discover/DealCard';
-import { Icon } from '../../features/icon/Icon';
-import { SegmentedControl } from '../../features/saved/SegmentedControl';
-import { useSavedDeals } from '../../features/saved/SavedDealsProvider';
+import { ClaimedDealRow } from '../../../features/claimed/ClaimedDealRow';
+import { useClaimedDeals } from '../../../features/claimed/ClaimedDealsProvider';
+import { DealCard } from '../../../features/discover/DealCard';
+import { Icon } from '../../../features/icon/Icon';
+import { SegmentedControl } from '../../../features/saved/SegmentedControl';
+import { useSavedDeals } from '../../../features/saved/SavedDealsProvider';
 
 type Tab = 'saved' | 'mine';
 
@@ -24,7 +24,7 @@ export default function SavedScreen() {
   const [tab, setTab] = useState<Tab>('saved');
 
   const dealsQuery = trpc.deals.list.useQuery({ limit: 100 });
-  const savedDeals = (dealsQuery.data ?? []).filter((d) => savedIds.has(d.id));
+  const savedDeals = (dealsQuery.data?.deals ?? []).filter((d) => savedIds.has(d.id));
   const isSignedIn = status === 'signed-in';
 
   return (
@@ -66,7 +66,7 @@ export default function SavedScreen() {
             savedDeals.length === 0 ? (
               <SavedEmpty
                 isSignedIn={isSignedIn}
-                onBrowse={() => router.push('/(app)/discover')}
+                onBrowse={() => router.push('/(app)/(tabs)/discover')}
                 onSignIn={() => router.push('/(auth)/login')}
               />
             ) : (
@@ -85,7 +85,7 @@ export default function SavedScreen() {
               </View>
             )
           ) : activeClaims.length === 0 && pastClaims.length === 0 ? (
-            <YourDealsEmpty onBrowse={() => router.push('/(app)/discover')} />
+            <YourDealsEmpty onBrowse={() => router.push('/(app)/(tabs)/discover')} />
           ) : (
             <Stack gap={5}>
               {activeClaims.length > 0 ? (
@@ -187,8 +187,7 @@ function YourDealsEmpty({ onBrowse }: { onBrowse: () => void }) {
           No deals yet
         </Text>
         <Text variant="body-md" tone="secondary" align="center">
-          When you tap "Get this deal" on a listing, your active deals show up here with a code to
-          show at your appointment.
+          When you buy a deal, it shows up here with a code to show at your appointment.
         </Text>
       </Stack>
       <View style={{ width: '100%', maxWidth: 320 }}>

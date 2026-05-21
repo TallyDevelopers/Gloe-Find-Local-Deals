@@ -3,15 +3,17 @@ import { useAuth } from '@gloe/auth';
 import { Stack, Text, color, radius, space } from '@gloe/ui';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Dimensions, Image, Pressable, View } from 'react-native';
+import Animated, { useAnimatedScrollHandler, useSharedValue } from 'react-native-reanimated';
 
 import { useRequireAuth } from '../../../features/auth-gate/useRequireAuth';
-import { ClaimConfirmSheet } from '../../../features/claimed/ClaimConfirmSheet';
-import { useClaimedDeals } from '../../../features/claimed/ClaimedDealsProvider';
 import { CustomerVideos } from '../../../features/deal-detail/CustomerVideos';
 import { HeroImage } from '../../../features/deal-detail/HeroImage';
+import { RedemptionMap } from '../../../features/deal-detail/RedemptionMap';
+import { ReviewsSection } from '../../../features/deal-detail/ReviewsSection';
 import { Section } from '../../../features/deal-detail/Section';
 import { StickyActionBar } from '../../../features/deal-detail/StickyActionBar';
+import { StickyTopBar } from '../../../features/deal-detail/StickyTopBar';
 import { VariantPicker } from '../../../features/deal-detail/VariantPicker';
 import { formatPrice } from '../../../features/discover/format';
 import { useSavedDeals } from '../../../features/saved/SavedDealsProvider';
@@ -22,7 +24,6 @@ export default function DealDetailScreen() {
   const { status } = useAuth();
   const requireAuth = useRequireAuth();
   const { isSaved: getIsSaved, toggle: toggleSavedGlobal } = useSavedDeals();
-  const { activeClaims } = useClaimedDeals();
 
   const dealQuery = trpc.deals.byId.useQuery({ id: id ?? '' }, { enabled: !!id });
   const reviewsQuery = trpc.reviews.listForVendor.useQuery(
@@ -31,7 +32,13 @@ export default function DealDetailScreen() {
   );
 
   const [selectedVariantId, setSelectedVariantId] = useState<string | undefined>(undefined);
-  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  // Hero is a 3:2 image; the sticky top bar fades its background in past it.
+  const heroHeight = Dimensions.get('window').width * (2 / 3);
+  const scrollY = useSharedValue(0);
+  const onScroll = useAnimatedScrollHandler((e) => {
+    scrollY.value = e.contentOffset.y;
+  });
 
   const deal = dealQuery.data;
   const isSaved = id ? getIsSaved(id) : false;
@@ -104,15 +111,44 @@ export default function DealDetailScreen() {
   const handleSave = requireAuth('save', () => {
     if (id) toggleSavedGlobal(id);
   });
-  const handleRedeem = requireAuth('redeem', () => setConfirmOpen(true));
+  const handleRedeem = requireAuth('redeem', () =>
+    router.push({
+      pathname: '/(app)/checkout',
+      params: {
+        dealId: deal.id,
+        title: deal.title,
+        categoryLabel: deal.category.subtypeDisplayName
+          ? `${deal.category.displayName} · ${deal.category.subtypeDisplayName}`
+          : deal.category.displayName,
+        vendorName: deal.vendor.businessName,
+        vendorRating: deal.vendor.ratingAvg != null ? String(deal.vendor.ratingAvg) : '',
+        vendorReviews: String(deal.vendor.reviewCount ?? 0),
+        photoUrl: galleryUrls[0] ?? '',
+        variantId: selectedVariant.id,
+        variantLabel: selectedVariant.label,
+        originalPriceCents: String(selectedVariant.originalPriceCents),
+        dealPriceCents: String(selectedVariant.dealPriceCents),
+        discountPct: String(discountPct),
+        spotsLeft: spotsLeft != null ? String(spotsLeft) : '',
+        expiresAt: deal.expiresAt ?? '',
+        perCustomerLimit: String(deal.perCustomerLimit ?? 1),
+      },
+    }),
+  );
   const handleShare = () => console.log('Share', deal.id);
 
-  const ctaLabel = status === 'signed-in' ? 'Get this deal' : 'Sign in to claim';
+  const ctaLabel = status === 'signed-in' ? 'Buy now' : 'Sign in to buy now';
 
   return (
     <View style={{ flex: 1, backgroundColor: color.surface.primary }}>
-      <ScrollView contentContainerStyle={{ paddingBottom: 140 }} showsVerticalScrollIndicator={false}>
-        <HeroImage images={galleryUrls} isSaved={isSaved} onSave={handleSave} onShare={handleShare} />
+      <StickyTopBar scrollY={scrollY} heroHeight={heroHeight} />
+      <Animated.ScrollView
+        contentContainerStyle={{ paddingBottom: 140 }}
+        showsVerticalScrollIndicator={false}
+        onScroll={onScroll}
+        scrollEventThrottle={16}
+      >
+        <HeroImage images={galleryUrls} />
 
         <View style={{ paddingHorizontal: space[5], paddingTop: space[5] }}>
           <Stack gap={6}>
@@ -277,68 +313,24 @@ export default function DealDetailScreen() {
               vendorName={deal.vendor.businessName}
             />
 
-            <Section
-              title="Where"
-              action={
-                <Pressable hitSlop={8}>
-                  <Text variant="body-sm" tone="link" weight="semibold">
-                    Directions →
-                  </Text>
-                </Pressable>
-              }
-            >
-              <Stack gap={1}>
+            <Section title="Where you'll go">
+              <Stack gap={3}>
                 <Text variant="body-md" tone="primary" weight="medium">
                   {deal.vendor.businessName}
+                  {deal.vendor.hoursSummary ? (
+                    <Text variant="body-sm" tone="tertiary">{`  ·  ${deal.vendor.hoursSummary}`}</Text>
+                  ) : null}
                 </Text>
-                <Text variant="body-md" tone="secondary">
-                  {deal.vendor.address}
-                </Text>
-                <Text variant="body-sm" tone="tertiary">
-                  {deal.vendor.city}
-                  {deal.vendor.hoursSummary ? ` · ${deal.vendor.hoursSummary}` : ''}
-                </Text>
+                <RedemptionMap redemption={deal.redemption} vendorName={deal.vendor.businessName} />
               </Stack>
             </Section>
 
-            <Section
-              title="Reviews"
-              action={
-                deal.vendor.reviewCount > 0 ? (
-                  <Pressable hitSlop={8}>
-                    <Text variant="body-sm" tone="link" weight="semibold">
-                      See all {deal.vendor.reviewCount} →
-                    </Text>
-                  </Pressable>
-                ) : undefined
-              }
-            >
-              {reviewsQuery.data && reviewsQuery.data.length > 0 ? (
-                <Stack gap={4}>
-                  {reviewsQuery.data.map((review) => (
-                    <Stack key={review.id} gap={1}>
-                      <Stack direction="row" gap={2} align="baseline">
-                        <Text variant="body-md" tone="primary" weight="semibold">
-                          {review.authorFirstName ?? 'Member'}
-                        </Text>
-                        <Text variant="body-sm" tone="brand">
-                          {'★'.repeat(review.rating)}
-                        </Text>
-                      </Stack>
-                      {review.body ? (
-                        <Text variant="body-md" tone="secondary">
-                          {review.body}
-                        </Text>
-                      ) : null}
-                    </Stack>
-                  ))}
-                </Stack>
-              ) : (
-                <Text variant="body-sm" tone="tertiary">
-                  No reviews yet. Be the first after your appointment.
-                </Text>
-              )}
-            </Section>
+            <ReviewsSection
+              vendorId={deal.vendor.id}
+              googlePlaceId={deal.vendor.googlePlaceId}
+              reviewCount={deal.vendor.reviewCount}
+              internalReviews={reviewsQuery.data ?? []}
+            />
 
             <Section title="The fine print">
               <Stack gap={2}>
@@ -358,7 +350,7 @@ export default function DealDetailScreen() {
             </Section>
           </Stack>
         </View>
-      </ScrollView>
+      </Animated.ScrollView>
 
       <StickyActionBar
         isSaved={isSaved}
@@ -368,37 +360,6 @@ export default function DealDetailScreen() {
         ctaLabel={ctaLabel}
       />
 
-      <ClaimConfirmSheet
-        deal={
-          confirmOpen
-            ? {
-                id: deal.id,
-                title: deal.title,
-                categoryLabel: deal.category.subtypeDisplayName
-                  ? `${deal.category.displayName} · ${deal.category.subtypeDisplayName}`
-                  : deal.category.displayName,
-                vendorName: deal.vendor.businessName,
-                vendorContextLine:
-                  deal.distanceMiles !== null
-                    ? `${deal.distanceMiles.toFixed(1)} mi`
-                    : deal.vendor.city,
-              }
-            : null
-        }
-        variant={
-          confirmOpen
-            ? {
-                id: selectedVariant.id,
-                label: selectedVariant.label,
-                originalPriceCents: selectedVariant.originalPriceCents,
-                dealPriceCents: selectedVariant.dealPriceCents,
-              }
-            : null
-        }
-        monthlyUsed={activeClaims.length}
-        monthlyLimit={5}
-        onClose={() => setConfirmOpen(false)}
-      />
     </View>
   );
 }

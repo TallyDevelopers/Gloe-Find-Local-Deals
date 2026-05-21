@@ -25,5 +25,5 @@ export default function Index() {
     );
   }
 
-  return <Redirect href="/(app)/discover" />;
+  return <Redirect href="/(app)/(tabs)/discover" />;
 }

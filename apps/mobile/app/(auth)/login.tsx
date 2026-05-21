@@ -1,14 +1,22 @@
-import { useSignInFlow } from '@gloe/auth';
-import { Button, Input, Stack, Text, color, radius, space } from '@gloe/ui';
+import { useSignInFlow, useSocialAuth } from '@gloe/auth';
+import { Button, Input, Stack, Text, Wordmark, color, radius, space } from '@gloe/ui';
 import { Link, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { SocialAuthButtons } from '../../features/auth-gate/SocialAuthButtons';
+
 export default function LoginScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { signIn, isLoading, error } = useSignInFlow();
+  const social = useSocialAuth();
+
+  const handleSocial = async (provider: Parameters<typeof social.signInWithSocial>[0]) => {
+    const result = await social.signInWithSocial(provider);
+    if (result.success) router.replace('/');
+  };
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -22,7 +30,7 @@ export default function LoginScreen() {
 
   const handleClose = () => {
     if (router.canGoBack()) router.back();
-    else router.replace('/(app)/discover');
+    else router.replace('/(app)/(tabs)/discover');
   };
 
   const canSubmit = email.length > 0 && password.length > 0 && !isLoading;
@@ -64,9 +72,7 @@ export default function LoginScreen() {
 
           {/* Brand */}
           <Stack gap={3} align="flex-start">
-            <Text variant="display-xl" tone="primary" weight="medium">
-              Gloe
-            </Text>
+            <Wordmark size={44} />
             <Text variant="body-lg" tone="secondary">
               Welcome back.
             </Text>
@@ -126,7 +132,12 @@ export default function LoginScreen() {
             </Stack>
           </Stack>
 
-          {/* Divider — social logins go below in a later patch */}
+          {/* Social logins */}
+          <SocialAuthButtons
+            onPress={handleSocial}
+            pending={social.pending}
+            error={social.error?.message ?? null}
+          />
 
           {/* Sign up link */}
           <Stack
