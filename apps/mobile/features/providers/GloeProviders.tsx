@@ -1,5 +1,7 @@
 import { AuthProvider } from '@gloe/auth';
+import { StripeProvider } from '@stripe/stripe-react-native';
 import type { ReactNode } from 'react';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { ApiBridge } from '../api/ApiBridge';
@@ -10,6 +12,7 @@ import { SavedDealsProvider } from '../saved/SavedDealsProvider';
 
 interface GloeProvidersProps {
   clerkPublishableKey: string;
+  stripePublishableKey: string;
   apiUrl: string;
   children: ReactNode;
 }
@@ -27,20 +30,29 @@ interface GloeProvidersProps {
  * Add new providers here. Don't nest them inline in _layout.tsx — every
  * additional level there makes the tree harder to read.
  */
-export function GloeProviders({ clerkPublishableKey, apiUrl, children }: GloeProvidersProps) {
+export function GloeProviders({
+  clerkPublishableKey,
+  stripePublishableKey,
+  apiUrl,
+  children,
+}: GloeProvidersProps) {
   return (
-    <SafeAreaProvider>
-      <AuthProvider publishableKey={clerkPublishableKey}>
-        <ApiBridge apiUrl={apiUrl}>
-          <AuthGateProvider>
-            <SelectedLocationProvider>
-              <SavedDealsProvider>
-                <ClaimedDealsProvider>{children}</ClaimedDealsProvider>
-              </SavedDealsProvider>
-            </SelectedLocationProvider>
-          </AuthGateProvider>
-        </ApiBridge>
-      </AuthProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <StripeProvider publishableKey={stripePublishableKey} merchantIdentifier="merchant.com.gloe.app">
+        <AuthProvider publishableKey={clerkPublishableKey}>
+          <ApiBridge apiUrl={apiUrl}>
+            <AuthGateProvider>
+              <SelectedLocationProvider>
+                <SavedDealsProvider>
+                  <ClaimedDealsProvider>{children}</ClaimedDealsProvider>
+                </SavedDealsProvider>
+              </SelectedLocationProvider>
+            </AuthGateProvider>
+          </ApiBridge>
+          </AuthProvider>
+        </StripeProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

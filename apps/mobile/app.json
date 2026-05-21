@@ -15,7 +15,11 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.gloe.app",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Gloe uses your location to show aesthetic deals near you."
+        "NSLocationWhenInUseUsageDescription": "Gloe uses your location to show aesthetic deals near you.",
+        "LSApplicationQueriesSchemes": [
+          "comgooglemaps",
+          "waze"
+        ]
       }
     },
     "android": {
@@ -33,6 +37,13 @@
         "expo-location",
         {
           "locationAlwaysAndWhenInUsePermission": "Gloe uses your location to show aesthetic deals near you."
+        }
+      ],
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "merchant.com.gloe.app",
+          "enableGooglePay": false
         }
       ]
     ],
