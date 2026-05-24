@@ -1,14 +1,15 @@
 'use client';
 
-import { UserButton } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 
-import { Wordmark } from '../../components/Wordmark';
 import { trpc } from '../../lib/trpc';
-import { AdminDashboard } from './AdminDashboard';
+import { AdminShell } from './console/AdminShell';
 
-/** Founder console. Gated to admins; non-admins get bounced to /vendor. */
+/**
+ * Founder console. Gated to admins; non-admins get bounced to /vendor.
+ * Renders the modular console (sidebar + workspace + ⌘K).
+ */
 export default function AdminPage() {
   const router = useRouter();
   const whoami = trpc.admin.whoami.useQuery();
@@ -25,18 +26,5 @@ export default function AdminPage() {
     );
   }
 
-  return (
-    <div style={{ minHeight: '100vh' }}>
-      <header style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--surface-elevated)', position: 'sticky', top: 0, zIndex: 20 }}>
-        <div style={{ padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-            <Wordmark size={24} tone="gold" />
-            <span style={{ fontSize: 12, letterSpacing: '0.08em', color: 'var(--text-tertiary)' }}>GOD MODE</span>
-          </div>
-          <UserButton />
-        </div>
-      </header>
-      <AdminDashboard />
-    </div>
-  );
+  return <AdminShell />;
 }

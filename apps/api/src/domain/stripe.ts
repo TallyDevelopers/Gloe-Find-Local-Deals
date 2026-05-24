@@ -93,6 +93,172 @@ export interface AccountStatus {
   detailsSubmitted: boolean;
 }
 
+/**
+ * Stripe's view of a connected account's onboarding/capability state, beyond
+ * just `payouts_enabled`. Surfaces the exact requirements Stripe is asking
+ * the vendor for — currently_due / past_due / disabled_reason — so god mode
+ * can translate "your account is restricted" into "Stripe needs your DOB."
+ */
+export async function getConnectedAccountRequirements(accountId: string): Promise<{
+  payoutsEnabled: boolean;
+  chargesEnabled: boolean;
+  detailsSubmitted: boolean;
+  disabledReason: string | null;
+  currentlyDue: string[];
+  pastDue: string[];
+  eventuallyDue: string[];
+  externalAccounts: Array<{ id: string; type: 'bank_account' | 'card'; last4?: string | null; brand?: string | null; funding?: string | null }>;
+}> {
+  const account = await client().accounts.retrieve(accountId);
+  const req = account.requirements;
+  const external = await client().accounts.listExternalAccounts(accountId, { limit: 10 });
+  return {
+    payoutsEnabled: account.payouts_enabled ?? false,
+    chargesEnabled: account.charges_enabled ?? false,
+    detailsSubmitted: account.details_submitted ?? false,
+    disabledReason: req?.disabled_reason ?? null,
+    currentlyDue: req?.currently_due ?? [],
+    pastDue: req?.past_due ?? [],
+    eventuallyDue: req?.eventually_due ?? [],
+    externalAccounts: external.data.map((e) => {
+      if (e.object === 'card') {
+        const c = e as { id: string; last4?: string; brand?: string; funding?: string };
+        return { id: c.id, type: 'card' as const, last4: c.last4 ?? null, brand: c.brand ?? null, funding: c.funding ?? null };
+      }
+      const b = e as { id: string; last4?: string; bank_name?: string };
+      return { id: b.id, type: 'bank_account' as const, last4: b.last4 ?? null, brand: b.bank_name ?? null };
+    }),
+  };
+}
+
+/**
+ * Retry a failed payout (Stripe's `payouts.create` on the connected account
+ * is the only way — there's no "retry the same payout id" API). Caller picks
+ * the amount from our records.
+ */
+export async function retryPayoutOnAccount(args: {
+  accountId: string;
+  amountCents: number;
+  idempotencyKey: string;
+  metadata?: Record<string, string>;
+}): Promise<{ payoutId: string; arrivalDate: number | null }> {
+  const payout = await client().payouts.create(
+    {
+      amount: args.amountCents,
+      currency: 'usd',
+      metadata: args.metadata ?? {},
+    },
+    { stripeAccount: args.accountId, idempotencyKey: args.idempotencyKey },
+  );
+  return { payoutId: payout.id, arrivalDate: payout.arrival_date };
+}
+
+/**
+ * Sum of all transfers we've ever sent to a connected account, minus
+ * reversals. Used by the reconciliation panel to diff against our DB.
+ * Paginates if needed (very rare at our scale).
+ */
+export async function sumTransfersToAccount(accountId: string): Promise<{
+  totalSentCents: number;
+  reversedCents: number;
+  netCents: number;
+  count: number;
+}> {
+  let totalSent = 0;
+  let reversed = 0;
+  let count = 0;
+  let lastId: string | undefined;
+  for (let i = 0; i < 10; i++) {
+    const page: { data: Array<{ id: string; amount: number; amount_reversed: number }>; has_more: boolean } =
+      await client().transfers.list({
+        destination: accountId,
+        limit: 100,
+        ...(lastId ? { starting_after: lastId } : {}),
+      });
+    for (const t of page.data) {
+      totalSent += t.amount;
+      reversed += t.amount_reversed;
+      count += 1;
+      lastId = t.id;
+    }
+    if (!page.has_more) break;
+  }
+  return { totalSentCents: totalSent, reversedCents: reversed, netCents: totalSent - reversed, count };
+}
+
+/**
+ * Live balance on a connected account: what Stripe is holding for the vendor
+ * (available = ready to be paid out / instantly paid out, pending = still in
+ * Stripe's hold window before becoming available). Currency assumed USD —
+ * we sum across all USD entries in case Stripe ever splits them.
+ */
+export async function getConnectedAccountBalance(
+  accountId: string,
+): Promise<{ availableCents: number; pendingCents: number }> {
+  const balance = await client().balance.retrieve(undefined, { stripeAccount: accountId });
+  const sumUsd = (entries: { amount: number; currency: string }[] | undefined) =>
+    (entries ?? []).filter((e) => e.currency === 'usd').reduce((s, e) => s + e.amount, 0);
+  return {
+    availableCents: sumUsd(balance.available),
+    pendingCents: sumUsd(balance.pending),
+  };
+}
+
+/**
+ * Whether a connected account is eligible for Instant Payouts: needs a
+ * default external debit card (not just a bank account) and active capabilities.
+ */
+export async function getInstantPayoutEligibility(
+  accountId: string,
+): Promise<{ eligible: boolean; reason: string | null; hasDebitCard: boolean }> {
+  const account = await client().accounts.retrieve(accountId);
+  if (!account.payouts_enabled) {
+    return { eligible: false, reason: 'Stripe onboarding incomplete.', hasDebitCard: false };
+  }
+  const externalAccounts = await client().accounts.listExternalAccounts(accountId, {
+    object: 'card',
+    limit: 10,
+  });
+  const hasDebitCard = externalAccounts.data.some(
+    (c) => c.object === 'card' && (c as { funding?: string }).funding === 'debit',
+  );
+  if (!hasDebitCard) {
+    return {
+      eligible: false,
+      reason: 'Add a debit card in your Stripe dashboard to enable Instant Payouts.',
+      hasDebitCard: false,
+    };
+  }
+  return { eligible: true, reason: null, hasDebitCard: true };
+}
+
+/**
+ * Triggers an Instant Payout from the connected account's available balance
+ * to the vendor's default debit card. The application-fee percentage is
+ * configured in the Stripe Dashboard's default pricing scheme (currently 3%);
+ * Stripe deducts it automatically and routes it back to the platform balance.
+ *
+ * Stripe additionally deducts its own 1% cost from the application fee.
+ * Net to Gloē: 2% per instant payout. See CREDITS_AND_FEES.md §1b.
+ */
+export async function createInstantPayout(args: {
+  amountCents: number;
+  accountId: string;
+  idempotencyKey: string;
+  metadata: Record<string, string>;
+}): Promise<{ payoutId: string; arrivalDate: number | null }> {
+  const payout = await client().payouts.create(
+    {
+      amount: args.amountCents,
+      currency: 'usd',
+      method: 'instant',
+      metadata: args.metadata,
+    },
+    { stripeAccount: args.accountId, idempotencyKey: args.idempotencyKey },
+  );
+  return { payoutId: payout.id, arrivalDate: payout.arrival_date };
+}
+
 /** Current onboarding/capability state for a connected account. */
 export async function getAccountStatus(accountId: string): Promise<AccountStatus> {
   const a = await client().accounts.retrieve(accountId);
@@ -126,10 +292,52 @@ export async function createPaymentIntent(args: {
   return { paymentIntentId: pi.id, clientSecret: pi.client_secret! };
 }
 
+/**
+ * Moves money from the platform balance to a connected vendor's balance.
+ * Called once a `claim` has flipped to redeemed and all routing walls have
+ * passed (see domain/payouts.ts).
+ *
+ * Idempotency: the caller passes a per-attempt key. Two layers of safety:
+ *  1. We refuse in our own DB walls (transactions.stripe_transfer_id IS NULL)
+ *     before this is ever called → blocks accidental double-fires.
+ *  2. Stripe's idempotency key blocks the same network call from creating two
+ *     transfers within Stripe's 24h cache window.
+ * Per-attempt (not per-claim) means a transient failure can be safely retried
+ * with a new key — important because Stripe locks a key to its first request's
+ * parameters, including ones that fail.
+ */
+export async function createTransferForClaim(args: {
+  amountCents: number;
+  destinationAccountId: string;
+  claimId: string;
+  idempotencyKey: string;
+  metadata: Record<string, string>;
+}): Promise<string> {
+  const transfer = await client().transfers.create(
+    {
+      amount: args.amountCents,
+      currency: 'usd',
+      destination: args.destinationAccountId,
+      transfer_group: args.claimId,
+      metadata: args.metadata,
+    },
+    { idempotencyKey: args.idempotencyKey },
+  );
+  return transfer.id;
+}
+
 /** Minimal shape the webhook handler reads — avoids depending on Stripe.Event. */
 export interface StripeWebhookEvent {
   type: string;
-  data: { object: { id: string; metadata?: Record<string, string> } };
+  /** Present on Connect events. Identifies which connected account the event is for. */
+  account?: string;
+  data: {
+    object: {
+      id: string;
+      metadata?: Record<string, string>;
+      [key: string]: unknown;
+    };
+  };
 }
 
 /** Verifies + parses a Stripe webhook event. Throws if the signature is bad. */

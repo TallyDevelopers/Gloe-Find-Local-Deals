@@ -2,19 +2,23 @@
 
 import { UserButton } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 import type { RouterOutputs } from '@gloe/api-client';
 
 import { Button, Card } from '../../components/ui';
 import { Wordmark } from '../../components/Wordmark';
 import { trpc } from '../../lib/trpc';
+import { ScanTab } from './ScanTab';
 
 interface VendorDashboardProps {
   vendor: { id: string; businessName: string; slug: string; status: string };
 }
 
 type SetupData = RouterOutputs['vendor']['setupStatus'] | undefined;
+type HubSnapshot = RouterOutputs['vendor']['hubSnapshot'];
+type Voucher = RouterOutputs['vendor']['vouchers'][number];
+type VendorDeal = RouterOutputs['vendor']['listDeals'][number];
 
 interface StepDef {
   key: 'license' | 'stripe' | 'provider' | 'photos';
@@ -29,39 +33,59 @@ const STEPS: StepDef[] = [
   { key: 'photos', label: 'Practice photos', required: false },
 ];
 
+type Tab = 'hub' | 'scan' | 'deals' | 'settings';
+
+function money(cents: number): string {
+  return '$' + (cents / 100).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+function moneyDetail(cents: number): string {
+  return '$' + (cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 export function VendorDashboard({ vendor }: VendorDashboardProps) {
   const router = useRouter();
   const utils = trpc.useUtils();
   const setupQuery = trpc.vendor.setupStatus.useQuery();
-  const dealsQuery = trpc.vendor.listDeals.useQuery();
   const setup = setupQuery.data;
-  const deals = dealsQuery.data ?? [];
+  const [tab, setTab] = useState<Tab>('hub');
 
-  // Sweep any elapsed deals to 'expired' on load so the list is accurate.
+  // Sweep any elapsed deals to 'expired' on load so lists stay accurate.
   const sweep = trpc.vendor.sweepExpired.useMutation();
   useEffect(() => {
     sweep.mutateAsync().then((r) => {
-      if (r.expired > 0) void utils.vendor.listDeals.invalidate();
+      if (r.expired > 0) {
+        void utils.vendor.listDeals.invalidate();
+        void utils.vendor.hubSnapshot.invalidate();
+        void utils.vendor.vouchers.invalidate();
+      }
     }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
-    <div style={{ minHeight: '100vh' }}>
-      <header style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--surface-elevated)' }}>
+    <div style={{ minHeight: '100vh', paddingBottom: 80 }}>
+      <header
+        style={{
+          borderBottom: '1px solid var(--border-subtle)',
+          background: 'var(--surface-elevated)',
+          position: 'sticky',
+          top: 0,
+          zIndex: 20,
+        }}
+      >
         <div
           style={{
             maxWidth: 960,
             margin: '0 auto',
-            padding: '16px 32px',
+            padding: '14px 18px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
           }}
         >
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-            <Wordmark size={24} tone="gold" />
-            <span style={{ fontSize: 12, letterSpacing: '0.08em', color: 'var(--text-tertiary)' }}>
+            <Wordmark size={22} tone="gold" />
+            <span style={{ fontSize: 11, letterSpacing: '0.08em', color: 'var(--text-tertiary)' }}>
               FOR BUSINESS
             </span>
           </div>
@@ -69,86 +93,690 @@ export function VendorDashboard({ vendor }: VendorDashboardProps) {
         </div>
       </header>
 
-      <main className="page-main" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-        <Hero
-          vendor={vendor}
-          setup={setup}
-          loading={setupQuery.isLoading}
-          onPost={() => router.push('/vendor/post')}
-        />
-        {setup?.canPostDeals ? null : <SetupChecklist setup={setup} />}
-        {setup?.canPostDeals ? <DealList deals={deals} loading={dealsQuery.isLoading} /> : null}
-        <StatRow />
+      <main className="page-main" style={{ display: 'flex', flexDirection: 'column', gap: 18, paddingTop: 20 }}>
+        {tab === 'hub' ? (
+          <HubTab vendor={vendor} setup={setup} onPost={() => router.push('/vendor/post')} />
+        ) : null}
+        {tab === 'scan' ? <ScanTab canScan={setup?.canPostDeals ?? false} /> : null}
+        {tab === 'deals' ? <DealsTab onPost={() => router.push('/vendor/post')} /> : null}
+        {tab === 'settings' ? <SettingsTab setup={setup} /> : null}
       </main>
+
+      <BottomTabs tab={tab} setTab={setTab} />
     </div>
   );
 }
 
-function Hero({
+/* ---------- HUB TAB ---------- */
+
+function HubTab({
   vendor,
   setup,
-  loading,
   onPost,
 }: {
   vendor: VendorDashboardProps['vendor'];
   setup: SetupData;
-  loading: boolean;
   onPost: () => void;
 }) {
-  const pending = vendor.status === 'pending_approval' || vendor.status === 'rejected';
-  const approved = setup?.isApproved ?? vendor.status === 'active';
+  const snap = trpc.vendor.hubSnapshot.useQuery();
+  const stripeMoney = trpc.vendor.stripeMoney.useQuery();
   const canPost = setup?.canPostDeals ?? false;
 
-  let eyebrow: string;
-  let eyebrowColor: string;
-  let note: string;
-  let ctaLabel: string;
-  let ctaDisabled: boolean;
+  return (
+    <>
+      <HubHeader
+        vendor={vendor}
+        canPost={canPost}
+        onPost={canPost ? onPost : undefined}
+      />
+      {!canPost ? <SetupBanner setup={setup} /> : null}
+      <TodayCard data={snap.data} loading={snap.isLoading} />
+      <MoneyCard
+        snap={snap.data}
+        loading={snap.isLoading}
+        stripeAvailableCents={stripeMoney.data?.availableCents ?? null}
+        stripePendingCents={stripeMoney.data?.pendingCents ?? null}
+        stripeLoading={stripeMoney.isLoading}
+      />
+      <VouchersCard />
+    </>
+  );
+}
 
-  if (canPost) {
-    eyebrow = '● Active';
-    eyebrowColor = 'var(--success)';
-    note = "You're all set. Post a deal and start reaching clients searching near you right now.";
-    ctaLabel = '+ Post a deal';
-    ctaDisabled = false;
-  } else if (approved) {
-    eyebrow = '✦ You’re approved!';
-    eyebrowColor = 'var(--success)';
-    note =
-      'Welcome to Gloē — so glad to have you. Just a couple things left, then you can post your first deal and start reaching clients near you.';
-    ctaLabel = 'Finish setup';
-    ctaDisabled = false;
-  } else if (pending) {
-    eyebrow = '● Pending review';
-    eyebrowColor = 'var(--brand-500)';
-    note =
-      "We're reviewing your account — usually within a day. Finish your setup now so you're ready to post the moment you're approved.";
-    ctaLabel = 'Post a deal';
-    ctaDisabled = true;
-  } else {
-    eyebrow = `● ${vendor.status}`;
-    eyebrowColor = 'var(--text-tertiary)';
-    note = 'Contact support to reactivate your account.';
-    ctaLabel = 'Post a deal';
-    ctaDisabled = true;
+function HubHeader({
+  vendor,
+  canPost,
+  onPost,
+}: {
+  vendor: VendorDashboardProps['vendor'];
+  canPost: boolean;
+  onPost?: () => void;
+}) {
+  const pill = (() => {
+    if (vendor.status === 'suspended') return { label: 'Suspended', color: 'var(--error)' };
+    if (vendor.status === 'paused')    return { label: 'Paused',    color: 'var(--text-tertiary)' };
+    if (vendor.status === 'pending_approval') return { label: 'In review', color: 'var(--brand-500)' };
+    if (canPost) return { label: 'Active', color: 'var(--success)' };
+    return { label: 'Setup', color: 'var(--accent-500)' };
+  })();
+
+  return (
+    <div className="dash-header">
+      <div style={{ minWidth: 0 }}>
+        <h1 style={{ fontSize: 28, lineHeight: 1.2 }}>{vendor.businessName}</h1>
+        <span
+          style={{
+            display: 'inline-block',
+            marginTop: 4,
+            fontSize: 12,
+            fontWeight: 700,
+            letterSpacing: '0.04em',
+            color: pill.color,
+          }}
+        >
+          ● {pill.label.toUpperCase()}
+        </span>
+      </div>
+      {canPost && onPost ? <Button onClick={onPost}>+ Post a deal</Button> : null}
+    </div>
+  );
+}
+
+function SetupBanner({ setup }: { setup: SetupData }) {
+  const stepsLeft = setup
+    ? STEPS.filter((s) => s.required && !setup.steps[s.key]).length
+    : 0;
+  return (
+    <Card style={{ background: 'var(--brand-50)', border: '1px solid var(--brand-100)' }}>
+      <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>
+        {stepsLeft > 0
+          ? `Finish ${stepsLeft} step${stepsLeft === 1 ? '' : 's'} to start posting deals.`
+          : "You're approved — just a couple steps left."}
+      </div>
+      <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
+        Open <strong>Settings</strong> to connect Stripe, add your license, and finish setup.
+      </div>
+    </Card>
+  );
+}
+
+function TodayCard({ data, loading }: { data: HubSnapshot | undefined; loading: boolean }) {
+  if (loading || !data) {
+    return (
+      <Card>
+        <CardTitle>Today</CardTitle>
+        <div style={{ color: 'var(--text-tertiary)' }}>Loading…</div>
+      </Card>
+    );
   }
+  return (
+    <Card>
+      <CardTitle>Today</CardTitle>
+      <div className="stat-grid" style={{ marginTop: 4 }}>
+        <BigStat
+          value={money(data.soldToday.cents)}
+          label={`Sold today · ${data.soldToday.count} sale${data.soldToday.count === 1 ? '' : 's'}`}
+          hero
+        />
+        <BigStat
+          value={String(data.redeemedToday)}
+          label="Redeemed today"
+        />
+        <BigStat
+          value={String(data.activeVouchers.count)}
+          label={
+            data.activeVouchers.nextExpiresAt
+              ? `Active vouchers · next ${shortDate(data.activeVouchers.nextExpiresAt)}`
+              : 'Active vouchers'
+          }
+        />
+      </div>
+    </Card>
+  );
+}
+
+function MoneyCard({
+  snap,
+  loading,
+  stripeAvailableCents,
+  stripePendingCents,
+  stripeLoading,
+}: {
+  snap: HubSnapshot | undefined;
+  loading: boolean;
+  stripeAvailableCents: number | null;
+  stripePendingCents: number | null;
+  stripeLoading: boolean;
+}) {
+  const dashboard = trpc.vendor.stripeDashboardLink.useMutation({
+    onSuccess: ({ url }) => window.open(url, '_blank'),
+  });
+
+  return (
+    <Card>
+      <CardTitle>Money</CardTitle>
+
+      <div className="stat-grid" style={{ marginTop: 4 }}>
+        <MoneyStat
+          label="In your Stripe account"
+          value={stripeAvailableCents == null ? (stripeLoading ? '…' : '—') : moneyDetail(stripeAvailableCents)}
+          sub={
+            stripePendingCents != null && stripePendingCents > 0
+              ? `+ ${moneyDetail(stripePendingCents)} pending`
+              : undefined
+          }
+          hero
+        />
+        <MoneyStat
+          label="Queued for transfer"
+          value={loading || !snap ? '…' : moneyDetail(snap.held.cents)}
+          sub={!loading && snap ? `${snap.held.count} voucher${snap.held.count === 1 ? '' : 's'}` : undefined}
+        />
+        <MoneyStat
+          label="Paid out · last 7d"
+          value={loading || !snap ? '…' : moneyDetail(snap.paid7dCents)}
+          sub={!loading && snap && snap.inTransitCents > 0 ? `+ ${moneyDetail(snap.inTransitCents)} in transit` : undefined}
+        />
+      </div>
+
+      <InstantPayoutInline />
+
+      {snap && snap.failedPayoutCount > 0 ? (
+        <div
+          style={{
+            marginTop: 14,
+            padding: '12px 16px',
+            background: 'rgba(178,69,69,0.08)',
+            border: '1px solid rgba(178,69,69,0.25)',
+            borderRadius: 'var(--radius-md)',
+            display: 'flex',
+            gap: 12,
+            alignItems: 'flex-start',
+            flexWrap: 'wrap',
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--error)' }}>
+              {snap.failedPayoutCount} payout{snap.failedPayoutCount === 1 ? '' : 's'} failed to reach your bank
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 2 }}>
+              Usually a wrong routing number or a closed account. Open your Stripe dashboard to fix it.
+            </div>
+          </div>
+          <button
+            onClick={() => dashboard.mutate()}
+            disabled={dashboard.isPending}
+            style={pillButton('error')}
+          >
+            {dashboard.isPending ? '…' : 'Open Stripe'}
+          </button>
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
+function InstantPayoutInline() {
+  const utils = trpc.useUtils();
+  const statusQ = trpc.vendor.instantPayoutStatus.useQuery();
+  const [confirming, setConfirming] = useState(false);
+  const request = trpc.vendor.requestInstantPayout.useMutation({
+    onSuccess: () => {
+      setConfirming(false);
+      void utils.vendor.stripeMoney.invalidate();
+      void utils.vendor.hubSnapshot.invalidate();
+      void utils.vendor.instantPayoutStatus.invalidate();
+    },
+  });
+
+  if (!statusQ.data) return null;
+  const { optedIn, eligible, availableCents, feePercent } = statusQ.data;
+  if (!optedIn) return null;
+  if (availableCents <= 0) return null;
+
+  const fee = Math.round(availableCents * (feePercent / 100));
+  const net = availableCents - fee;
+
+  return (
+    <div
+      style={{
+        marginTop: 14,
+        padding: '14px 16px',
+        background: 'var(--brand-50)',
+        border: '1px solid var(--brand-100)',
+        borderRadius: 'var(--radius-md)',
+      }}
+    >
+      {!confirming ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ flex: 1, minWidth: 180 }}>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>
+              Pay yourself now — {moneyDetail(availableCents)} available
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 2 }}>
+              {feePercent}% fee · arrives on your debit card in ~30 min
+            </div>
+          </div>
+          <button
+            onClick={() => setConfirming(true)}
+            disabled={!eligible}
+            style={pillButton('brand')}
+          >
+            Pay me now
+          </button>
+        </div>
+      ) : (
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>
+            Confirm instant payout
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, padding: '4px 0' }}>
+            <span style={{ color: 'var(--text-secondary)' }}>Payout amount</span>
+            <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{moneyDetail(availableCents)}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14, padding: '4px 0' }}>
+            <span style={{ color: 'var(--text-secondary)' }}>Fee ({feePercent}%)</span>
+            <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>− {moneyDetail(fee)}</span>
+          </div>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              fontSize: 16,
+              padding: '8px 0',
+              borderTop: '1px solid var(--border-subtle)',
+              marginTop: 6,
+            }}
+          >
+            <span style={{ fontWeight: 700 }}>You receive</span>
+            <span style={{ fontWeight: 700, color: 'var(--brand-600)', fontVariantNumeric: 'tabular-nums' }}>
+              {moneyDetail(net)}
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 12, justifyContent: 'flex-end' }}>
+            <button
+              onClick={() => setConfirming(false)}
+              disabled={request.isPending}
+              style={{
+                padding: '8px 14px',
+                fontSize: 13,
+                fontWeight: 600,
+                borderRadius: 999,
+                border: '1px solid var(--border-default)',
+                background: 'var(--surface-elevated)',
+                color: 'var(--text-primary)',
+                minHeight: 36,
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => request.mutate({ amountCents: availableCents })}
+              disabled={request.isPending}
+              style={pillButton('brand')}
+            >
+              {request.isPending ? 'Sending…' : 'Confirm payout'}
+            </button>
+          </div>
+          {request.error ? (
+            <div style={{ marginTop: 10, fontSize: 13, color: 'var(--error)' }}>
+              {request.error.message}
+            </div>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------- Vouchers card with tabs ---------- */
+
+function VouchersCard() {
+  const [tab, setTab] = useState<'active' | 'redeemed' | 'past'>('active');
+  const q = trpc.vendor.vouchers.useQuery({ tab });
+  const rows = q.data ?? [];
+
+  return (
+    <Card>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12, flexWrap: 'wrap', gap: 10 }}>
+        <CardTitle>Vouchers</CardTitle>
+        <div style={{ display: 'flex', gap: 6, fontSize: 13 }}>
+          <TabChip on={tab === 'active'}   onClick={() => setTab('active')}>Active</TabChip>
+          <TabChip on={tab === 'redeemed'} onClick={() => setTab('redeemed')}>Redeemed</TabChip>
+          <TabChip on={tab === 'past'}     onClick={() => setTab('past')}>Past</TabChip>
+        </div>
+      </div>
+      {q.isLoading ? (
+        <div style={{ color: 'var(--text-tertiary)', fontSize: 14 }}>Loading…</div>
+      ) : rows.length === 0 ? (
+        <div style={{ color: 'var(--text-tertiary)', fontSize: 14 }}>
+          {tab === 'active' && 'No active vouchers right now.'}
+          {tab === 'redeemed' && 'No redemptions yet.'}
+          {tab === 'past' && 'Nothing here.'}
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {rows.map((v, i) => (
+            <VoucherRow key={v.claimId} v={v} last={i === rows.length - 1} tab={tab} />
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function VoucherRow({ v, last, tab }: { v: Voucher; last: boolean; tab: 'active' | 'redeemed' | 'past' }) {
+  const sub = (() => {
+    if (tab === 'active') return v.expiresAt ? `Expires ${shortDate(v.expiresAt)} · code ${v.humanCode}` : `Code ${v.humanCode}`;
+    if (tab === 'redeemed') return v.redeemedAt ? `Redeemed ${shortDate(v.redeemedAt)}` : 'Redeemed';
+    return v.status === 'cancelled' ? `Cancelled · ${shortDate(v.createdAt)}` : `Expired · ${shortDate(v.expiresAt)}`;
+  })();
+  const tone = (() => {
+    if (tab === 'active') return { label: 'Active', color: 'var(--brand-500)' };
+    if (tab === 'redeemed') return { label: 'Redeemed', color: 'var(--success)' };
+    return { label: v.status === 'cancelled' ? 'Cancelled' : 'Expired', color: 'var(--text-tertiary)' };
+  })();
+  return (
+    <div
+      style={{
+        display: 'flex',
+        gap: 12,
+        padding: '12px 0',
+        borderBottom: last ? 'none' : '1px solid var(--border-subtle)',
+        alignItems: 'center',
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 15, fontWeight: 600, lineHeight: 1.3 }}>
+          {v.dealTitle}
+        </div>
+        <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 2 }}>
+          {v.customerFirstName ?? 'Customer'} · {v.variantLabel} · {sub}
+        </div>
+      </div>
+      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+        <div style={{ fontSize: 15, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+          {money(v.dealPriceCents)}
+        </div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: tone.color, marginTop: 2 }}>
+          {tone.label.toUpperCase()}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- DEALS TAB ---------- */
+
+const DEAL_STATUS_LABEL: Record<string, { label: string; color: string }> = {
+  active:         { label: 'Live',      color: 'var(--success)' },
+  pending_review: { label: 'In review', color: 'var(--brand-500)' },
+  draft:          { label: 'Draft',     color: 'var(--text-tertiary)' },
+  paused:         { label: 'Paused',    color: 'var(--text-tertiary)' },
+  expired:        { label: 'Expired',   color: 'var(--text-tertiary)' },
+  sold_out:       { label: 'Sold out',  color: 'var(--accent-500)' },
+  rejected:       { label: 'Rejected',  color: 'var(--error)' },
+};
+
+function DealsTab({ onPost }: { onPost: () => void }) {
+  const setupQuery = trpc.vendor.setupStatus.useQuery();
+  const dealsQuery = trpc.vendor.listDeals.useQuery();
+  const setup = setupQuery.data;
+  const deals = dealsQuery.data ?? [];
 
   return (
     <>
       <div className="dash-header">
-        <div>
-          <h1 style={{ fontSize: 36 }}>{vendor.businessName}</h1>
-          <span style={{ color: eyebrowColor, fontWeight: 600, fontSize: 15 }}>{eyebrow}</span>
+        <h1 style={{ fontSize: 28 }}>Deals</h1>
+        {setup?.canPostDeals ? <Button onClick={onPost}>+ Post a deal</Button> : null}
+      </div>
+      {!setup?.canPostDeals ? (
+        <SetupBanner setup={setup} />
+      ) : (
+        <DealList deals={deals} loading={dealsQuery.isLoading} />
+      )}
+    </>
+  );
+}
+
+function DealList({ deals, loading }: { deals: VendorDeal[]; loading: boolean }) {
+  const router = useRouter();
+  const utils = trpc.useUtils();
+  const setStatus = trpc.vendor.setDealStatus.useMutation({
+    onSuccess: () => utils.vendor.listDeals.invalidate(),
+  });
+
+  if (loading) return null;
+  return (
+    <Card>
+      {deals.length === 0 ? (
+        <p style={{ color: 'var(--text-tertiary)', fontSize: 15 }}>
+          No deals yet. Tap “+ Post a deal” to create your first one.
+        </p>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {deals.map((deal, i) => {
+            const status = DEAL_STATUS_LABEL[deal.status] ?? DEAL_STATUS_LABEL.draft;
+            const price = deal.headlinePriceCents != null ? money(deal.headlinePriceCents) : '—';
+            const editable = deal.status !== 'expired' && deal.status !== 'sold_out';
+            const expiry = expiryNote(deal.status, deal.expiresAt);
+            return (
+              <div
+                key={deal.id}
+                style={{ borderBottom: i === deals.length - 1 ? 'none' : '1px solid var(--border-subtle)' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 0', flexWrap: 'wrap' }}>
+                  <div
+                    style={{
+                      width: 56,
+                      height: 56,
+                      borderRadius: 'var(--radius-md)',
+                      background: deal.primaryPhotoUrl
+                        ? `center/cover url(${deal.primaryPhotoUrl})`
+                        : 'var(--surface-secondary)',
+                      flexShrink: 0,
+                    }}
+                  />
+                  <div style={{ flex: 1, minWidth: 120 }}>
+                    <div style={{ fontSize: 16, fontWeight: 600 }}>{deal.title}</div>
+                    <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>
+                      {deal.categoryName} · {price} · {deal.variantCount} option{deal.variantCount === 1 ? '' : 's'}
+                      {expiry ? ` · ${expiry}` : ''}
+                    </div>
+                  </div>
+                  <span style={{ color: status?.color, fontSize: 13, fontWeight: 600 }}>{status?.label}</span>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {deal.status === 'active' ? (
+                      <DealAction label="Pause" onClick={() => setStatus.mutate({ dealId: deal.id, to: 'paused' })} disabled={setStatus.isPending} />
+                    ) : null}
+                    {deal.status === 'paused' ? (
+                      <DealAction label="Resume" onClick={() => setStatus.mutate({ dealId: deal.id, to: 'active' })} disabled={setStatus.isPending} />
+                    ) : null}
+                    {deal.status === 'draft' ? (
+                      <DealAction label="Submit" onClick={() => setStatus.mutate({ dealId: deal.id, to: 'pending_review' })} disabled={setStatus.isPending} />
+                    ) : null}
+                    {editable ? (
+                      <DealAction label={deal.status === 'rejected' ? 'Fix' : 'Edit'} onClick={() => router.push(`/vendor/post?edit=${deal.id}`)} />
+                    ) : null}
+                  </div>
+                </div>
+                {deal.status === 'rejected' && deal.rejectionReason ? (
+                  <div style={{ background: 'rgba(178,69,69,0.08)', border: '1px solid rgba(178,69,69,0.25)', borderRadius: 'var(--radius-md)', padding: '10px 14px', marginBottom: 14, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                    <span style={{ color: 'var(--error)', fontWeight: 700, fontSize: 14 }}>⚠</span>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--error)' }}>Needs changes before it can go live</div>
+                      <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 2 }}>{deal.rejectionReason}</div>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
-        <Button disabled={ctaDisabled || loading} onClick={ctaDisabled ? undefined : onPost}>
-          {ctaLabel}
-        </Button>
+      )}
+    </Card>
+  );
+}
+
+function DealAction({ label, onClick, disabled }: { label: string; onClick: () => void; disabled?: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        padding: '8px 14px',
+        fontSize: 13,
+        fontWeight: 600,
+        borderRadius: 999,
+        border: '1px solid var(--border-default)',
+        background: 'var(--surface-elevated)',
+        color: 'var(--text-primary)',
+        opacity: disabled ? 0.5 : 1,
+        minHeight: 36,
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+/* ---------- SETTINGS TAB ---------- */
+
+function SettingsTab({ setup }: { setup: SetupData }) {
+  return (
+    <>
+      <h1 style={{ fontSize: 28 }}>Settings</h1>
+      <SetupChecklist setup={setup} />
+      {setup?.canPostDeals ? <InstantPayoutCard /> : null}
+      <StripeAccessCard />
+    </>
+  );
+}
+
+function InstantPayoutCard() {
+  const utils = trpc.useUtils();
+  const statusQ = trpc.vendor.instantPayoutStatus.useQuery();
+  const toggle = trpc.vendor.setInstantPayoutEnabled.useMutation({
+    onSuccess: () => {
+      void utils.vendor.instantPayoutStatus.invalidate();
+    },
+  });
+  const dashboard = trpc.vendor.stripeDashboardLink.useMutation({
+    onSuccess: ({ url }) => window.open(url, '_blank'),
+  });
+
+  const optedIn = statusQ.data?.optedIn ?? false;
+  const eligible = statusQ.data?.eligible ?? false;
+  const reason = statusQ.data?.reason ?? null;
+  const fee = statusQ.data?.feePercent ?? 3;
+
+  return (
+    <Card>
+      <h2 style={{ fontSize: 19, marginBottom: 4 }}>Instant payouts</h2>
+      <p style={{ color: 'var(--text-tertiary)', fontSize: 14, marginBottom: 16 }}>
+        Get paid in ~30 minutes for a {fee}% fee. Otherwise, Stripe pays you to your bank on its
+        regular schedule (free, 1–2 business days).
+      </p>
+
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 16,
+          padding: '12px 0',
+          borderTop: '1px solid var(--border-subtle)',
+        }}
+      >
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 15, fontWeight: 600 }}>Enable instant payouts ({fee}% fee)</div>
+          <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 2 }}>
+            When ON, a “Pay me now” button appears on your Hub whenever you have a balance.
+          </div>
+        </div>
+        <Toggle
+          on={optedIn}
+          disabled={toggle.isPending || statusQ.isLoading}
+          onChange={(next) => toggle.mutate({ enabled: next })}
+        />
       </div>
 
-      <Card style={{ background: approved && !canPost ? 'var(--brand-50)' : 'var(--surface-secondary)' }}>
-        <p style={{ color: 'var(--text-secondary)', fontSize: 16, lineHeight: 1.5 }}>{note}</p>
-      </Card>
-    </>
+      {optedIn && !eligible ? (
+        <div
+          style={{
+            marginTop: 12,
+            padding: '12px 14px',
+            background: 'rgba(178,93,64,0.08)',
+            border: '1px solid rgba(178,93,64,0.25)',
+            borderRadius: 'var(--radius-md)',
+            display: 'flex',
+            gap: 12,
+            alignItems: 'flex-start',
+            flexWrap: 'wrap',
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--accent-500)' }}>
+              One more step
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 2 }}>
+              {reason ?? 'Add a debit card in your Stripe dashboard.'}
+            </div>
+          </div>
+          <button
+            onClick={() => dashboard.mutate()}
+            disabled={dashboard.isPending}
+            style={pillButton('brand')}
+          >
+            {dashboard.isPending ? '…' : 'Open Stripe'}
+          </button>
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
+function Toggle({
+  on,
+  disabled,
+  onChange,
+}: {
+  on: boolean;
+  disabled?: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <button
+      role="switch"
+      aria-checked={on}
+      disabled={disabled}
+      onClick={() => onChange(!on)}
+      style={{
+        position: 'relative',
+        width: 46,
+        height: 26,
+        borderRadius: 999,
+        border: 'none',
+        background: on ? 'var(--brand-500)' : 'var(--surface-secondary)',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.5 : 1,
+        flexShrink: 0,
+        transition: 'background 120ms',
+      }}
+    >
+      <span
+        style={{
+          position: 'absolute',
+          top: 3,
+          left: on ? 23 : 3,
+          width: 20,
+          height: 20,
+          borderRadius: '50%',
+          background: 'white',
+          transition: 'left 120ms',
+          boxShadow: '0 1px 2px rgba(0,0,0,0.2)',
+        }}
+      />
+    </button>
   );
 }
 
@@ -158,7 +786,6 @@ function SetupChecklist({ setup }: { setup: SetupData }) {
       window.location.href = onboardingUrl;
     },
   });
-
   const startStripe = () => {
     const base = window.location.origin + '/vendor';
     onboard.mutate({ refreshUrl: base, returnUrl: base });
@@ -166,14 +793,14 @@ function SetupChecklist({ setup }: { setup: SetupData }) {
 
   return (
     <Card>
-      <h2 style={{ fontSize: 22, marginBottom: 4 }}>Finish your setup</h2>
-      <p style={{ color: 'var(--text-tertiary)', fontSize: 14, marginBottom: 20 }}>
+      <h2 style={{ fontSize: 19, marginBottom: 4 }}>Setup</h2>
+      <p style={{ color: 'var(--text-tertiary)', fontSize: 14, marginBottom: 16 }}>
         Required steps unlock posting. The rest make your listings shine.
       </p>
       <div style={{ display: 'flex', flexDirection: 'column' }}>
-        <Row label="Business details" done required={false} last={false} />
+        <SetupRow label="Business details" done required={false} last={false} />
         {STEPS.map((step, i) => (
-          <Row
+          <SetupRow
             key={step.key}
             label={step.label}
             required={step.required}
@@ -188,7 +815,29 @@ function SetupChecklist({ setup }: { setup: SetupData }) {
   );
 }
 
-function Row({
+function StripeAccessCard() {
+  const dashboard = trpc.vendor.stripeDashboardLink.useMutation({
+    onSuccess: ({ url }) => window.open(url, '_blank'),
+  });
+  return (
+    <Card>
+      <h2 style={{ fontSize: 19, marginBottom: 4 }}>Stripe account</h2>
+      <p style={{ color: 'var(--text-tertiary)', fontSize: 14, marginBottom: 14 }}>
+        View payouts, update your bank, or download tax forms.
+      </p>
+      <Button variant="secondary" onClick={() => dashboard.mutate()} disabled={dashboard.isPending}>
+        {dashboard.isPending ? 'Opening…' : 'Open Stripe dashboard'}
+      </Button>
+      {dashboard.error ? (
+        <div style={{ marginTop: 10, fontSize: 13, color: 'var(--error)' }}>
+          {dashboard.error.message}
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
+function SetupRow({
   label,
   done,
   required,
@@ -209,11 +858,13 @@ function Row({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
-        padding: '14px 0',
+        padding: '12px 0',
         borderBottom: last ? 'none' : '1px solid var(--border-subtle)',
+        gap: 10,
+        flexWrap: 'wrap',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 180 }}>
         <span
           style={{
             width: 22,
@@ -232,7 +883,7 @@ function Row({
         >
           {done ? '✓' : ''}
         </span>
-        <span style={{ fontSize: 16, color: done ? 'var(--text-tertiary)' : 'var(--text-primary)' }}>
+        <span style={{ fontSize: 15, color: done ? 'var(--text-tertiary)' : 'var(--text-primary)' }}>
           {label}
         </span>
         {required && !done ? (
@@ -252,7 +903,7 @@ function Row({
         ) : null}
       </div>
       {!done ? (
-        <Button variant="ghost" style={{ padding: '6px 14px', fontSize: 14 }} onClick={onAction}>
+        <Button variant="ghost" style={{ padding: '8px 14px', fontSize: 14, minHeight: 36 }} onClick={onAction}>
           {actionLabel}
         </Button>
       ) : null}
@@ -260,128 +911,108 @@ function Row({
   );
 }
 
-type VendorDeal = RouterOutputs['vendor']['listDeals'][number];
+/* ---------- shared bits ---------- */
 
-const DEAL_STATUS_LABEL: Record<string, { label: string; color: string }> = {
-  active: { label: 'Live', color: 'var(--success)' },
-  pending_review: { label: 'In review', color: 'var(--brand-500)' },
-  draft: { label: 'Draft', color: 'var(--text-tertiary)' },
-  paused: { label: 'Paused', color: 'var(--text-tertiary)' },
-  expired: { label: 'Expired', color: 'var(--text-tertiary)' },
-  sold_out: { label: 'Sold out', color: 'var(--accent-500)' },
-  rejected: { label: 'Rejected', color: 'var(--error)' },
-};
+function CardTitle({ children }: { children: React.ReactNode }) {
+  return <h2 style={{ fontSize: 19, marginBottom: 4 }}>{children}</h2>;
+}
 
-function DealList({ deals, loading }: { deals: VendorDeal[]; loading: boolean }) {
-  const router = useRouter();
-  const utils = trpc.useUtils();
-  const setStatus = trpc.vendor.setDealStatus.useMutation({
-    onSuccess: () => utils.vendor.listDeals.invalidate(),
-  });
-
-  if (loading) return null;
+function BigStat({ value, label, hero }: { value: string; label: string; hero?: boolean }) {
   return (
-    <Card>
-      <h2 style={{ fontSize: 22, marginBottom: 16 }}>Your deals</h2>
-      {deals.length === 0 ? (
-        <p style={{ color: 'var(--text-tertiary)', fontSize: 15 }}>
-          No deals yet. Tap “+ Post a deal” to create your first one.
-        </p>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          {deals.map((deal, i) => {
-            const status = DEAL_STATUS_LABEL[deal.status] ?? DEAL_STATUS_LABEL.draft;
-            const price = deal.headlinePriceCents != null ? `$${(deal.headlinePriceCents / 100).toFixed(0)}` : '—';
-            const editable = deal.status !== 'expired' && deal.status !== 'sold_out';
-            const expiry = expiryNote(deal.status, deal.expiresAt);
-            return (
-              <div
-                key={deal.id}
-                style={{
-                  borderBottom: i === deals.length - 1 ? 'none' : '1px solid var(--border-subtle)',
-                }}
-              >
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 14,
-                  padding: '14px 0',
-                  flexWrap: 'wrap',
-                }}
-              >
-                <div
-                  style={{
-                    width: 56,
-                    height: 56,
-                    borderRadius: 'var(--radius-md)',
-                    background: deal.primaryPhotoUrl
-                      ? `center/cover url(${deal.primaryPhotoUrl})`
-                      : 'var(--surface-secondary)',
-                    flexShrink: 0,
-                  }}
-                />
-                <div style={{ flex: 1, minWidth: 120 }}>
-                  <div style={{ fontSize: 16, fontWeight: 600 }}>{deal.title}</div>
-                  <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>
-                    {deal.categoryName} · {price} · {deal.variantCount} option{deal.variantCount === 1 ? '' : 's'}
-                    {expiry ? ` · ${expiry}` : ''}
-                  </div>
-                </div>
-                <span style={{ color: status?.color, fontSize: 13, fontWeight: 600 }}>{status?.label}</span>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  {deal.status === 'active' ? (
-                    <DealAction label="Pause" onClick={() => setStatus.mutate({ dealId: deal.id, to: 'paused' })} disabled={setStatus.isPending} />
-                  ) : null}
-                  {deal.status === 'paused' ? (
-                    <DealAction label="Resume" onClick={() => setStatus.mutate({ dealId: deal.id, to: 'active' })} disabled={setStatus.isPending} />
-                  ) : null}
-                  {deal.status === 'draft' ? (
-                    <DealAction label="Submit" onClick={() => setStatus.mutate({ dealId: deal.id, to: 'pending_review' })} disabled={setStatus.isPending} />
-                  ) : null}
-                  {editable ? (
-                    <DealAction label={deal.status === 'rejected' ? 'Fix & resubmit' : 'Edit'} onClick={() => router.push(`/vendor/post?edit=${deal.id}`)} />
-                  ) : null}
-                </div>
-              </div>
-
-              {deal.status === 'rejected' && deal.rejectionReason ? (
-                <div style={{ background: 'rgba(178,69,69,0.08)', border: '1px solid rgba(178,69,69,0.25)', borderRadius: 'var(--radius-md)', padding: '10px 14px', marginBottom: 14, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                  <span style={{ color: 'var(--error)', fontWeight: 700, fontSize: 14 }}>⚠</span>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--error)' }}>Needs changes before it can go live</div>
-                    <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 2 }}>{deal.rejectionReason}</div>
-                  </div>
-                </div>
-              ) : null}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </Card>
+    <div>
+      <div
+        style={{
+          fontSize: hero ? 30 : 24,
+          fontWeight: 700,
+          fontFamily: 'var(--font-display)',
+          color: hero ? 'var(--brand-600)' : 'var(--text-primary)',
+          fontVariantNumeric: 'tabular-nums',
+        }}
+      >
+        {value}
+      </div>
+      <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 2 }}>{label}</div>
+    </div>
   );
 }
 
-function DealAction({ label, onClick, disabled }: { label: string; onClick: () => void; disabled?: boolean }) {
+function MoneyStat({
+  label,
+  value,
+  sub,
+  hero,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  hero?: boolean;
+}) {
+  return (
+    <div>
+      <div
+        style={{
+          fontSize: hero ? 28 : 22,
+          fontWeight: 700,
+          fontFamily: 'var(--font-display)',
+          color: hero ? 'var(--brand-600)' : 'var(--text-primary)',
+          fontVariantNumeric: 'tabular-nums',
+        }}
+      >
+        {value}
+      </div>
+      <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 2 }}>{label}</div>
+      {sub ? (
+        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 4, fontStyle: 'italic' }}>
+          {sub}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function TabChip({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
       onClick={onClick}
-      disabled={disabled}
       style={{
         padding: '6px 12px',
+        borderRadius: 999,
+        border: on ? '1px solid var(--brand-500)' : '1px solid var(--border-default)',
+        background: on ? 'var(--brand-500)' : 'var(--surface-elevated)',
+        color: on ? 'white' : 'var(--text-primary)',
         fontSize: 13,
         fontWeight: 600,
-        borderRadius: 999,
-        border: '1px solid var(--border-default)',
-        background: 'var(--surface-elevated)',
-        color: 'var(--text-primary)',
-        opacity: disabled ? 0.5 : 1,
+        minHeight: 32,
       }}
     >
-      {label}
+      {children}
     </button>
   );
+}
+
+function pillButton(tone: 'error' | 'brand'): React.CSSProperties {
+  const color = tone === 'error' ? 'var(--error)' : 'var(--brand-500)';
+  return {
+    padding: '8px 14px',
+    fontSize: 13,
+    fontWeight: 700,
+    borderRadius: 999,
+    border: `1px solid ${color}`,
+    background: color,
+    color: 'white',
+    minHeight: 36,
+    flexShrink: 0,
+  };
+}
+
+function shortDate(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  if (sameDay) {
+    return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+  return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
 /** Friendly expiry hint for live/paused deals. */
@@ -395,22 +1026,64 @@ function expiryNote(status: string, expiresAt: string): string | null {
   return `ends in ${hours}h`;
 }
 
-function StatRow() {
-  const stats = [
-    { label: 'Active deals', value: '0' },
-    { label: 'Redemptions this month', value: '0' },
-    { label: 'Earnings this month', value: '$0' },
+/* ---------- BOTTOM TABS (mobile-first nav) ---------- */
+
+function BottomTabs({ tab, setTab }: { tab: Tab; setTab: (t: Tab) => void }) {
+  const items: { key: Tab; icon: string; label: string }[] = [
+    { key: 'hub',      icon: '◐', label: 'Hub' },
+    { key: 'scan',     icon: '⛶', label: 'Scan' },
+    { key: 'deals',    icon: '✦', label: 'Deals' },
+    { key: 'settings', icon: '⚙', label: 'Settings' },
   ];
   return (
-    <div className="stat-grid">
-      {stats.map((stat) => (
-        <Card key={stat.label} style={{ padding: 24 }}>
-          <div style={{ fontSize: 32, fontWeight: 700, fontFamily: 'var(--font-display)' }}>
-            {stat.value}
-          </div>
-          <div style={{ color: 'var(--text-tertiary)', fontSize: 14 }}>{stat.label}</div>
-        </Card>
-      ))}
-    </div>
+    <nav
+      style={{
+        position: 'fixed',
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 30,
+        background: 'var(--surface-elevated)',
+        borderTop: '1px solid var(--border-subtle)',
+        paddingBottom: 'env(safe-area-inset-bottom, 0)',
+      }}
+    >
+      <div
+        style={{
+          maxWidth: 960,
+          margin: '0 auto',
+          display: 'flex',
+          justifyContent: 'space-around',
+        }}
+      >
+        {items.map((item) => {
+          const on = tab === item.key;
+          return (
+            <button
+              key={item.key}
+              onClick={() => setTab(item.key)}
+              style={{
+                flex: 1,
+                padding: '12px 8px',
+                background: 'none',
+                border: 'none',
+                color: on ? 'var(--brand-600)' : 'var(--text-tertiary)',
+                fontWeight: on ? 700 : 500,
+                fontSize: 12,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 4,
+                cursor: 'pointer',
+                minHeight: 56,
+              }}
+            >
+              <span style={{ fontSize: 18 }}>{item.icon}</span>
+              <span>{item.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </nav>
   );
 }

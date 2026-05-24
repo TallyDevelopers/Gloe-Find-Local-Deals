@@ -1,5 +1,565 @@
 import type { Sql } from '../db/client';
 
+/* ============================================================
+ * Global search — powers the ⌘K palette in god mode.
+ * Returns up to 5 hits per entity type. Cheap ILIKE; revisit when
+ * volume warrants a real search index.
+ * ============================================================ */
+export interface SearchHit {
+  kind: 'vendor' | 'customer' | 'transaction' | 'deal';
+  id: string;
+  title: string;
+  subtitle: string;
+  /** Route to navigate to when the user picks this hit. */
+  href: string;
+}
+
+export async function searchEverything(sql: Sql, query: string): Promise<SearchHit[]> {
+  const q = query.trim();
+  if (q.length < 2) return [];
+  const like = `%${q}%`;
+
+  const [vendors, customers, transactions, deals] = await Promise.all([
+    sql<{ id: string; business_name: string; city: string; stripe_account_status: string | null }[]>`
+      SELECT id, business_name, city, stripe_account_status
+      FROM public.vendors
+      WHERE business_name ILIKE ${like}
+      ORDER BY business_name LIMIT 5
+    `,
+    sql<{ id: string; first_name: string | null; last_name: string | null; email: string | null }[]>`
+      SELECT id, first_name, last_name, email
+      FROM public.users
+      WHERE (first_name ILIKE ${like} OR last_name ILIKE ${like} OR email ILIKE ${like})
+      ORDER BY first_name LIMIT 5
+    `,
+    sql<{ id: string; stripe_payment_intent_id: string | null; consumer_paid_cents: number; status: string; business_name: string }[]>`
+      SELECT t.id, t.stripe_payment_intent_id, t.consumer_paid_cents, t.status, v.business_name
+      FROM public.transactions t
+      JOIN public.vendors v ON v.id = t.vendor_id
+      WHERE t.stripe_payment_intent_id ILIKE ${like}
+         OR t.id::text = ${q}
+      ORDER BY t.created_at DESC LIMIT 5
+    `,
+    sql<{ id: string; title: string; business_name: string }[]>`
+      SELECT d.id, d.title, v.business_name
+      FROM public.deals d
+      JOIN public.vendors v ON v.id = d.vendor_id
+      WHERE d.title ILIKE ${like}
+      ORDER BY d.created_at DESC LIMIT 5
+    `,
+  ]);
+
+  const hits: SearchHit[] = [];
+  for (const v of vendors) {
+    hits.push({
+      kind: 'vendor',
+      id: v.id,
+      title: v.business_name,
+      subtitle: `${v.city} · Stripe ${v.stripe_account_status ?? 'none'}`,
+      href: `/admin/vendor/${v.id}`,
+    });
+  }
+  for (const c of customers) {
+    const name = [c.first_name, c.last_name].filter(Boolean).join(' ') || (c.email ?? 'Unnamed user');
+    hits.push({
+      kind: 'customer',
+      id: c.id,
+      title: name,
+      subtitle: c.email ?? c.id,
+      // Customers tab is a Session 2 build — fallback to a search-prefilled link for now.
+      href: `/admin?q=${encodeURIComponent(name)}`,
+    });
+  }
+  for (const t of transactions) {
+    hits.push({
+      kind: 'transaction',
+      id: t.id,
+      title: `$${(t.consumer_paid_cents / 100).toFixed(2)} · ${t.business_name}`,
+      subtitle: `${t.status} · ${t.stripe_payment_intent_id ?? t.id.slice(0, 8)}`,
+      href: `/admin?tx=${t.id}`,
+    });
+  }
+  for (const d of deals) {
+    hits.push({
+      kind: 'deal',
+      id: d.id,
+      title: d.title,
+      subtitle: d.business_name,
+      // Deal detail lives in vendor page; jump there + future-deal-detail-anchor.
+      href: `/admin/vendor/${d.id}`,
+    });
+  }
+  return hits;
+}
+
+/* ============================================================
+ * Pulse — at-a-glance "right now" for the admin home.
+ * Optimized for frequent polling; everything resolvable in <50ms.
+ * ============================================================ */
+export async function getAdminPulse(sql: Sql) {
+  const rows = await sql<{
+    paid_today_cents: number;
+    paid_today_count: number;
+    fee_today_cents: number;
+    redemptions_today: number;
+    in_flight_cents: number;
+    in_flight_count: number;
+    failed_payouts: number;
+    pending_deals: number;
+    vendors_blocked: number;
+    vendors_total: number;
+  }[]>`
+    SELECT
+      COALESCE((SELECT SUM(consumer_paid_cents) FROM public.transactions
+                WHERE status IN ('paid','released','partially_refunded')
+                  AND paid_at::date = current_date), 0)::int AS paid_today_cents,
+      COALESCE((SELECT COUNT(*) FROM public.transactions
+                WHERE status IN ('paid','released','partially_refunded')
+                  AND paid_at::date = current_date), 0)::int AS paid_today_count,
+      COALESCE((SELECT SUM(platform_fee_cents) FROM public.transactions
+                WHERE status IN ('paid','released','partially_refunded')
+                  AND paid_at::date = current_date), 0)::int AS fee_today_cents,
+      COALESCE((SELECT COUNT(*) FROM public.claims
+                WHERE status = 'redeemed' AND redeemed_at::date = current_date), 0)::int AS redemptions_today,
+      COALESCE((SELECT SUM(t.vendor_payout_cents)
+                FROM public.claims c
+                JOIN public.transactions t ON t.id = c.transaction_id
+                WHERE c.status = 'redeemed' AND t.status = 'paid' AND t.stripe_transfer_id IS NULL), 0)::int AS in_flight_cents,
+      COALESCE((SELECT COUNT(*)
+                FROM public.claims c
+                JOIN public.transactions t ON t.id = c.transaction_id
+                WHERE c.status = 'redeemed' AND t.status = 'paid' AND t.stripe_transfer_id IS NULL), 0)::int AS in_flight_count,
+      COALESCE((SELECT COUNT(*) FROM public.payouts WHERE status = 'failed'), 0)::int AS failed_payouts,
+      COALESCE((SELECT COUNT(*) FROM public.deals WHERE status = 'pending_review'), 0)::int AS pending_deals,
+      COALESCE((SELECT COUNT(*) FROM public.vendors WHERE stripe_account_status != 'active'), 0)::int AS vendors_blocked,
+      (SELECT COUNT(*) FROM public.vendors)::int AS vendors_total
+  `;
+  return rows[0]!;
+}
+
+/* ============================================================
+ * Transactions explorer — list + filter + detail.
+ * Backs the Transactions tab and the side-panel drill-in.
+ * ============================================================ */
+export interface TransactionListFilters {
+  status?: string[];
+  vendorId?: string;
+  /** ISO date string (YYYY-MM-DD) — inclusive lower bound on paid_at. */
+  since?: string;
+  query?: string;
+  limit?: number;
+}
+
+export async function listAdminTransactions(sql: Sql, filters: TransactionListFilters) {
+  const limit = Math.min(filters.limit ?? 50, 200);
+  const statuses = (filters.status && filters.status.length > 0)
+    ? filters.status
+    : ['paid', 'released', 'partially_refunded', 'refunded', 'pending_payment', 'failed', 'disputed'];
+  const sinceClause = filters.since ?? '1970-01-01';
+  const vendorIdOrNull = filters.vendorId ?? null;
+  const queryLike = filters.query ? `%${filters.query}%` : null;
+
+  const rows = await sql<{
+    id: string;
+    status: string;
+    consumer_paid_cents: number;
+    platform_fee_cents: number;
+    vendor_payout_cents: number;
+    stripe_payment_intent_id: string | null;
+    stripe_transfer_id: string | null;
+    paid_at: string | null;
+    created_at: string;
+    vendor_id: string;
+    business_name: string;
+    customer_name: string | null;
+    customer_email: string | null;
+    claim_status: string | null;
+  }[]>`
+    SELECT
+      t.id, t.status, t.consumer_paid_cents, t.platform_fee_cents, t.vendor_payout_cents,
+      t.stripe_payment_intent_id, t.stripe_transfer_id, t.paid_at, t.created_at,
+      v.id AS vendor_id, v.business_name,
+      COALESCE(NULLIF(TRIM(CONCAT(u.first_name, ' ', u.last_name)), ''), u.email) AS customer_name,
+      u.email AS customer_email,
+      (SELECT c.status FROM public.claims c WHERE c.transaction_id = t.id LIMIT 1) AS claim_status
+    FROM public.transactions t
+    JOIN public.vendors v ON v.id = t.vendor_id
+    LEFT JOIN public.users u ON u.id = t.user_id
+    WHERE t.status = ANY(${sql.array(statuses)})
+      AND (${vendorIdOrNull}::uuid IS NULL OR t.vendor_id = ${vendorIdOrNull}::uuid)
+      AND COALESCE(t.paid_at, t.created_at) >= ${sinceClause}::timestamptz
+      AND (${queryLike}::text IS NULL
+           OR v.business_name ILIKE ${queryLike}
+           OR u.email ILIKE ${queryLike}
+           OR u.first_name ILIKE ${queryLike}
+           OR u.last_name ILIKE ${queryLike}
+           OR t.stripe_payment_intent_id ILIKE ${queryLike})
+    ORDER BY COALESCE(t.paid_at, t.created_at) DESC
+    LIMIT ${limit}
+  `;
+  return rows.map((r) => ({
+    id: r.id,
+    status: r.status,
+    consumerPaidCents: r.consumer_paid_cents,
+    platformFeeCents: r.platform_fee_cents,
+    vendorPayoutCents: r.vendor_payout_cents,
+    stripePaymentIntentId: r.stripe_payment_intent_id,
+    stripeTransferId: r.stripe_transfer_id,
+    paidAt: r.paid_at,
+    createdAt: r.created_at,
+    vendorId: r.vendor_id,
+    vendorName: r.business_name,
+    customerName: r.customer_name,
+    customerEmail: r.customer_email,
+    claimStatus: r.claim_status,
+  }));
+}
+
+export async function getAdminTransactionDetail(sql: Sql, transactionId: string) {
+  const rows = await sql<{
+    id: string;
+    status: string;
+    consumer_paid_cents: number;
+    platform_fee_cents: number;
+    vendor_payout_cents: number;
+    stripe_fee_cents: number;
+    stripe_payment_intent_id: string | null;
+    stripe_charge_id: string | null;
+    stripe_transfer_id: string | null;
+    paid_at: string | null;
+    released_at: string | null;
+    refunded_at: string | null;
+    created_at: string;
+    platform_fee_snapshot: Record<string, unknown> | null;
+    vendor_id: string;
+    business_name: string;
+    customer_id: string | null;
+    customer_name: string | null;
+    customer_email: string | null;
+  }[]>`
+    SELECT
+      t.id, t.status, t.consumer_paid_cents, t.platform_fee_cents, t.vendor_payout_cents, t.stripe_fee_cents,
+      t.stripe_payment_intent_id, t.stripe_charge_id, t.stripe_transfer_id,
+      t.paid_at, t.released_at, t.refunded_at, t.created_at, t.platform_fee_snapshot,
+      v.id AS vendor_id, v.business_name,
+      u.id AS customer_id,
+      COALESCE(NULLIF(TRIM(CONCAT(u.first_name, ' ', u.last_name)), ''), u.email) AS customer_name,
+      u.email AS customer_email
+    FROM public.transactions t
+    JOIN public.vendors v ON v.id = t.vendor_id
+    LEFT JOIN public.users u ON u.id = t.user_id
+    WHERE t.id = ${transactionId}
+    LIMIT 1
+  `;
+  const t = rows[0];
+  if (!t) return null;
+
+  const claims = await sql<{
+    id: string;
+    status: string;
+    redeemed_at: string | null;
+    expires_at: string;
+    human_code: string;
+    snapshot: Record<string, unknown>;
+  }[]>`
+    SELECT id, status, redeemed_at, expires_at, human_code, snapshot
+    FROM public.claims
+    WHERE transaction_id = ${transactionId}
+    ORDER BY created_at ASC
+  `;
+
+  const audit = await sql<{
+    id: string;
+    action: string;
+    actor_user_id: string | null;
+    meta: Record<string, unknown>;
+    created_at: string;
+  }[]>`
+    SELECT id, action, actor_user_id, meta, created_at
+    FROM public.audit_log
+    WHERE transaction_id = ${transactionId}
+       OR claim_id IN (SELECT id FROM public.claims WHERE transaction_id = ${transactionId})
+    ORDER BY created_at DESC
+    LIMIT 25
+  `;
+
+  return {
+    transaction: {
+      id: t.id,
+      status: t.status,
+      consumerPaidCents: t.consumer_paid_cents,
+      platformFeeCents: t.platform_fee_cents,
+      vendorPayoutCents: t.vendor_payout_cents,
+      stripeFeeCents: t.stripe_fee_cents,
+      stripePaymentIntentId: t.stripe_payment_intent_id,
+      stripeChargeId: t.stripe_charge_id,
+      stripeTransferId: t.stripe_transfer_id,
+      paidAt: t.paid_at,
+      releasedAt: t.released_at,
+      refundedAt: t.refunded_at,
+      createdAt: t.created_at,
+      platformFeeSnapshot: t.platform_fee_snapshot,
+    },
+    vendor: { id: t.vendor_id, name: t.business_name },
+    customer: t.customer_id
+      ? { id: t.customer_id, name: t.customer_name, email: t.customer_email }
+      : null,
+    claims: claims.map((c) => ({
+      id: c.id,
+      status: c.status,
+      redeemedAt: c.redeemed_at,
+      expiresAt: c.expires_at,
+      humanCode: c.human_code,
+      snapshot: c.snapshot,
+    })),
+    audit: audit.map((a) => ({
+      id: a.id,
+      action: a.action,
+      actorUserId: a.actor_user_id,
+      meta: a.meta,
+      createdAt: a.created_at,
+    })),
+  };
+}
+
+/* ============================================================
+ * Customers explorer
+ * ============================================================ */
+export async function listAdminCustomers(sql: Sql, query: string | undefined) {
+  const queryLike = query && query.trim().length >= 2 ? `%${query.trim()}%` : null;
+  const rows = await sql<{
+    id: string;
+    first_name: string | null;
+    last_name: string | null;
+    email: string | null;
+    phone: string | null;
+    created_at: string;
+    purchase_count: number;
+    lifetime_paid_cents: number;
+    last_paid_at: string | null;
+  }[]>`
+    SELECT
+      u.id, u.first_name, u.last_name, u.email, u.phone, u.created_at,
+      COALESCE((SELECT COUNT(*) FROM public.transactions t
+                WHERE t.user_id = u.id AND t.status IN ('paid','released','partially_refunded')), 0)::int AS purchase_count,
+      COALESCE((SELECT SUM(consumer_paid_cents) FROM public.transactions t
+                WHERE t.user_id = u.id AND t.status IN ('paid','released','partially_refunded')), 0)::int AS lifetime_paid_cents,
+      (SELECT MAX(paid_at) FROM public.transactions t WHERE t.user_id = u.id) AS last_paid_at
+    FROM public.users u
+    WHERE (${queryLike}::text IS NULL
+           OR u.first_name ILIKE ${queryLike}
+           OR u.last_name ILIKE ${queryLike}
+           OR u.email ILIKE ${queryLike}
+           OR u.phone ILIKE ${queryLike})
+    ORDER BY COALESCE((SELECT MAX(paid_at) FROM public.transactions t WHERE t.user_id = u.id), u.created_at) DESC
+    LIMIT 100
+  `;
+  return rows.map((r) => ({
+    id: r.id,
+    firstName: r.first_name,
+    lastName: r.last_name,
+    email: r.email,
+    phone: r.phone,
+    createdAt: r.created_at,
+    purchaseCount: r.purchase_count,
+    lifetimePaidCents: r.lifetime_paid_cents,
+    lastPaidAt: r.last_paid_at,
+  }));
+}
+
+export async function getAdminCustomerDetail(sql: Sql, customerId: string) {
+  const rows = await sql<{
+    id: string;
+    first_name: string | null;
+    last_name: string | null;
+    email: string | null;
+    phone: string | null;
+    created_at: string;
+  }[]>`
+    SELECT id, first_name, last_name, email, phone, created_at
+    FROM public.users WHERE id = ${customerId} LIMIT 1
+  `;
+  const u = rows[0];
+  if (!u) return null;
+
+  const transactions = await sql<{
+    id: string;
+    status: string;
+    consumer_paid_cents: number;
+    paid_at: string | null;
+    created_at: string;
+    vendor_name: string;
+    claim_status: string | null;
+    deal_title: string | null;
+  }[]>`
+    SELECT
+      t.id, t.status, t.consumer_paid_cents, t.paid_at, t.created_at,
+      v.business_name AS vendor_name,
+      (SELECT c.status FROM public.claims c WHERE c.transaction_id = t.id LIMIT 1) AS claim_status,
+      (SELECT (c.snapshot ->> 'dealTitle') FROM public.claims c WHERE c.transaction_id = t.id LIMIT 1) AS deal_title
+    FROM public.transactions t
+    JOIN public.vendors v ON v.id = t.vendor_id
+    WHERE t.user_id = ${customerId}
+    ORDER BY COALESCE(t.paid_at, t.created_at) DESC
+    LIMIT 100
+  `;
+
+  const totals = await sql<{
+    purchase_count: number;
+    lifetime_paid_cents: number;
+    refunded_cents: number;
+    redemption_count: number;
+  }[]>`
+    SELECT
+      COALESCE(COUNT(*) FILTER (WHERE status IN ('paid','released','partially_refunded')), 0)::int AS purchase_count,
+      COALESCE(SUM(consumer_paid_cents) FILTER (WHERE status IN ('paid','released','partially_refunded')), 0)::int AS lifetime_paid_cents,
+      COALESCE(SUM(consumer_paid_cents) FILTER (WHERE status IN ('refunded','partially_refunded')), 0)::int AS refunded_cents,
+      (SELECT COUNT(*)::int FROM public.claims c WHERE c.user_id = ${customerId} AND c.status = 'redeemed') AS redemption_count
+    FROM public.transactions WHERE user_id = ${customerId}
+  `;
+
+  return {
+    customer: {
+      id: u.id,
+      firstName: u.first_name,
+      lastName: u.last_name,
+      email: u.email,
+      phone: u.phone,
+      createdAt: u.created_at,
+    },
+    totals: totals[0]!,
+    transactions: transactions.map((t) => ({
+      id: t.id,
+      status: t.status,
+      consumerPaidCents: t.consumer_paid_cents,
+      paidAt: t.paid_at,
+      createdAt: t.created_at,
+      vendorName: t.vendor_name,
+      claimStatus: t.claim_status,
+      dealTitle: t.deal_title,
+    })),
+  };
+}
+
+/* ============================================================
+ * Payouts explorer
+ * ============================================================ */
+export async function listAdminPayouts(sql: Sql, filters: { status?: string[]; vendorId?: string; limit?: number }) {
+  const limit = Math.min(filters.limit ?? 100, 200);
+  const statuses = (filters.status && filters.status.length > 0)
+    ? filters.status
+    : ['pending', 'in_transit', 'paid', 'failed', 'cancelled'];
+  const vendorIdOrNull = filters.vendorId ?? null;
+  const rows = await sql<{
+    id: string;
+    vendor_id: string;
+    vendor_name: string;
+    stripe_payout_id: string;
+    amount_cents: number;
+    currency: string;
+    status: string;
+    arrival_estimate_at: string | null;
+    arrived_at: string | null;
+    failure_message: string | null;
+    created_at: string;
+  }[]>`
+    SELECT p.id, p.vendor_id, v.business_name AS vendor_name,
+           p.stripe_payout_id, p.amount_cents, p.currency, p.status,
+           p.arrival_estimate_at, p.arrived_at, p.failure_message, p.created_at
+    FROM public.payouts p
+    JOIN public.vendors v ON v.id = p.vendor_id
+    WHERE p.status = ANY(${sql.array(statuses)})
+      AND (${vendorIdOrNull}::uuid IS NULL OR p.vendor_id = ${vendorIdOrNull}::uuid)
+    ORDER BY
+      CASE WHEN p.status = 'failed' THEN 0 ELSE 1 END,
+      p.created_at DESC
+    LIMIT ${limit}
+  `;
+  return rows.map((r) => ({
+    id: r.id,
+    vendorId: r.vendor_id,
+    vendorName: r.vendor_name,
+    stripePayoutId: r.stripe_payout_id,
+    amountCents: r.amount_cents,
+    currency: r.currency,
+    status: r.status,
+    arrivalEstimateAt: r.arrival_estimate_at,
+    arrivedAt: r.arrived_at,
+    failureMessage: r.failure_message,
+    createdAt: r.created_at,
+  }));
+}
+
+/* ============================================================
+ * Audit log explorer
+ * ============================================================ */
+export async function listAdminAuditLog(sql: Sql, filters: {
+  action?: string;
+  vendorId?: string;
+  actorUserId?: string;
+  limit?: number;
+}) {
+  const limit = Math.min(filters.limit ?? 100, 200);
+  const actionLike = filters.action && filters.action.trim().length > 0 ? `${filters.action.trim()}%` : null;
+  const vendorIdOrNull = filters.vendorId ?? null;
+  const actorOrNull = filters.actorUserId ?? null;
+  const rows = await sql<{
+    id: string;
+    action: string;
+    actor_user_id: string | null;
+    actor_email: string | null;
+    actor_first: string | null;
+    vendor_id: string | null;
+    vendor_name: string | null;
+    claim_id: string | null;
+    transaction_id: string | null;
+    payout_id: string | null;
+    meta: Record<string, unknown>;
+    created_at: string;
+  }[]>`
+    SELECT
+      a.id, a.action, a.actor_user_id,
+      u.email AS actor_email, u.first_name AS actor_first,
+      a.vendor_id, v.business_name AS vendor_name,
+      a.claim_id, a.transaction_id, a.payout_id,
+      a.meta, a.created_at
+    FROM public.audit_log a
+    LEFT JOIN public.users u ON u.id = a.actor_user_id
+    LEFT JOIN public.vendors v ON v.id = a.vendor_id
+    WHERE (${actionLike}::text IS NULL OR a.action LIKE ${actionLike})
+      AND (${vendorIdOrNull}::uuid IS NULL OR a.vendor_id = ${vendorIdOrNull}::uuid)
+      AND (${actorOrNull}::uuid IS NULL OR a.actor_user_id = ${actorOrNull}::uuid)
+    ORDER BY a.created_at DESC
+    LIMIT ${limit}
+  `;
+  return rows.map((r) => ({
+    id: r.id,
+    action: r.action,
+    actorUserId: r.actor_user_id,
+    actorName: r.actor_first ?? r.actor_email ?? null,
+    vendorId: r.vendor_id,
+    vendorName: r.vendor_name,
+    claimId: r.claim_id,
+    transactionId: r.transaction_id,
+    payoutId: r.payout_id,
+    meta: r.meta,
+    createdAt: r.created_at,
+  }));
+}
+
+/** Admin sets whether redemption auto-fires a Stripe Transfer for this vendor. See §6b. */
+export async function setVendorAutoReleaseOnRedemption(
+  sql: Sql,
+  vendorId: string,
+  enabled: boolean,
+): Promise<void> {
+  await sql`
+    UPDATE public.vendors
+    SET auto_release_on_redemption = ${enabled}, updated_at = now()
+    WHERE id = ${vendorId}
+  `;
+}
+
 /** True if the internal user id is in admin_users. */
 export async function isAdmin(sql: Sql, userId: string): Promise<boolean> {
   const rows = await sql<{ one: number }[]>`
@@ -21,14 +581,14 @@ export async function getOverview(sql: Sql) {
     gross_30d_cents: number;
   }[]>`
     SELECT
-      (SELECT COUNT(*)::int FROM public.transactions WHERE status = 'paid') AS txn_count,
-      COALESCE((SELECT SUM(consumer_paid_cents) FROM public.transactions WHERE status='paid'),0)::int AS gross_cents,
-      COALESCE((SELECT SUM(platform_fee_cents) FROM public.transactions WHERE status='paid'),0)::int AS income_cents,
-      COALESCE((SELECT SUM(vendor_payout_cents) FROM public.transactions WHERE status='paid'),0)::int AS payout_cents,
+      (SELECT COUNT(*)::int FROM public.transactions WHERE status IN ('paid','released','partially_refunded')) AS txn_count,
+      COALESCE((SELECT SUM(consumer_paid_cents) FROM public.transactions WHERE status IN ('paid','released','partially_refunded')),0)::int AS gross_cents,
+      COALESCE((SELECT SUM(platform_fee_cents) FROM public.transactions WHERE status IN ('paid','released','partially_refunded')),0)::int AS income_cents,
+      COALESCE((SELECT SUM(vendor_payout_cents) FROM public.transactions WHERE status IN ('paid','released','partially_refunded')),0)::int AS payout_cents,
       (SELECT COUNT(*)::int FROM public.vendors) AS vendor_count,
       (SELECT COUNT(*)::int FROM public.deals WHERE status='active') AS active_deal_count,
-      COALESCE((SELECT SUM(platform_fee_cents) FROM public.transactions WHERE status='paid' AND paid_at >= now() - interval '30 days'),0)::int AS income_30d_cents,
-      COALESCE((SELECT SUM(consumer_paid_cents) FROM public.transactions WHERE status='paid' AND paid_at >= now() - interval '30 days'),0)::int AS gross_30d_cents
+      COALESCE((SELECT SUM(platform_fee_cents) FROM public.transactions WHERE status IN ('paid','released','partially_refunded') AND paid_at >= now() - interval '30 days'),0)::int AS income_30d_cents,
+      COALESCE((SELECT SUM(consumer_paid_cents) FROM public.transactions WHERE status IN ('paid','released','partially_refunded') AND paid_at >= now() - interval '30 days'),0)::int AS gross_30d_cents
   `;
   const r = rows[0]!;
   return {
@@ -57,7 +617,7 @@ export async function getTopVendors(sql: Sql, limit = 10) {
       COALESCE(SUM(t.consumer_paid_cents),0)::int AS gross_cents,
       COALESCE(SUM(t.platform_fee_cents),0)::int AS income_cents
     FROM public.vendors v
-    JOIN public.transactions t ON t.vendor_id = v.id AND t.status = 'paid'
+    JOIN public.transactions t ON t.vendor_id = v.id AND t.status IN ('paid','released','partially_refunded')
     GROUP BY v.id, v.business_name
     ORDER BY gross_cents DESC
     LIMIT ${limit}
@@ -92,9 +652,9 @@ export async function getVendorRoster(sql: Sql) {
       (v.owner_user_id IS NOT NULL) AS has_owner,
       v.license_number, v.stripe_account_status, v.google_place_id,
       (SELECT COUNT(*)::int FROM public.deals d WHERE d.vendor_id = v.id) AS deal_count,
-      COALESCE((SELECT COUNT(*)::int FROM public.transactions t WHERE t.vendor_id = v.id AND t.status='paid'),0) AS purchases,
-      COALESCE((SELECT SUM(consumer_paid_cents) FROM public.transactions t WHERE t.vendor_id = v.id AND t.status='paid'),0)::int AS gross_cents,
-      COALESCE((SELECT SUM(platform_fee_cents) FROM public.transactions t WHERE t.vendor_id = v.id AND t.status='paid'),0)::int AS income_cents,
+      COALESCE((SELECT COUNT(*)::int FROM public.transactions t WHERE t.vendor_id = v.id AND t.status IN ('paid','released','partially_refunded')),0) AS purchases,
+      COALESCE((SELECT SUM(consumer_paid_cents) FROM public.transactions t WHERE t.vendor_id = v.id AND t.status IN ('paid','released','partially_refunded')),0)::int AS gross_cents,
+      COALESCE((SELECT SUM(platform_fee_cents) FROM public.transactions t WHERE t.vendor_id = v.id AND t.status IN ('paid','released','partially_refunded')),0)::int AS income_cents,
       v.created_at
     FROM public.vendors v
     ORDER BY gross_cents DESC, v.created_at DESC
@@ -130,16 +690,17 @@ export async function getVendorDetail(sql: Sql, vendorId: string) {
     admin_bypass: boolean;
     stripe_account_status: string | null;
     google_place_id: string | null;
+    auto_release_on_redemption: boolean;
     purchases: number;
     gross_cents: number;
     income_cents: number;
   }[]>`
     SELECT v.id, v.business_name, v.status, v.city, v.region, v.address_line1, v.phone,
       (v.owner_user_id IS NOT NULL) AS has_owner, v.admin_bypass,
-      v.stripe_account_status, v.google_place_id,
-      COALESCE((SELECT COUNT(*)::int FROM public.transactions t WHERE t.vendor_id=v.id AND t.status='paid'),0) AS purchases,
-      COALESCE((SELECT SUM(consumer_paid_cents) FROM public.transactions t WHERE t.vendor_id=v.id AND t.status='paid'),0)::int AS gross_cents,
-      COALESCE((SELECT SUM(platform_fee_cents) FROM public.transactions t WHERE t.vendor_id=v.id AND t.status='paid'),0)::int AS income_cents
+      v.stripe_account_status, v.google_place_id, v.auto_release_on_redemption,
+      COALESCE((SELECT COUNT(*)::int FROM public.transactions t WHERE t.vendor_id=v.id AND t.status IN ('paid','released','partially_refunded')),0) AS purchases,
+      COALESCE((SELECT SUM(consumer_paid_cents) FROM public.transactions t WHERE t.vendor_id=v.id AND t.status IN ('paid','released','partially_refunded')),0)::int AS gross_cents,
+      COALESCE((SELECT SUM(platform_fee_cents) FROM public.transactions t WHERE t.vendor_id=v.id AND t.status IN ('paid','released','partially_refunded')),0)::int AS income_cents
     FROM public.vendors v WHERE v.id = ${vendorId} LIMIT 1
   `;
   const v = vRows[0];
@@ -169,6 +730,29 @@ export async function getVendorDetail(sql: Sql, vendorId: string) {
   `;
   const pa = payoutAgg[0]!;
 
+  const heldRows = await sql<{
+    claim_id: string;
+    transaction_id: string;
+    vendor_payout_cents: number;
+    deal_title: string | null;
+    redeemed_at: string;
+  }[]>`
+    SELECT
+      c.id                  AS claim_id,
+      t.id                  AS transaction_id,
+      t.vendor_payout_cents AS vendor_payout_cents,
+      d.title               AS deal_title,
+      c.redeemed_at         AS redeemed_at
+    FROM public.claims c
+    JOIN public.transactions t ON t.id = c.transaction_id
+    LEFT JOIN public.deals d   ON d.id = c.deal_id
+    WHERE c.vendor_id          = ${vendorId}
+      AND c.status             = 'redeemed'
+      AND t.status             = 'paid'
+      AND t.stripe_transfer_id IS NULL
+    ORDER BY c.redeemed_at DESC
+  `;
+
   const deals = await sql<{
     id: string;
     title: string;
@@ -185,8 +769,8 @@ export async function getVendorDetail(sql: Sql, vendorId: string) {
         ORDER BY CASE WHEN p.photo_type='hero' THEN 0 ELSE 1 END, p.display_order LIMIT 1) AS primary_photo_url,
       (SELECT MIN(deal_price_cents) FROM public.deal_variants dv WHERE dv.deal_id=d.id) AS min_price_cents,
       (SELECT COUNT(*)::int FROM public.deal_variants dv WHERE dv.deal_id=d.id) AS variant_count,
-      COALESCE((SELECT COUNT(*)::int FROM public.transactions t JOIN public.claims cl ON cl.id=t.claim_id
-                WHERE cl.deal_id=d.id AND t.status='paid'),0) AS purchases
+      COALESCE((SELECT COUNT(*)::int FROM public.transactions t JOIN public.claims cl ON cl.transaction_id=t.id
+                WHERE cl.deal_id=d.id AND t.status IN ('paid','released','partially_refunded')),0) AS purchases
     FROM public.deals d
     JOIN public.service_categories c ON c.id = d.category_id
     WHERE d.vendor_id = ${vendorId}
@@ -221,7 +805,15 @@ export async function getVendorDetail(sql: Sql, vendorId: string) {
         message: f.failure_message,
         createdAt: f.created_at,
       })),
+      autoReleaseOnRedemption: v.auto_release_on_redemption,
     },
+    heldPayouts: heldRows.map((r) => ({
+      claimId: r.claim_id,
+      transactionId: r.transaction_id,
+      amountCents: r.vendor_payout_cents,
+      dealTitle: r.deal_title,
+      redeemedAt: r.redeemed_at,
+    })),
     deals: deals.map((d) => ({
       id: d.id,
       title: d.title,
@@ -331,7 +923,7 @@ export async function getRecentActivity(sql: Sql, limit = 20) {
     FROM public.transactions t
     JOIN public.vendors v ON v.id = t.vendor_id
     LEFT JOIN public.users u ON u.id = t.user_id
-    WHERE t.status = 'paid'
+    WHERE t.status IN ('paid','released','partially_refunded')
     ORDER BY t.paid_at DESC NULLS LAST
     LIMIT ${limit}
   `;

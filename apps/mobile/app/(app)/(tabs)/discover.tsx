@@ -1,9 +1,10 @@
 import { trpc } from '@gloe/api-client';
 import { useAuth } from '@gloe/auth';
 import { Stack, Text, color, space } from '@gloe/ui';
+import * as Haptics from 'expo-haptics';
 import { Link, useRouter } from 'expo-router';
-import { useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
+import { useCallback, useState } from 'react';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useRequireAuth } from '../../../features/auth-gate/useRequireAuth';
@@ -43,6 +44,21 @@ export default function DiscoverScreen() {
 
   const toggleSave = requireAuth('save', (dealId: string) => toggle(dealId));
 
+  // Refresh the main grid AND every CategoryRail's query in parallel — each
+  // rail mounts its own `deals.list` query, so invalidating the whole tree
+  // is the only way the spinner reflects actual refetch completion.
+  const utils = trpc.useUtils();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setIsRefreshing(true);
+    try {
+      await utils.deals.list.invalidate();
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [utils]);
+
   return (
     <View style={{ flex: 1, backgroundColor: color.surface.primary }}>
       <ScrollView
@@ -51,6 +67,13 @@ export default function DiscoverScreen() {
           paddingBottom: insets.bottom + space[8],
         }}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={onRefresh}
+            tintColor={color.brand[500]}
+          />
+        }
       >
         <Stack gap={4}>
           {/* Header row: location pill (left) + auth link (right) */}

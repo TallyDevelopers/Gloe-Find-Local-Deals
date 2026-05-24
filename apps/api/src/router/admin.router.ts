@@ -2,6 +2,9 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import {
+  getAdminCustomerDetail,
+  getAdminPulse,
+  getAdminTransactionDetail,
   getOverview,
   getRecentActivity,
   getTopVendors,
@@ -9,11 +12,34 @@ import {
   getVendorDetail,
   getVendorRoster,
   isAdmin,
+  listAdminAuditLog,
+  listAdminCustomers,
+  listAdminPayouts,
+  listAdminTransactions,
   reviewDeal,
+  searchEverything,
+  setVendorAutoReleaseOnRedemption,
   setVendorSuspended,
 } from '../domain/admin';
+import { writeAudit } from '../domain/audit';
 import { createDeal, getDealForReview } from '../domain/dealCreate';
 import { cacheStaticMap } from '../domain/dealMap';
+import {
+  createTier,
+  deactivateTier,
+  listTiers,
+  reactivateTier,
+  TierOverlapError,
+  updateTier,
+} from '../domain/fees';
+import {
+  reconcileVendorTransfers,
+  releaseTransferForClaim,
+  retryFailedPayout,
+} from '../domain/payouts';
+import { getConnectedAccountRequirements } from '../domain/stripe';
+import { getStripeMoneyForVendor } from '../domain/vendorHub';
+import { windDownVendor } from '../domain/vendorOps';
 import { createVendor } from '../domain/vendorSignup';
 import { startVendorOnboarding } from '../domain/vendorStripe';
 import { adminProcedure, protectedProcedure, router } from './trpc';
@@ -25,6 +51,65 @@ export const adminRouter = router({
   }),
 
   overview: adminProcedure.query(({ ctx }) => getOverview(ctx.sql)),
+
+  /** ⌘K global search — vendors, customers, transactions, deals. */
+  search: adminProcedure
+    .input(z.object({ query: z.string().min(0).max(120) }))
+    .query(({ ctx, input }) => searchEverything(ctx.sql, input.query)),
+
+  /** Pulse counters for the admin home. Poll every ~10s. */
+  pulse: adminProcedure.query(({ ctx }) => getAdminPulse(ctx.sql)),
+
+  /** Transactions explorer list with filters. */
+  listTransactions: adminProcedure
+    .input(
+      z.object({
+        status: z.array(z.string()).optional(),
+        vendorId: z.string().uuid().optional(),
+        since: z.string().optional(),
+        query: z.string().optional(),
+        limit: z.number().int().positive().max(200).optional(),
+      }),
+    )
+    .query(({ ctx, input }) => listAdminTransactions(ctx.sql, input)),
+
+  /** Transaction drill-in: tx + vendor + customer + claims + audit. */
+  transactionDetail: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .query(({ ctx, input }) => getAdminTransactionDetail(ctx.sql, input.id)),
+
+  /** Customers explorer list. */
+  listCustomers: adminProcedure
+    .input(z.object({ query: z.string().optional() }))
+    .query(({ ctx, input }) => listAdminCustomers(ctx.sql, input.query)),
+
+  /** Customer drill-in. */
+  customerDetail: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .query(({ ctx, input }) => getAdminCustomerDetail(ctx.sql, input.id)),
+
+  /** Payouts explorer list. */
+  listPayouts: adminProcedure
+    .input(
+      z.object({
+        status: z.array(z.string()).optional(),
+        vendorId: z.string().uuid().optional(),
+        limit: z.number().int().positive().max(200).optional(),
+      }),
+    )
+    .query(({ ctx, input }) => listAdminPayouts(ctx.sql, input)),
+
+  /** Audit log explorer. */
+  listAuditLog: adminProcedure
+    .input(
+      z.object({
+        action: z.string().optional(),
+        vendorId: z.string().uuid().optional(),
+        actorUserId: z.string().uuid().optional(),
+        limit: z.number().int().positive().max(200).optional(),
+      }),
+    )
+    .query(({ ctx, input }) => listAdminAuditLog(ctx.sql, input)),
   topVendors: adminProcedure.query(({ ctx }) => getTopVendors(ctx.sql)),
   vendorRoster: adminProcedure.query(({ ctx }) => getVendorRoster(ctx.sql)),
   recentActivity: adminProcedure.query(({ ctx }) => getRecentActivity(ctx.sql)),
@@ -33,6 +118,54 @@ export const adminRouter = router({
   vendorDetail: adminProcedure
     .input(z.object({ vendorId: z.string().uuid() }))
     .query(({ ctx, input }) => getVendorDetail(ctx.sql, input.vendorId)),
+
+  /** Live Stripe balance for a vendor's connected account (god-mode reconciliation). */
+  vendorStripeMoney: adminProcedure
+    .input(z.object({ vendorId: z.string().uuid() }))
+    .query(({ ctx, input }) => getStripeMoneyForVendor(ctx.sql, input.vendorId)),
+
+  /** Reconciliation panel data: our DB vs Stripe's live view of the same vendor. */
+  vendorReconciliation: adminProcedure
+    .input(z.object({ vendorId: z.string().uuid() }))
+    .query(({ ctx, input }) => reconcileVendorTransfers(ctx.sql, input.vendorId)),
+
+  /** Stripe's account requirements (what they're asking the vendor to fix). */
+  vendorStripeRequirements: adminProcedure
+    .input(z.object({ vendorId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const rows = await ctx.sql<{ stripe_account_id: string | null }[]>`
+        SELECT stripe_account_id FROM public.vendors WHERE id = ${input.vendorId} LIMIT 1
+      `;
+      const acct = rows[0]?.stripe_account_id;
+      if (!acct) return null;
+      try {
+        return await getConnectedAccountRequirements(acct);
+      } catch {
+        return null;
+      }
+    }),
+
+  /** Retry a failed standard payout — creates a fresh Stripe payout. */
+  retryPayout: adminProcedure
+    .input(z.object({ payoutId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await retryFailedPayout(ctx.sql, input.payoutId, ctx.auth.userId);
+      } catch (e) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: e instanceof Error ? e.message : 'Retry failed.' });
+      }
+    }),
+
+  /** Wind down a vendor: refund every active voucher, then suspend. */
+  windDownVendor: adminProcedure
+    .input(z.object({ vendorId: z.string().uuid(), reason: z.string().min(3).max(280) }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await windDownVendor(ctx.sql, input.vendorId, ctx.auth.userId, input.reason);
+      } catch (e) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: e instanceof Error ? e.message : 'Wind-down failed.' });
+      }
+    }),
 
   /** Founder triggers Stripe onboarding for a spa — returns the link to send them. */
   startVendorStripeOnboarding: adminProcedure
@@ -55,7 +188,153 @@ export const adminRouter = router({
   /** The kill switch: suspend a vendor + pull all their posts to draft. */
   setVendorSuspended: adminProcedure
     .input(z.object({ vendorId: z.string().uuid(), suspended: z.boolean() }))
-    .mutation(({ ctx, input }) => setVendorSuspended(ctx.sql, input.vendorId, input.suspended)),
+    .mutation(async ({ ctx, input }) => {
+      const result = await setVendorSuspended(ctx.sql, input.vendorId, input.suspended);
+      void writeAudit(ctx.sql, {
+        action: input.suspended ? 'vendor.suspended' : 'vendor.reinstated',
+        actorUserId: ctx.auth.userId,
+        vendorId: input.vendorId,
+      });
+      return result;
+    }),
+
+  /** God-mode toggle: should this vendor's redemptions auto-fire a Stripe Transfer? */
+  setVendorAutoRelease: adminProcedure
+    .input(z.object({ vendorId: z.string().uuid(), enabled: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      await setVendorAutoReleaseOnRedemption(ctx.sql, input.vendorId, input.enabled);
+      void writeAudit(ctx.sql, {
+        action: 'vendor.auto_release.set',
+        actorUserId: ctx.auth.userId,
+        vendorId: input.vendorId,
+        meta: { enabled: input.enabled },
+      });
+      return { enabled: input.enabled };
+    }),
+
+  /** God-mode push: release a held payout (auto-release off, or prior release failed). */
+  pushHeldPayout: adminProcedure
+    .input(z.object({ claimId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await releaseTransferForClaim(ctx.sql, input.claimId);
+      } catch (e) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: e instanceof Error ? e.message : 'Could not release transfer.',
+        });
+      }
+    }),
+
+  /* ---------- Platform fee tiers ---------- */
+  /** All tiers in a scope: global (vendorId null) or per-vendor override. */
+  listFeeTiers: adminProcedure
+    .input(z.object({ vendorId: z.string().uuid().nullable() }))
+    .query(({ ctx, input }) => listTiers(ctx.sql, input.vendorId)),
+
+  /** Add a new tier (global or per-vendor). Refuses overlap with active tiers. */
+  createFeeTier: adminProcedure
+    .input(
+      z.object({
+        label: z.string().min(1).max(60),
+        minCents: z.number().int().min(0),
+        maxCents: z.number().int().positive().nullable(),
+        percentBps: z.number().int().min(0).max(5000).optional(),
+        flatCents: z.number().int().min(0).optional(),
+        vendorId: z.string().uuid().nullable(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const tier = await createTier(ctx.sql, input);
+        void writeAudit(ctx.sql, {
+          action: 'fee_tier.created',
+          actorUserId: ctx.auth.userId,
+          vendorId: input.vendorId,
+          meta: { tierId: tier.id, ...input },
+        });
+        return tier;
+      } catch (e) {
+        if (e instanceof TierOverlapError) {
+          throw new TRPCError({ code: 'CONFLICT', message: e.message });
+        }
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: e instanceof Error ? e.message : 'Could not create tier.',
+        });
+      }
+    }),
+
+  /** Edit a tier in place. Refuses overlap with other active tiers. */
+  updateFeeTier: adminProcedure
+    .input(
+      z.object({
+        id: z.string().uuid(),
+        label: z.string().min(1).max(60),
+        minCents: z.number().int().min(0),
+        maxCents: z.number().int().positive().nullable(),
+        percentBps: z.number().int().min(0).max(5000).optional(),
+        flatCents: z.number().int().min(0).optional(),
+        vendorId: z.string().uuid().nullable(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...patch } = input;
+      try {
+        await updateTier(ctx.sql, id, patch);
+        void writeAudit(ctx.sql, {
+          action: 'fee_tier.updated',
+          actorUserId: ctx.auth.userId,
+          vendorId: input.vendorId,
+          meta: { tierId: id, ...patch },
+        });
+        return { ok: true };
+      } catch (e) {
+        if (e instanceof TierOverlapError) {
+          throw new TRPCError({ code: 'CONFLICT', message: e.message });
+        }
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: e instanceof Error ? e.message : 'Could not update tier.',
+        });
+      }
+    }),
+
+  /** Soft-delete a tier (sets active=false). */
+  deactivateFeeTier: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      await deactivateTier(ctx.sql, input.id);
+      void writeAudit(ctx.sql, {
+        action: 'fee_tier.deactivated',
+        actorUserId: ctx.auth.userId,
+        meta: { tierId: input.id },
+      });
+      return { ok: true };
+    }),
+
+  /** Re-activate a previously-deactivated tier. Refuses if it would overlap. */
+  reactivateFeeTier: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        await reactivateTier(ctx.sql, input.id);
+        void writeAudit(ctx.sql, {
+          action: 'fee_tier.reactivated',
+          actorUserId: ctx.auth.userId,
+          meta: { tierId: input.id },
+        });
+        return { ok: true };
+      } catch (e) {
+        if (e instanceof TierOverlapError) {
+          throw new TRPCError({ code: 'CONFLICT', message: e.message });
+        }
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: e instanceof Error ? e.message : 'Could not reactivate tier.',
+        });
+      }
+    }),
 
   /** Approve or reject a pending deal. */
   reviewDeal: adminProcedure

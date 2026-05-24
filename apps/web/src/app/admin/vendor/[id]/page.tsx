@@ -2,10 +2,12 @@
 
 import { UserButton } from '@clerk/nextjs';
 import { useParams, useRouter } from 'next/navigation';
+import { useState } from 'react';
 
 import { Button, Card } from '../../../../components/ui';
 import { Wordmark } from '../../../../components/Wordmark';
 import { trpc } from '../../../../lib/trpc';
+import { FeeTiersEditor } from '../../components/FeeTiersEditor';
 
 function money(cents: number): string {
   return '$' + (cents / 100).toLocaleString('en-US', { maximumFractionDigits: 0 });
@@ -133,11 +135,14 @@ export default function VendorDetailPage() {
                   ⚠ Stripe not connected — {money(data.vendor.vendorEarnedCents)} is being held until they connect. Time to call them.
                 </div>
               ) : (
-                <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-                  <PayoutStat label="Paid out" value={money(data.vendor.payoutPaidCents)} />
-                  <PayoutStat label="Pending / in transit" value={money(data.vendor.payoutPendingCents)} />
-                  <PayoutStat label="Failed payouts" value={String(data.vendor.payoutFailedCount)} alert={data.vendor.payoutFailedCount > 0} />
-                </div>
+                <>
+                  <StripeLiveBalance vendorId={id} />
+                  <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', paddingTop: 14, borderTop: '1px solid var(--border-subtle)' }}>
+                    <PayoutStat label="Paid out" value={money(data.vendor.payoutPaidCents)} />
+                    <PayoutStat label="Pending / in transit" value={money(data.vendor.payoutPendingCents)} />
+                    <PayoutStat label="Failed payouts" value={String(data.vendor.payoutFailedCount)} alert={data.vendor.payoutFailedCount > 0} />
+                  </div>
+                </>
               )}
 
               {data.vendor.payoutFailures.length > 0 ? (
@@ -155,6 +160,18 @@ export default function VendorDetailPage() {
                 </div>
               ) : null}
             </Card>
+
+            <ReleaseControls
+              vendorId={id}
+              autoRelease={data.vendor.autoReleaseOnRedemption}
+              heldPayouts={data.heldPayouts}
+            />
+
+            <FeeTiersEditor vendorId={id} />
+
+            <ReconciliationPanel vendorId={id} />
+
+            <WindDownPanel vendorId={id} vendorName={data.vendor.businessName} />
 
             {/* Listings */}
             <Card>
@@ -185,6 +202,350 @@ export default function VendorDetailPage() {
         )}
       </main>
     </div>
+  );
+}
+
+function ReconciliationPanel({ vendorId }: { vendorId: string }) {
+  const q = trpc.admin.vendorReconciliation.useQuery({ vendorId });
+  const d = q.data;
+  return (
+    <Card>
+      <h2 style={{ fontSize: 19, marginBottom: 4 }}>Reconciliation</h2>
+      <p style={{ color: 'var(--text-tertiary)', fontSize: 13, marginBottom: 14 }}>
+        Our DB records vs Stripe's live view. If these don't match, money state is drifting.
+      </p>
+      {q.isLoading ? (
+        <div style={{ color: 'var(--text-tertiary)' }}>Loading from Stripe…</div>
+      ) : !d ? (
+        <div style={{ color: 'var(--text-tertiary)' }}>No reconciliation data.</div>
+      ) : (
+        <>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14, marginBottom: 14 }}>
+            <Tile label={`Our DB recorded (${d.dbTransferCount})`} value={money(d.dbTransferredCents)} />
+            <Tile label={`Stripe gross (${d.stripeTransferCount})`} value={money(d.stripeSentCents)} />
+            <Tile label="Reversed on Stripe" value={money(d.stripeReversedCents)} />
+            <Tile label="Stripe net" value={money(d.stripeNetCents)} hero />
+          </div>
+          <div
+            style={{
+              padding: '12px 14px',
+              borderRadius: 'var(--radius-md)',
+              background: d.isReconciled ? 'rgba(76, 145, 95, 0.08)' : 'rgba(178,69,69,0.08)',
+              border: d.isReconciled ? '1px solid rgba(76, 145, 95, 0.25)' : '1px solid rgba(178,69,69,0.25)',
+            }}
+          >
+            {d.isReconciled ? (
+              <div style={{ color: 'var(--success)', fontSize: 14, fontWeight: 700 }}>
+                ✓ Reconciled — our DB matches Stripe exactly.
+              </div>
+            ) : (
+              <>
+                <div style={{ color: 'var(--error)', fontSize: 14, fontWeight: 700, marginBottom: 4 }}>
+                  ⚠ Delta of {money(Math.abs(d.deltaCents))} {d.deltaCents > 0 ? '— we recorded MORE than Stripe shows' : '— Stripe shows MORE than we recorded'}
+                </div>
+                <div style={{ color: 'var(--text-secondary)', fontSize: 13 }}>
+                  {d.deltaCents > 0
+                    ? 'A transfer may have been reversed by Stripe (insufficient funds, account dispute) and we didn\'t catch it. Compare our payouts list with Stripe → Connect → Transfers.'
+                    : 'Stripe shows more transfers than we have in the DB. A transfer may have happened without our DB recording it (manual Stripe action). Audit the recent transfers.'}
+                </div>
+              </>
+            )}
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
+function WindDownPanel({ vendorId, vendorName }: { vendorId: string; vendorName: string }) {
+  const router = useRouter();
+  const utils = trpc.useUtils();
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('');
+  const wind = trpc.admin.windDownVendor.useMutation({
+    onSuccess: () => {
+      void utils.admin.vendorDetail.invalidate({ vendorId });
+      void utils.admin.vendorRoster.invalidate();
+      setOpen(false);
+      setReason('');
+    },
+  });
+
+  return (
+    <Card style={{ border: '1px solid rgba(178,69,69,0.25)' }}>
+      <h2 style={{ fontSize: 19, marginBottom: 4, color: 'var(--error)' }}>Wind down</h2>
+      <p style={{ color: 'var(--text-tertiary)', fontSize: 13, marginBottom: 12 }}>
+        Refund every active (unredeemed) voucher for this vendor and suspend them. Cannot be undone.
+      </p>
+
+      {!open ? (
+        <button onClick={() => setOpen(true)} style={dangerBtn}>Begin wind-down…</button>
+      ) : (
+        <div style={{ background: 'rgba(178,69,69,0.05)', borderRadius: 'var(--radius-md)', padding: 12 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>
+            Wind down {vendorName}?
+          </div>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 10 }}>
+            This will refund every active voucher (Stripe PaymentIntent refund), mark them cancelled, and suspend the vendor. Customers are charged again on their cards (refund posts in 5-10 business days). Audit log captures every refund.
+          </div>
+          <input
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Why are we winding them down? (audit only)"
+            style={{
+              width: '100%', padding: '8px 10px', fontSize: 13,
+              border: '1px solid var(--border-default)',
+              borderRadius: 'var(--radius-md)',
+              background: 'var(--surface-default)', marginBottom: 10,
+            }}
+          />
+          {wind.error ? (
+            <div style={{ fontSize: 13, color: 'var(--error)', marginBottom: 8 }}>{wind.error.message}</div>
+          ) : null}
+          {wind.data ? (
+            <div style={{ fontSize: 13, padding: 10, background: 'var(--surface-elevated)', borderRadius: 'var(--radius-md)', marginBottom: 10 }}>
+              <div style={{ fontWeight: 700, color: 'var(--success)' }}>
+                ✓ Refunded {wind.data.refunded.length} voucher{wind.data.refunded.length === 1 ? '' : 's'}
+              </div>
+              {wind.data.failed.length > 0 ? (
+                <div style={{ color: 'var(--error)', marginTop: 6 }}>
+                  ⚠ {wind.data.failed.length} refund{wind.data.failed.length === 1 ? '' : 's'} failed — see audit log
+                </div>
+              ) : null}
+              <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-tertiary)' }}>
+                Vendor is now suspended.
+              </div>
+            </div>
+          ) : null}
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button onClick={() => { setOpen(false); setReason(''); }} style={ghostBtn}>Cancel</button>
+            <button
+              onClick={() => {
+                if (confirm(`Refund all active vouchers for ${vendorName} and suspend? This cannot be undone.`)) {
+                  wind.mutate({ vendorId, reason });
+                }
+              }}
+              disabled={wind.isPending || !reason.trim() || (!!wind.data)}
+              style={dangerBtn}
+            >
+              {wind.isPending ? 'Working…' : wind.data ? 'Done' : 'Refund all + suspend'}
+            </button>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function Tile({ label, value, hero }: { label: string; value: string; hero?: boolean }) {
+  return (
+    <div style={{ background: hero ? 'var(--brand-50)' : 'var(--surface-default)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: 12 }}>
+      <div style={{ fontSize: hero ? 22 : 18, fontWeight: 700, fontFamily: 'var(--font-display)', color: hero ? 'var(--brand-600)' : 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>{label}</div>
+    </div>
+  );
+}
+
+const dangerBtn: React.CSSProperties = {
+  padding: '8px 14px', fontSize: 13, fontWeight: 700, borderRadius: 999,
+  border: '1px solid var(--error)', background: 'var(--error)', color: 'white',
+  cursor: 'pointer',
+};
+const ghostBtn: React.CSSProperties = {
+  padding: '8px 14px', fontSize: 13, fontWeight: 600, borderRadius: 999,
+  border: '1px solid var(--border-default)', background: 'var(--surface-elevated)', color: 'var(--text-primary)',
+};
+
+function StripeLiveBalance({ vendorId }: { vendorId: string }) {
+  const q = trpc.admin.vendorStripeMoney.useQuery({ vendorId });
+  const available = q.data?.availableCents;
+  const pending = q.data?.pendingCents;
+  return (
+    <div
+      style={{
+        background: 'var(--brand-50)',
+        border: '1px solid var(--brand-100)',
+        borderRadius: 'var(--radius-md)',
+        padding: '14px 16px',
+        marginBottom: 14,
+        display: 'flex',
+        gap: 24,
+        flexWrap: 'wrap',
+        alignItems: 'flex-end',
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 180 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.05em', color: 'var(--brand-600)', marginBottom: 2 }}>
+          ON THEIR STRIPE ACCOUNT (LIVE)
+        </div>
+        <div style={{ fontSize: 28, fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--brand-600)', fontVariantNumeric: 'tabular-nums' }}>
+          {q.isLoading ? '…' : available == null ? '—' : money(available)}
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
+          {pending != null && pending > 0 ? `+ ${money(pending)} pending` : 'Available for Stripe to pay out to their bank.'}
+        </div>
+      </div>
+      <div style={{ fontSize: 12, color: 'var(--text-tertiary)', maxWidth: 280 }}>
+        This is what Stripe shows the vendor RIGHT NOW. Stripe pays it to their bank on their payout schedule (default daily).
+      </div>
+    </div>
+  );
+}
+
+function ReleaseControls({
+  vendorId,
+  autoRelease,
+  heldPayouts,
+}: {
+  vendorId: string;
+  autoRelease: boolean;
+  heldPayouts: { claimId: string; amountCents: number; dealTitle: string | null; redeemedAt: string }[];
+}) {
+  const utils = trpc.useUtils();
+  const setAuto = trpc.admin.setVendorAutoRelease.useMutation({
+    onSuccess: () => {
+      void utils.admin.vendorDetail.invalidate({ vendorId });
+    },
+  });
+  const push = trpc.admin.pushHeldPayout.useMutation({
+    onSuccess: () => {
+      void utils.admin.vendorDetail.invalidate({ vendorId });
+    },
+  });
+  const heldTotal = heldPayouts.reduce((sum, h) => sum + h.amountCents, 0);
+
+  return (
+    <Card>
+      <h2 style={{ fontSize: 19, marginBottom: 12 }}>Release controls</h2>
+
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, padding: '4px 0 14px' }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 15, fontWeight: 600 }}>Auto-release on redemption</div>
+          <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 2 }}>
+            When ON, a redeemed voucher immediately fires the Stripe Transfer to this vendor.
+            When OFF, the money waits — push it manually below.
+          </div>
+        </div>
+        <Toggle
+          on={autoRelease}
+          disabled={setAuto.isPending}
+          onChange={(next) => setAuto.mutate({ vendorId, enabled: next })}
+        />
+      </div>
+
+      <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+          <div style={{ fontSize: 15, fontWeight: 600 }}>
+            Waiting to release · {heldPayouts.length} · {money(heldTotal)}
+          </div>
+          {heldPayouts.length > 0 ? (
+            <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
+              {autoRelease ? 'Recent failures — retry below' : 'Auto-release is OFF — push when ready'}
+            </span>
+          ) : null}
+        </div>
+
+        {heldPayouts.length === 0 ? (
+          <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>
+            No held payouts. Everything redeemed has been released.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {heldPayouts.map((h, i) => (
+              <div
+                key={h.claimId}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  padding: '10px 0',
+                  borderBottom: i === heldPayouts.length - 1 ? 'none' : '1px solid var(--border-subtle)',
+                }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>{h.dealTitle ?? 'Voucher'}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
+                    Redeemed {new Date(h.redeemedAt).toLocaleString()}
+                  </div>
+                </div>
+                <div style={{ fontSize: 14, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                  {money(h.amountCents)}
+                </div>
+                <button
+                  onClick={() => push.mutate({ claimId: h.claimId })}
+                  disabled={push.isPending}
+                  style={{
+                    padding: '6px 14px',
+                    fontSize: 13,
+                    fontWeight: 700,
+                    borderRadius: 999,
+                    border: '1px solid var(--brand-500)',
+                    background: 'var(--brand-500)',
+                    color: 'white',
+                    opacity: push.isPending ? 0.5 : 1,
+                  }}
+                >
+                  Push
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {push.error ? (
+          <div
+            style={{
+              background: 'rgba(178,69,69,0.08)',
+              border: '1px solid rgba(178,69,69,0.25)',
+              borderRadius: 'var(--radius-md)',
+              padding: '10px 14px',
+              marginTop: 12,
+              fontSize: 13,
+              color: 'var(--error)',
+            }}
+          >
+            Couldn’t push: {push.error.message}
+          </div>
+        ) : null}
+      </div>
+    </Card>
+  );
+}
+
+function Toggle({ on, disabled, onChange }: { on: boolean; disabled?: boolean; onChange: (next: boolean) => void }) {
+  return (
+    <button
+      role="switch"
+      aria-checked={on}
+      disabled={disabled}
+      onClick={() => onChange(!on)}
+      style={{
+        position: 'relative',
+        width: 46,
+        height: 26,
+        borderRadius: 999,
+        border: 'none',
+        background: on ? 'var(--brand-500)' : 'var(--surface-secondary)',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        transition: 'background 120ms',
+        opacity: disabled ? 0.5 : 1,
+        flexShrink: 0,
+      }}
+    >
+      <span
+        style={{
+          position: 'absolute',
+          top: 3,
+          left: on ? 23 : 3,
+          width: 20,
+          height: 20,
+          borderRadius: '50%',
+          background: 'white',
+          transition: 'left 120ms',
+          boxShadow: '0 1px 2px rgba(0,0,0,0.2)',
+        }}
+      />
+    </button>
   );
 }
 

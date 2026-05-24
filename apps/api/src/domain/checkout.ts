@@ -74,7 +74,7 @@ export async function createPurchase(
   }
 
   const totalCents = v.deal_price_cents * qty;
-  const fee = await computeFee(sql, totalCents);
+  const fee = await computeFee(sql, totalCents, v.vendor_id);
 
   const pi = await createPaymentIntent({
     amountCents: fee.consumerPaidCents,

@@ -1,9 +1,10 @@
 import { trpc } from '@gloe/api-client';
 import { useAuth } from '@gloe/auth';
 import { Button, Stack, Text, color, space } from '@gloe/ui';
+import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { useCallback, useState } from 'react';
+import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ClaimedDealRow } from '../../../features/claimed/ClaimedDealRow';
@@ -27,6 +28,21 @@ export default function SavedScreen() {
   const savedDeals = (dealsQuery.data?.deals ?? []).filter((d) => savedIds.has(d.id));
   const isSignedIn = status === 'signed-in';
 
+  const utils = trpc.useUtils();
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setIsRefreshing(true);
+    try {
+      await Promise.all([
+        utils.deals.list.invalidate(),
+        isSignedIn ? utils.claims.list.invalidate() : Promise.resolve(),
+      ]);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [utils, isSignedIn]);
+
   return (
     <View style={{ flex: 1, backgroundColor: color.surface.primary }}>
       <ScrollView
@@ -36,6 +52,13 @@ export default function SavedScreen() {
           paddingBottom: insets.bottom + space[10],
         }}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={onRefresh}
+            tintColor={color.brand[500]}
+          />
+        }
       >
         <Stack gap={5}>
           <Stack gap={1}>

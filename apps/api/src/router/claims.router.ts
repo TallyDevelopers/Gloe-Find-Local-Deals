@@ -46,7 +46,6 @@ export const claimsRouter = router({
   devMarkRedeemed: protectedProcedure
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      await devMarkRedeemed(ctx.sql, ctx.auth.userId, input.id);
-      return { ok: true };
+      return devMarkRedeemed(ctx.sql, ctx.auth.userId, input.id);
     }),
 });

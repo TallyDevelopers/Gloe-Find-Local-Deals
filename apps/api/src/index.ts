@@ -10,6 +10,7 @@ import { sql } from './db/client';
 import { createContext } from './context/context';
 import { appRouter } from './router';
 import { fulfillPurchase } from './domain/checkout';
+import { handleStripePayoutWebhook } from './domain/payoutWebhooks';
 import { constructWebhookEvent } from './domain/stripe';
 import { syncVendorStripeStatus } from './domain/vendorStripe';
 
@@ -60,6 +61,20 @@ app.post('/webhooks/stripe', async (c) => {
     }
   }
 
+  // Payout lifecycle on connected accounts — mirror state to our `payouts` table.
+  if (
+    event.type === 'payout.created' ||
+    event.type === 'payout.paid' ||
+    event.type === 'payout.failed' ||
+    event.type === 'payout.canceled'
+  ) {
+    try {
+      await handleStripePayoutWebhook(sql, event);
+    } catch (e) {
+      console.error('Failed to handle payout webhook:', (e as Error).message);
+    }
+  }
+
   // Payment succeeded → mark transaction paid + create the voucher(s).
   if (event.type === 'payment_intent.succeeded') {
     const pi = event.data.object as { id: string; metadata: Record<string, string> };
@@ -92,6 +107,8 @@ app.use(
 );
 
 const port = Number(process.env.PORT) || 4000;
-serve({ fetch: app.fetch, port }, (info) => {
-  console.log(`▲ Gloe API listening on http://localhost:${info.port}`);
+// Bind to 0.0.0.0 so physical devices on the same Wi-Fi can reach the dev API
+// (default would be loopback-only, breaking iPhone testing against the Mac).
+serve({ fetch: app.fetch, port, hostname: '0.0.0.0' }, (info) => {
+  console.log(`▲ Gloe API listening on http://0.0.0.0:${info.port}`);
 });

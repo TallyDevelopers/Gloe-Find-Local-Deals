@@ -13,8 +13,20 @@ import {
   updateDeal,
 } from '../domain/dealCreate';
 import { cacheStaticMap } from '../domain/dealMap';
+import { writeAudit } from '../domain/audit';
+import {
+  lookupClaimForVendor,
+  redeemClaimByVendor,
+  RedemptionError,
+} from '../domain/claims';
+import { getInstantPayoutStatus, InstantPayoutError, triggerInstantPayout } from '../domain/payouts';
 import { createVendor, getSetupStatus, getVendorForOwner, type VendorRecord } from '../domain/vendorSignup';
 import { getVendorDashboardLink, startVendorOnboarding } from '../domain/vendorStripe';
+import {
+  getStripeMoneyForVendor,
+  getVendorHubSnapshot,
+  listVendorVouchers,
+} from '../domain/vendorHub';
 import { protectedProcedure, router } from './trpc';
 
 /**
@@ -276,4 +288,110 @@ export const vendorRouter = router({
     const count = await expireElapsedDeals(ctx.sql);
     return { expired: count };
   }),
+
+  /** Hub-header + money-card data in one DB roundtrip. Stripe balance is separate. */
+  hubSnapshot: protectedProcedure.query(async ({ ctx }) => {
+    const vendor = await requireVendor(ctx);
+    return getVendorHubSnapshot(ctx.sql, vendor.id);
+  }),
+
+  /** Live balance from Stripe (split out so a slow Stripe call doesn't block the hub). */
+  stripeMoney: protectedProcedure.query(async ({ ctx }) => {
+    const vendor = await requireVendor(ctx);
+    return getStripeMoneyForVendor(ctx.sql, vendor.id);
+  }),
+
+  /** Voucher list for the Vouchers card. */
+  vouchers: protectedProcedure
+    .input(z.object({ tab: z.enum(['active', 'redeemed', 'past']) }))
+    .query(async ({ ctx, input }) => {
+      const vendor = await requireVendor(ctx);
+      return listVendorVouchers(ctx.sql, vendor.id, input.tab);
+    }),
+
+  /** Snapshot for the "Pay me now" UI: opt-in flag, eligibility, available $. */
+  instantPayoutStatus: protectedProcedure.query(async ({ ctx }) => {
+    const vendor = await requireVendor(ctx);
+    return getInstantPayoutStatus(ctx.sql, vendor.id);
+  }),
+
+  /** Vendor opts in or out of instant payouts (3% fee). See §1b. */
+  setInstantPayoutEnabled: protectedProcedure
+    .input(z.object({ enabled: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const vendor = await requireVendor(ctx);
+      await ctx.sql`
+        UPDATE public.vendors
+        SET instant_payout_enabled = ${input.enabled}, updated_at = now()
+        WHERE id = ${vendor.id}
+      `;
+      void writeAudit(ctx.sql, {
+        action: 'instant_payout.toggled',
+        actorUserId: ctx.auth.userId,
+        vendorId: vendor.id,
+        meta: { enabled: input.enabled },
+      });
+      return { enabled: input.enabled };
+    }),
+
+  /**
+   * Look up a voucher by QR payload or human code, scoped to this vendor.
+   * Read-only — returns the deal/customer details for the confirm screen.
+   * Refuses if the voucher isn't ours, isn't active, or is expired.
+   */
+  lookupVoucher: protectedProcedure
+    .input(z.object({ code: z.string().min(4).max(200) }))
+    .mutation(async ({ ctx, input }) => {
+      const vendor = await requireVendor(ctx);
+      try {
+        return await lookupClaimForVendor(ctx.sql, vendor.id, ctx.auth.userId, input.code);
+      } catch (e) {
+        if (e instanceof RedemptionError) {
+          throw new TRPCError({
+            code: e.code === 'NOT_FOUND' ? 'NOT_FOUND' : 'BAD_REQUEST',
+            message: e.message,
+          });
+        }
+        throw e;
+      }
+    }),
+
+  /**
+   * Actually redeem a voucher. Vendor + claim must match. Atomic.
+   * Fires Stripe Transfer if vendor has auto_release_on_redemption.
+   */
+  redeemVoucher: protectedProcedure
+    .input(z.object({ claimId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const vendor = await requireVendor(ctx);
+      try {
+        return await redeemClaimByVendor(ctx.sql, vendor.id, ctx.auth.userId, input.claimId);
+      } catch (e) {
+        if (e instanceof RedemptionError) {
+          throw new TRPCError({
+            code: e.code === 'NOT_FOUND' ? 'NOT_FOUND' : 'BAD_REQUEST',
+            message: e.message,
+          });
+        }
+        throw e;
+      }
+    }),
+
+  /** Fire an Instant Payout for the vendor. Stripe deducts the 3% fee. */
+  requestInstantPayout: protectedProcedure
+    .input(z.object({ amountCents: z.number().int().positive() }))
+    .mutation(async ({ ctx, input }) => {
+      const vendor = await requireVendor(ctx);
+      try {
+        return await triggerInstantPayout(ctx.sql, vendor.id, input.amountCents, ctx.auth.userId);
+      } catch (e) {
+        if (e instanceof InstantPayoutError) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: e.message });
+        }
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: e instanceof Error ? e.message : 'Instant payout failed.',
+        });
+      }
+    }),
 });
