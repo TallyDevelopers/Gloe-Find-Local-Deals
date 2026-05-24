@@ -39,7 +39,10 @@
       "Bash(npx expo *)",
       "Read(//Users/admin/Library/Developer/Xcode/DerivedData/Gloe-bkajdalzxieiicgmcgicnboumxob/Build/Products/Debug-iphoneos/**)",
       "Read(//Users/admin/Library/Developer/Xcode/DerivedData/Gloe-bkajdalzxieiicgmcgicnboumxob/Build/Products/Debug-iphoneos/Gloe.app/**)",
-      "Bash(echo \"exit code: $?\")"
+      "Bash(echo \"exit code: $?\")",
+      "Bash(git commit -m ' *)",
+      "Bash(git add *)",
+      "Bash(git push *)"
     ],
     "additionalDirectories": [
       "/Users/admin/Desktop/GlowApp/apps/*"
