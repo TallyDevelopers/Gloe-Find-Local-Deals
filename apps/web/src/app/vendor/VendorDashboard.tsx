@@ -139,6 +139,7 @@ function HubTab({
         stripeLoading={stripeMoney.isLoading}
       />
       <VouchersCard />
+      <ProfileEditorCard />
     </>
   );
 }
@@ -428,6 +429,165 @@ function InstantPayoutInline() {
     </div>
   );
 }
+
+/* ---------- Profile editor: fills the storefront with real content ---------- */
+
+function ProfileEditorCard() {
+  const profile = trpc.vendor.myProfile.useQuery();
+  const update = trpc.vendor.updateProfile.useMutation();
+  const utils = trpc.useUtils();
+
+  const [description, setDescription] = useState('');
+  const [website, setWebsite] = useState('');
+  const [instagramHandle, setInstagramHandle] = useState('');
+  const [hoursSummary, setHoursSummary] = useState('');
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [hydrated, setHydrated] = useState(false);
+
+  // Prefill once when data lands; don't trample the user's typing on refetch.
+  useEffect(() => {
+    if (!profile.data || hydrated) return;
+    setDescription(profile.data.description);
+    setWebsite(profile.data.website);
+    setInstagramHandle(profile.data.instagramHandle);
+    setHoursSummary(profile.data.hoursSummary);
+    setHydrated(true);
+  }, [profile.data, hydrated]);
+
+  const completeness = (() => {
+    if (!profile.data) return 0;
+    let n = 0;
+    if (description.trim().length > 20) n++;
+    if (website.trim().length > 0) n++;
+    if (instagramHandle.trim().length > 0) n++;
+    if (hoursSummary.trim().length > 0) n++;
+    return n;
+  })();
+
+  const save = async () => {
+    setError(null);
+    try {
+      await update.mutateAsync({
+        description: description.trim() || null,
+        website: website.trim() || null,
+        instagramHandle: instagramHandle.trim() || null,
+        hoursSummary: hoursSummary.trim() || null,
+      });
+      setSavedAt(Date.now());
+      await utils.vendor.myProfile.invalidate();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Save failed.');
+    }
+  };
+
+  return (
+    <Card>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6, flexWrap: 'wrap', gap: 8 }}>
+        <CardTitle>Your storefront</CardTitle>
+        <div style={{ fontSize: 12, color: completeness === 4 ? 'var(--success)' : 'var(--text-tertiary)' }}>
+          {completeness === 4 ? '✓ Complete' : `${completeness}/4 fields filled`}
+        </div>
+      </div>
+      <p style={{ fontSize: 13, color: 'var(--text-tertiary)', marginBottom: 14 }}>
+        This is what customers see when they tap into your spa from a deal or voucher.
+        Filling it out helps customers trust you and book again.
+      </p>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <ProfileField label="About your spa" hint="A short paragraph. What's special? Who's it for?">
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            maxLength={2000}
+            rows={4}
+            placeholder="Locally owned med spa specializing in injectables and laser…"
+            style={profileInput}
+          />
+        </ProfileField>
+
+        <ProfileField label="Hours" hint="Free-text — e.g. Mon-Fri 9-7, Sat 10-4, Sun closed">
+          <input
+            value={hoursSummary}
+            onChange={(e) => setHoursSummary(e.target.value)}
+            maxLength={280}
+            placeholder="Mon-Fri 9-7, Sat 10-4"
+            style={profileInput}
+          />
+        </ProfileField>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+          <ProfileField label="Website">
+            <input
+              value={website}
+              onChange={(e) => setWebsite(e.target.value)}
+              maxLength={500}
+              placeholder="https://yourspa.com"
+              style={profileInput}
+            />
+          </ProfileField>
+          <ProfileField label="Instagram handle">
+            <input
+              value={instagramHandle}
+              onChange={(e) => setInstagramHandle(e.target.value)}
+              maxLength={60}
+              placeholder="@yourspa"
+              style={profileInput}
+            />
+          </ProfileField>
+        </div>
+
+        {error ? (
+          <div style={{ fontSize: 13, color: 'var(--error)' }}>{error}</div>
+        ) : null}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12 }}>
+          {savedAt && Date.now() - savedAt < 5000 ? (
+            <span style={{ fontSize: 12, color: 'var(--success)' }}>✓ Saved</span>
+          ) : null}
+          <button
+            onClick={save}
+            disabled={update.isPending}
+            style={{
+              padding: '10px 18px',
+              fontSize: 14, fontWeight: 700,
+              background: 'var(--brand-500)',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 999,
+              cursor: 'pointer',
+            }}
+          >
+            {update.isPending ? 'Saving…' : 'Save changes'}
+          </button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function ProfileField({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-tertiary)' }}>
+        {label}
+      </span>
+      {children}
+      {hint ? <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontStyle: 'italic' }}>{hint}</span> : null}
+    </label>
+  );
+}
+
+const profileInput: React.CSSProperties = {
+  padding: '10px 12px',
+  fontSize: 14,
+  fontFamily: 'inherit',
+  border: '1px solid var(--border-default)',
+  borderRadius: 'var(--radius-md)',
+  background: 'var(--surface-default)',
+  color: 'var(--text-primary)',
+  resize: 'vertical',
+};
 
 /* ---------- Vouchers card with tabs ---------- */
 

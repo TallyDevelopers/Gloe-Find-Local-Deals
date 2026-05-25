@@ -48,9 +48,12 @@ export type AuditAction =
   | 'vendor.auto_release.set'
   | 'vendor.stripe_onboarding.started'
   | 'vendor.admin_bypass.set'
-  // Refunds (placeholder — endpoints not built yet)
-  | 'refund.issued'
-  | 'refund.refused';
+  // Refunds
+  | 'refund.issued'    // full refund of a transaction
+  | 'refund.partial'   // partial refund (voucher stays alive)
+  | 'refund.refused'   // request blocked by eligibility / Stripe error
+  // Deal admin
+  | 'deal.admin_edited';  // god mode edited deal content (skips re-review)
 
 export interface AuditEntry {
   action: AuditAction;

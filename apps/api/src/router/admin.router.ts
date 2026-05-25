@@ -22,7 +22,7 @@ import {
   setVendorSuspended,
 } from '../domain/admin';
 import { writeAudit } from '../domain/audit';
-import { createDeal, getDealForReview } from '../domain/dealCreate';
+import { createDeal, getDealForReview, updateDeal } from '../domain/dealCreate';
 import { cacheStaticMap } from '../domain/dealMap';
 import {
   createTier,
@@ -37,9 +37,10 @@ import {
   releaseTransferForClaim,
   retryFailedPayout,
 } from '../domain/payouts';
-import { getConnectedAccountRequirements } from '../domain/stripe';
+import { getConnectedAccountRequirements, getPlatformBalance } from '../domain/stripe';
 import { getStripeMoneyForVendor } from '../domain/vendorHub';
-import { windDownVendor } from '../domain/vendorOps';
+import { refundTransaction, windDownVendor } from '../domain/vendorOps';
+import { dealInput, dealFields } from './vendor.router';
 import { createVendor } from '../domain/vendorSignup';
 import { startVendorOnboarding } from '../domain/vendorStripe';
 import { adminProcedure, protectedProcedure, router } from './trpc';
@@ -59,6 +60,21 @@ export const adminRouter = router({
 
   /** Pulse counters for the admin home. Poll every ~10s. */
   pulse: adminProcedure.query(({ ctx }) => getAdminPulse(ctx.sql)),
+
+  /**
+   * Live Gloe platform Stripe balance. Separate from pulse() because it hits
+   * Stripe's API (200-500ms vs the 50ms DB call) — pulse polls every 10s and
+   * we don't want to hit Stripe at that rate. UI polls this on a longer cycle.
+   */
+  platformStripeBalance: adminProcedure.query(async () => {
+    try {
+      return await getPlatformBalance();
+    } catch (e) {
+      // Don't fail the whole Pulse view if Stripe is down — return zeros
+      // and let the UI surface a "live balance unavailable" note.
+      return { availableCents: 0, pendingCents: 0, error: (e instanceof Error ? e.message : String(e)) };
+    }
+  }),
 
   /** Transactions explorer list with filters. */
   listTransactions: adminProcedure
@@ -156,6 +172,31 @@ export const adminRouter = router({
       }
     }),
 
+  /**
+   * Refund a transaction by amount. Full or partial. Eligibility (active or
+   * expired claim, not redeemed) + race safety are enforced inside the domain
+   * function. See `refundTransaction` for the rules.
+   */
+  refundTransaction: adminProcedure
+    .input(z.object({
+      transactionId: z.string().uuid(),
+      amountCents: z.number().int().positive(),
+      reason: z.string().min(3).max(280),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await refundTransaction(
+        ctx.sql,
+        input.transactionId,
+        input.amountCents,
+        ctx.auth.userId,
+        input.reason,
+      );
+      if (!result.refunded) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: result.error ?? 'Refund failed.' });
+      }
+      return result;
+    }),
+
   /** Wind down a vendor: refund every active voucher, then suspend. */
   windDownVendor: adminProcedure
     .input(z.object({ vendorId: z.string().uuid(), reason: z.string().min(3).max(280) }))
@@ -184,6 +225,93 @@ export const adminRouter = router({
   dealDetail: adminProcedure
     .input(z.object({ dealId: z.string().uuid() }))
     .query(({ ctx, input }) => getDealForReview(ctx.sql, input.dealId)),
+
+  /**
+   * God-mode quick-edit. For the most-edited fields (title / description /
+   * fine print / expiry) without sending the deal back through review.
+   * Use this for "fix the typo, remove the bad fine print, push the expiry"
+   * fixes; for variant/photo/video changes route through the full updateDeal.
+   */
+  quickEditDeal: adminProcedure
+    .input(z.object({
+      dealId: z.string().uuid(),
+      title: z.string().min(3).max(140).optional(),
+      description: z.string().min(10).max(2000).optional(),
+      finePrint: z.string().max(2000).nullable().optional(),
+      expiresAt: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      // Pull the deal to confirm it exists + capture before-state for audit.
+      const rows = await ctx.sql<{ vendor_id: string; status: string; title: string }[]>`
+        SELECT vendor_id, status, title FROM public.deals WHERE id = ${input.dealId} LIMIT 1
+      `;
+      const row = rows[0];
+      if (!row) throw new TRPCError({ code: 'NOT_FOUND', message: 'Deal not found' });
+      if (row.status === 'expired' || row.status === 'sold_out') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'This deal can no longer be edited.' });
+      }
+
+      // Build the SET clause dynamically — only update fields the caller sent.
+      const changes: Record<string, unknown> = {};
+      if (input.title !== undefined)       changes.title = input.title;
+      if (input.description !== undefined) changes.description = input.description;
+      if (input.finePrint !== undefined)   changes.fine_print = input.finePrint;
+      if (input.expiresAt !== undefined)   changes.expires_at = input.expiresAt;
+      if (Object.keys(changes).length === 0) {
+        return { id: input.dealId, status: row.status, changed: 0 };
+      }
+
+      // Manual COALESCE-style update (postgres tag template requires this shape).
+      await ctx.sql`
+        UPDATE public.deals
+        SET title       = COALESCE(${changes.title       as string | undefined ?? null}, title),
+            description = COALESCE(${changes.description as string | undefined ?? null}, description),
+            fine_print  = ${input.finePrint === undefined ? ctx.sql`fine_print` : input.finePrint},
+            expires_at  = COALESCE(${changes.expires_at  as string | undefined ?? null}, expires_at),
+            updated_at  = now()
+        WHERE id = ${input.dealId}
+      `;
+
+      void writeAudit(ctx.sql, {
+        action: 'deal.admin_edited',
+        actorUserId: ctx.auth.userId,
+        vendorId: row.vendor_id,
+        meta: { dealId: input.dealId, fields: Object.keys(changes), previousTitle: row.title },
+      });
+
+      return { id: input.dealId, status: row.status, changed: Object.keys(changes).length };
+    }),
+
+  /**
+   * God-mode edit a vendor's deal (full form). Bypasses the "edits bounce to
+   * pending_review" rule that applies to vendor self-edits — admins can fix
+   * typos on a live deal without disrupting customers. Every edit is audited.
+   */
+  updateDeal: adminProcedure
+    .input(dealInput.extend({
+      dealId: z.string().uuid(),
+      vendorId: z.string().uuid(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const result = await updateDeal(ctx.sql, {
+          dealId: input.dealId,
+          vendorId: input.vendorId,
+          ...dealFields(input),
+          asDraft: input.asDraft,
+          preserveStatus: true,
+        });
+        void writeAudit(ctx.sql, {
+          action: 'deal.admin_edited',
+          actorUserId: ctx.auth.userId,
+          vendorId: input.vendorId,
+          meta: { dealId: input.dealId, title: input.title },
+        });
+        return result;
+      } catch (e) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: e instanceof Error ? e.message : 'Update failed.' });
+      }
+    }),
 
   /** The kill switch: suspend a vendor + pull all their posts to draft. */
   setVendorSuspended: adminProcedure

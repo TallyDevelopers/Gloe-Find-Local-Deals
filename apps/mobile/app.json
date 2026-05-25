@@ -45,6 +45,13 @@
           "merchantIdentifier": "merchant.com.gloe.app",
           "enableGooglePay": false
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Gloe needs access to your photos so you can attach pictures to reviews.",
+          "cameraPermission": "Gloe needs camera access so you can take a photo for your review."
+        }
       ]
     ],
     "experiments": {

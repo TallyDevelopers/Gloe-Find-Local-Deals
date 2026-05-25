@@ -76,7 +76,7 @@ const videoInput = z.object({
   durationSeconds: z.number().int().positive().nullable().optional(),
 });
 
-const dealInput = z.object({
+export const dealInput = z.object({
   categoryId: z.string().uuid(),
   subtypeId: z.string().uuid().nullable().optional(),
   title: z.string().min(3).max(140),
@@ -102,7 +102,7 @@ const dealInput = z.object({
 type DealInput = z.infer<typeof dealInput>;
 
 /** Maps the validated input to the domain layer's field set. */
-function dealFields(input: DealInput) {
+export function dealFields(input: DealInput) {
   return {
     categoryId: input.categoryId,
     subtypeId: input.subtypeId ?? null,
@@ -220,6 +220,69 @@ export const vendorRouter = router({
       `;
       return { amenities: clean };
     }),
+
+  /**
+   * Profile editor — surfaces the fields the storefront cares about but
+   * onboarding doesn't collect. All fields optional; passing undefined leaves
+   * a column untouched, passing null clears it. Used by the "Complete your
+   * profile" card in the vendor dashboard.
+   */
+  updateProfile: protectedProcedure
+    .input(z.object({
+      description: z.string().max(2000).nullable().optional(),
+      website: z.string().url().nullable().optional().or(z.literal('')),
+      instagramHandle: z.string().max(60).nullable().optional(),
+      hoursSummary: z.string().max(280).nullable().optional(),
+      heroImageUrl: z.string().url().nullable().optional(),
+      logoUrl: z.string().url().nullable().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const vendor = await requireVendor(ctx);
+      // Normalize: empty string → null. Strip leading "@" on Instagram so the
+      // storefront's `@${handle}` template doesn't double up.
+      const website = input.website === '' ? null : input.website;
+      const insta = input.instagramHandle == null
+        ? input.instagramHandle
+        : input.instagramHandle.trim().replace(/^@/, '') || null;
+
+      await ctx.sql`
+        UPDATE public.vendors SET
+          description       = ${input.description       === undefined ? ctx.sql`description`       : input.description},
+          website           = ${website                 === undefined ? ctx.sql`website`           : website},
+          instagram_handle  = ${insta                   === undefined ? ctx.sql`instagram_handle`  : insta},
+          hours_summary     = ${input.hoursSummary      === undefined ? ctx.sql`hours_summary`     : input.hoursSummary},
+          hero_image_url    = ${input.heroImageUrl      === undefined ? ctx.sql`hero_image_url`    : input.heroImageUrl},
+          logo_url          = ${input.logoUrl           === undefined ? ctx.sql`logo_url`          : input.logoUrl},
+          updated_at        = now()
+        WHERE id = ${vendor.id}
+      `;
+      return { ok: true };
+    }),
+
+  /** Profile fields the dashboard editor needs to prefill itself. */
+  myProfile: protectedProcedure.query(async ({ ctx }) => {
+    const vendor = await requireVendor(ctx);
+    const rows = await ctx.sql<{
+      description: string | null;
+      website: string | null;
+      instagram_handle: string | null;
+      hours_summary: string | null;
+      hero_image_url: string | null;
+      logo_url: string | null;
+    }[]>`
+      SELECT description, website, instagram_handle, hours_summary, hero_image_url, logo_url
+      FROM public.vendors WHERE id = ${vendor.id} LIMIT 1
+    `;
+    const r = rows[0];
+    return {
+      description: r?.description ?? '',
+      website: r?.website ?? '',
+      instagramHandle: r?.instagram_handle ?? '',
+      hoursSummary: r?.hours_summary ?? '',
+      heroImageUrl: r?.hero_image_url ?? null,
+      logoUrl: r?.logo_url ?? null,
+    };
+  }),
 
   /** Issue a signed upload URL for a deal photo or video. Browser PUTs the file to it. */
   signPhotoUpload: protectedProcedure

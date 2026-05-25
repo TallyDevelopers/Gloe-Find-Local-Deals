@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import type { RouterOutputs } from '@gloe/api-client';
 
 import { trpc } from '../../../lib/trpc';
+import { CopyableId } from '../components/CopyableId';
 
 type Row = RouterOutputs['admin']['listCustomers'][number];
 
@@ -12,10 +13,26 @@ function money(cents: number): string {
   return '$' + (cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-export function CustomersView() {
+interface CustomersViewProps {
+  /** When set, drawer opens for this customer on mount. Used by cross-tab links. */
+  preselectedId?: string | null;
+  onPreselectionConsumed?: () => void;
+}
+
+export function CustomersView({ preselectedId, onPreselectionConsumed }: CustomersViewProps = {}) {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
   const list = trpc.admin.listCustomers.useQuery({ query: search || undefined });
+
+  // Honor a one-shot cross-tab navigation (e.g. clicking customer name on a
+  // transaction row). Clearing the parent's state on consumption keeps the
+  // drawer dismissable like any other.
+  useEffect(() => {
+    if (preselectedId) {
+      setSelected(preselectedId);
+      onPreselectionConsumed?.();
+    }
+  }, [preselectedId, onPreselectionConsumed]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -45,6 +62,7 @@ export function CustomersView() {
             <thead>
               <tr style={{ background: 'var(--surface-secondary)', color: 'var(--text-tertiary)' }}>
                 <Th>Name</Th>
+                <Th>ID</Th>
                 <Th>Email</Th>
                 <Th align="right">Purchases</Th>
                 <Th align="right">Lifetime spend</Th>
@@ -66,6 +84,7 @@ export function CustomersView() {
                     }}
                   >
                     <Td><strong>{name}</strong></Td>
+                    <Td style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12, color: 'var(--text-secondary)' }}>{c.displayId}</Td>
                     <Td style={{ color: 'var(--text-secondary)' }}>{c.email ?? '—'}</Td>
                     <Td align="right" mono>{c.purchaseCount}</Td>
                     <Td align="right" mono>{money(c.lifetimePaidCents)}</Td>
@@ -113,6 +132,9 @@ function CustomerDrawer({ id, onClose }: { id: string; onClose: () => void }) {
               <div style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>
                 {d.customer.email ?? '—'} · {d.customer.phone ?? '—'}
               </div>
+              <div style={{ marginTop: 8 }}>
+                <CopyableId id={d.customer.displayId} label="Customer" />
+              </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
@@ -131,16 +153,7 @@ function CustomerDrawer({ id, onClose }: { id: string; onClose: () => void }) {
               ) : (
                 <div>
                   {d.transactions.slice(0, 20).map((t) => (
-                    <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border-subtle)' }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600 }}>{t.dealTitle ?? t.vendorName}</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
-                          {t.vendorName} · {t.paidAt ? new Date(t.paidAt).toLocaleString() : 'pending'} · {t.status}
-                          {t.claimStatus ? <span> · voucher {t.claimStatus}</span> : null}
-                        </div>
-                      </div>
-                      <div style={{ fontSize: 13, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{money(t.consumerPaidCents)}</div>
-                    </div>
+                    <TransactionRow key={t.id} t={t} onRefunded={() => q.refetch()} />
                   ))}
                 </div>
               )}
@@ -157,7 +170,7 @@ function CustomerDrawer({ id, onClose }: { id: string; onClose: () => void }) {
  * classic "the customer says I was charged twice" pattern. We surface
  * groups so god mode can tell at a glance whether the duplicate is real.
  */
-function DuplicateChargeAlerts({ transactions }: { transactions: Array<{ id: string; consumerPaidCents: number; paidAt: string | null; createdAt: string; vendorName: string }> }) {
+function DuplicateChargeAlerts({ transactions }: { transactions: CustomerTxn[] }) {
   // Look at the last 14 days; flag any 2+ transactions within 5 minutes.
   const WINDOW_MS = 5 * 60 * 1000;
   const recent = transactions.filter((t) => {
@@ -201,10 +214,10 @@ function DuplicateChargeAlerts({ transactions }: { transactions: Array<{ id: str
           <strong>{cluster.length} charges</strong> within 5 minutes at <strong>{cluster[0]?.vendorName ?? '—'}</strong>:
           <div style={{ marginTop: 4 }}>
             {cluster.map((t) => (
-              <div key={t.id} style={{ display: 'flex', gap: 8, marginTop: 2, fontFamily: 'monospace', fontSize: 11 }}>
+              <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2, fontFamily: 'monospace', fontSize: 11 }}>
                 <span>{new Date(t.paidAt ?? t.createdAt).toLocaleTimeString()}</span>
                 <span style={{ color: 'var(--brand-600)', fontWeight: 700 }}>{money(t.consumerPaidCents)}</span>
-                <span style={{ color: 'var(--text-tertiary)' }}>{t.id.slice(0, 8)}…</span>
+                <CopyableId id={t.displayId} label="Txn" />
               </div>
             ))}
           </div>
@@ -253,3 +266,191 @@ const eyebrow: React.CSSProperties = {
   fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em',
   color: 'var(--text-tertiary)', marginBottom: 6,
 };
+
+type CustomerTxn = NonNullable<RouterOutputs['admin']['customerDetail']>['transactions'][number];
+
+/**
+ * One row in the customer drawer's transaction list. Renders a Refund button
+ * iff the txn is eligible (not yet fully refunded AND the voucher hasn't been
+ * redeemed). Eligibility-checking here is a UX shortcut — the server is still
+ * the source of truth and will reject ineligible attempts.
+ */
+function TransactionRow({ t, onRefunded }: { t: CustomerTxn; onRefunded: () => void }) {
+  const [modalOpen, setModalOpen] = useState(false);
+  const remaining = t.consumerPaidCents - t.refundedCents;
+  const isVoucherRedeemed = t.claimStatus === 'redeemed';
+  const canRefund = remaining > 0 && !isVoucherRedeemed && (t.status === 'paid' || t.status === 'partially_refunded');
+
+  return (
+    <>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--border-subtle)' }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>{t.dealTitle ?? t.vendorName}</div>
+          <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+            {t.vendorName} · {t.paidAt ? new Date(t.paidAt).toLocaleString() : 'pending'} · {t.status}
+            {t.claimStatus ? <span> · voucher {t.claimStatus}</span> : null}
+            {t.refundedCents > 0 ? <span> · refunded {money(t.refundedCents)}</span> : null}
+          </div>
+        </div>
+        <div style={{ fontSize: 13, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{money(t.consumerPaidCents)}</div>
+        {canRefund ? (
+          <button
+            onClick={() => setModalOpen(true)}
+            style={{
+              fontSize: 11, fontWeight: 600,
+              padding: '5px 10px',
+              border: '1px solid var(--border-default)',
+              borderRadius: 999,
+              background: 'var(--surface-default)',
+              color: 'var(--text-primary)',
+              cursor: 'pointer',
+            }}
+          >
+            Refund
+          </button>
+        ) : null}
+      </div>
+      {modalOpen ? (
+        <RefundModal
+          transactionId={t.id}
+          maxRefundableCents={remaining}
+          alreadyRefundedCents={t.refundedCents}
+          dealTitle={t.dealTitle ?? t.vendorName}
+          onClose={() => setModalOpen(false)}
+          onDone={() => { setModalOpen(false); onRefunded(); }}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function RefundModal({
+  transactionId,
+  maxRefundableCents,
+  alreadyRefundedCents,
+  dealTitle,
+  onClose,
+  onDone,
+}: {
+  transactionId: string;
+  maxRefundableCents: number;
+  alreadyRefundedCents: number;
+  dealTitle: string;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [amountInput, setAmountInput] = useState((maxRefundableCents / 100).toFixed(2));
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const refund = trpc.admin.refundTransaction.useMutation();
+
+  const amountCents = Math.round(parseFloat(amountInput || '0') * 100);
+  const isValid =
+    Number.isFinite(amountCents) &&
+    amountCents > 0 &&
+    amountCents <= maxRefundableCents &&
+    reason.trim().length >= 3;
+  const isFull = amountCents === maxRefundableCents;
+
+  const submit = async () => {
+    setError(null);
+    try {
+      await refund.mutateAsync({ transactionId, amountCents, reason: reason.trim() });
+      onDone();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Refund failed.');
+    }
+  };
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(20,16,10,0.5)', zIndex: 600, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: 'min(440px, 92vw)',
+          background: 'var(--surface-elevated)',
+          border: '1px solid var(--border-default)',
+          borderRadius: 'var(--radius-lg)',
+          padding: 22,
+          display: 'flex', flexDirection: 'column', gap: 14,
+        }}
+      >
+        <div>
+          <h2 style={{ fontSize: 19, marginBottom: 2 }}>Refund transaction</h2>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{dealTitle}</div>
+        </div>
+
+        <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+          Refundable balance: <strong style={{ fontVariantNumeric: 'tabular-nums' }}>{money(maxRefundableCents)}</strong>
+          {alreadyRefundedCents > 0 ? <span> · already refunded {money(alreadyRefundedCents)}</span> : null}
+        </div>
+
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-tertiary)' }}>Amount (USD)</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ color: 'var(--text-tertiary)' }}>$</span>
+            <input
+              type="number"
+              min="0.01"
+              step="0.01"
+              max={(maxRefundableCents / 100).toFixed(2)}
+              value={amountInput}
+              onChange={(e) => setAmountInput(e.target.value)}
+              style={{ flex: 1, padding: '8px 10px', fontSize: 16, border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', background: 'var(--surface-default)' }}
+            />
+            <button
+              type="button"
+              onClick={() => setAmountInput((maxRefundableCents / 100).toFixed(2))}
+              style={{ fontSize: 11, padding: '6px 10px', border: '1px solid var(--border-subtle)', borderRadius: 999, background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer' }}
+            >
+              Max
+            </button>
+          </div>
+        </label>
+
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-tertiary)' }}>Reason (required, ≥3 chars)</span>
+          <input
+            type="text"
+            placeholder="e.g. customer asked, spa closed, duplicate charge"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            maxLength={280}
+            style={{ padding: '8px 10px', fontSize: 14, border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', background: 'var(--surface-default)' }}
+          />
+        </label>
+
+        {error ? (
+          <div style={{ fontSize: 12, color: 'var(--error)', padding: '8px 10px', background: 'rgba(218,79,71,0.08)', borderRadius: 'var(--radius-md)' }}>
+            {error}
+          </div>
+        ) : null}
+
+        <div style={{ fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.4 }}>
+          {isFull
+            ? 'Full refund — voucher will be cancelled and the customer is charged back. Gloe keeps the platform fee.'
+            : 'Partial refund — voucher stays active so the customer can redeem the kept portion. Gloe keeps the platform fee.'}
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={refund.isPending}
+            style={{ padding: '8px 14px', fontSize: 13, border: '1px solid var(--border-subtle)', background: 'transparent', borderRadius: 'var(--radius-md)', color: 'var(--text-secondary)', cursor: 'pointer' }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={!isValid || refund.isPending}
+            style={{ padding: '8px 16px', fontSize: 13, fontWeight: 700, border: '1px solid var(--brand-500)', background: isValid ? 'var(--brand-500)' : 'var(--surface-secondary)', color: isValid ? '#fff' : 'var(--text-tertiary)', borderRadius: 'var(--radius-md)', cursor: isValid ? 'pointer' : 'not-allowed' }}
+          >
+            {refund.isPending ? 'Refunding…' : isFull ? `Refund ${money(amountCents)}` : `Refund ${money(amountCents)} (partial)`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

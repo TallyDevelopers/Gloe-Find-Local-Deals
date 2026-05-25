@@ -42,7 +42,19 @@
       "Bash(echo \"exit code: $?\")",
       "Bash(git commit -m ' *)",
       "Bash(git add *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "mcp__supabase__apply_migration",
+      "Bash(railway setup *)",
+      "Bash(RAILWAY_CALLER=\"skill:use-railway@1.2.1\" RAILWAY_AGENT_SESSION=\"railway-skill-gloe-deploy-$\\(date +%s\\)\" railway status --json)",
+      "Bash(RAILWAY_CALLER=\"skill:use-railway@1.2.1\" RAILWAY_AGENT_SESSION=\"railway-skill-gloe-deploy-$\\(date +%s\\)\" railway add --service api)",
+      "Bash(RAILWAY_CALLER=\"skill:use-railway@1.2.1\" RAILWAY_AGENT_SESSION=\"railway-skill-gloe-deploy-$\\(date +%s\\)\" railway add --help)",
+      "Bash(RAILWAY_CALLER=\"skill:use-railway@1.2.1\" RAILWAY_AGENT_SESSION=\"railway-skill-gloe-deploy-$\\(date +%s\\)\" railway service list --json)",
+      "Bash(RAILWAY_CALLER=\"skill:use-railway@1.2.1\" RAILWAY_AGENT_SESSION=\"railway-skill-gloe-deploy-$\\(date +%s\\)\" railway environment edit --help)",
+      "Bash(RAILWAY_CALLER=skill:use-railway@1.2.1 RAILWAY_AGENT_SESSION=railway-skill-gloe-deploy-__CMDSUB_OUTPUT__ railway environment edit --service-config api build.buildCommand 'npm install --workspaces --include-workspace-root' --service-config api deploy.startCommand 'npm run --workspace=@gloe/api dev' --message 'Configure api service for monorepo deploy' --json)",
+      "Bash(RAILWAY_CALLER=\"skill:use-railway@1.2.1\" RAILWAY_AGENT_SESSION=\"railway-skill-gloe-deploy-$\\(date +%s\\)\" railway service link api)",
+      "Bash(RAILWAY_CALLER=\"skill:use-railway@1.2.1\" RAILWAY_AGENT_SESSION=\"railway-skill-gloe-deploy-$\\(date +%s\\)\" railway environment config --json)",
+      "Bash(python3 -c \"import sys, json; c = json.load\\(sys.stdin\\); api = c['services']['b7182a1d-3e9d-46bd-82a5-7bf15a7570d1']; print\\(json.dumps\\(api, indent=2\\)\\)\")",
+      "Bash(git reset *)"
     ],
     "additionalDirectories": [
       "/Users/admin/Desktop/GlowApp/apps/*"

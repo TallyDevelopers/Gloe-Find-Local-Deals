@@ -1,7 +1,6 @@
 'use client';
 
 import { UserButton } from '@clerk/nextjs';
-import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { Wordmark } from '../../../components/Wordmark';
@@ -9,6 +8,7 @@ import { trpc } from '../../../lib/trpc';
 import { AuditView } from './AuditView';
 import { CommandPalette } from './CommandPalette';
 import { CustomersView } from './CustomersView';
+import { FeesView } from './FeesView';
 import { PayoutsView } from './PayoutsView';
 import { PulseView } from './PulseView';
 import { SettingsView } from './SettingsView';
@@ -31,10 +31,18 @@ const NAV: { key: WorkspaceView; label: string; icon: string; badgeFor?: 'failed
 ];
 
 export function AdminShell() {
-  const router = useRouter();
   const [view, setView] = useState<WorkspaceView>('pulse');
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  // When TransactionsView wants to jump to a specific customer, it sets this
+  // and we switch tabs. CustomersView opens the drawer for the matching id.
+  const [preselectedCustomerId, setPreselectedCustomerId] = useState<string | null>(null);
+
+  const jumpToCustomer = (customerId: string) => {
+    setPreselectedCustomerId(customerId);
+    setView('customers');
+    setMobileNavOpen(false);
+  };
 
   const pulse = trpc.admin.pulse.useQuery(undefined, { refetchInterval: 15_000 });
 
@@ -56,7 +64,6 @@ export function AdminShell() {
 
   const navigate = (next: WorkspaceView) => {
     setMobileNavOpen(false);
-    if (next === 'fees') { router.push('/admin/fees'); return; }
     setView(next);
   };
 
@@ -134,10 +141,11 @@ export function AdminShell() {
 
         <main style={mainStyle}>
           {view === 'pulse'        ? <PulseView onNavigate={(v) => navigate(v)} /> : null}
-          {view === 'transactions' ? <TransactionsView /> : null}
+          {view === 'transactions' ? <TransactionsView onJumpToCustomer={jumpToCustomer} /> : null}
           {view === 'vendors'      ? <VendorsView /> : null}
-          {view === 'customers'    ? <CustomersView /> : null}
+          {view === 'customers'    ? <CustomersView preselectedId={preselectedCustomerId} onPreselectionConsumed={() => setPreselectedCustomerId(null)} /> : null}
           {view === 'payouts'      ? <PayoutsView /> : null}
+          {view === 'fees'         ? <FeesView /> : null}
           {view === 'audit'        ? <AuditView /> : null}
           {view === 'settings'     ? <SettingsView /> : null}
         </main>

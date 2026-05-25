@@ -2,11 +2,12 @@
 
 import { UserButton } from '@clerk/nextjs';
 import { useParams, useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { Button, Card } from '../../../../components/ui';
 import { Wordmark } from '../../../../components/Wordmark';
 import { trpc } from '../../../../lib/trpc';
+import { CopyableId } from '../../components/CopyableId';
 import { FeeTiersEditor } from '../../components/FeeTiersEditor';
 
 function money(cents: number): string {
@@ -29,6 +30,7 @@ export default function VendorDetailPage() {
   const utils = trpc.useUtils();
   const q = trpc.admin.vendorDetail.useQuery({ vendorId: id });
   const data = q.data;
+  const [editingDealId, setEditingDealId] = useState<string | null>(null);
   const suspend = trpc.admin.setVendorSuspended.useMutation({
     onSuccess: () => {
       void utils.admin.vendorDetail.invalidate({ vendorId: id });
@@ -82,6 +84,9 @@ export default function VendorDetailPage() {
                 <p style={{ color: 'var(--text-tertiary)', fontSize: 14, marginTop: 2 }}>
                   {data.vendor.addressLine1}, {data.vendor.city}, {data.vendor.region} · {data.vendor.phone}
                 </p>
+                <div style={{ marginTop: 8 }}>
+                  <CopyableId id={data.vendor.displayId} label="Vendor" />
+                </div>
                 <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
                   {suspended ? <Tag ok={false} label="SUSPENDED" /> : null}
                   <Tag ok={data.vendor.hasOwner ? true : null} label={data.vendor.hasOwner ? 'claimed' : 'unclaimed'} />
@@ -124,8 +129,27 @@ export default function VendorDetailPage() {
             <div className="admin-stat-grid">
               <MoneyCard label="They've earned" value={money(data.vendor.vendorEarnedCents)} hero />
               <MoneyCard label="Gross sales" value={money(data.vendor.grossCents)} />
-              <MoneyCard label="My income from them" value={money(data.vendor.incomeCents)} />
+              <MoneyCard label="My income (net)" value={money(data.vendor.netIncomeCents)} />
             </div>
+
+            <Card>
+              <h2 style={{ fontSize: 19, marginBottom: 4 }}>P&amp;L breakdown</h2>
+              <p style={{ color: 'var(--text-tertiary)', fontSize: 13, marginBottom: 12 }}>
+                What hits Gloe's bank from this vendor's activity, before monthly Stripe charges.
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <PnlRow label="Customers paid" value={money(data.vendor.grossCents)} />
+                <PnlRow label="Sent to vendor" value={`−${money(data.vendor.vendorEarnedCents)}`} />
+                <PnlRow label="Our platform fee" value={money(data.vendor.incomeCents)} subtle />
+                <PnlRow label="Stripe card fee (per-transaction)" value={`−${money(data.vendor.stripeFeeCents)}`} subtle />
+                <PnlRow label="Net to Gloe (approx)" value={money(data.vendor.netIncomeCents)} bold />
+              </div>
+              <p style={{ color: 'var(--text-tertiary)', fontSize: 11, marginTop: 14, lineHeight: 1.5 }}>
+                ⚠ Excludes monthly Express account fees ($2 / active vendor), 0.25% payout fees,
+                instant-payout fees, refund flat fees, and chargebacks. For full accounting see
+                Stripe Dashboard → Billing. We&apos;ll reconcile end-to-end before launch.
+              </p>
+            </Card>
 
             {/* Payout health */}
             <Card>
@@ -167,6 +191,8 @@ export default function VendorDetailPage() {
               heldPayouts={data.heldPayouts}
             />
 
+            <ReleaseHistory releases={data.releases} />
+
             <FeeTiersEditor vendorId={id} />
 
             <ReconciliationPanel vendorId={id} />
@@ -182,6 +208,7 @@ export default function VendorDetailPage() {
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
                   {data.deals.map((d, i) => {
                     const st = DEAL_STATUS[d.status] ?? DEAL_STATUS.draft;
+                    const editable = d.status !== 'expired' && d.status !== 'sold_out';
                     return (
                       <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 0', borderBottom: i === data.deals.length - 1 ? 'none' : '1px solid var(--border-subtle)' }}>
                         <div style={{ width: 52, height: 52, borderRadius: 'var(--radius-md)', flexShrink: 0, background: d.primaryPhotoUrl ? `center/cover url(${d.primaryPhotoUrl})` : 'var(--surface-secondary)' }} />
@@ -192,16 +219,110 @@ export default function VendorDetailPage() {
                           </div>
                         </div>
                         <span style={{ color: st?.color, fontSize: 13, fontWeight: 600 }}>{st?.label}</span>
+                        {editable ? (
+                          <button
+                            onClick={() => setEditingDealId(d.id)}
+                            style={{
+                              fontSize: 12, fontWeight: 600,
+                              padding: '6px 12px',
+                              border: '1px solid var(--border-default)',
+                              borderRadius: 999,
+                              background: 'var(--surface-default)',
+                              color: 'var(--text-primary)',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            Edit
+                          </button>
+                        ) : null}
                       </div>
                     );
                   })}
                 </div>
               )}
             </Card>
+
+            {editingDealId ? (
+              <DealQuickEditModal
+                dealId={editingDealId}
+                onClose={() => setEditingDealId(null)}
+                onSaved={() => {
+                  setEditingDealId(null);
+                  void utils.admin.vendorDetail.invalidate({ vendorId: id });
+                }}
+              />
+            ) : null}
           </>
         )}
       </main>
     </div>
+  );
+}
+
+type Release = {
+  transactionId: string;
+  transactionDisplayId: string;
+  amountCents: number;
+  dealTitle: string | null;
+  customerEmail: string | null;
+  stripeTransferId: string;
+  releasedAt: string;
+};
+
+/**
+ * Full history of money moved from the Gloe platform balance to this vendor's
+ * Connect account. Surfaced so support can answer "where's my money?" by
+ * citing a date and Stripe transfer id — every release is forensic-grade.
+ */
+function ReleaseHistory({ releases }: { releases: Release[] }) {
+  return (
+    <Card>
+      <h2 style={{ fontSize: 19, marginBottom: 4 }}>Release history</h2>
+      <p style={{ color: 'var(--text-tertiary)', fontSize: 13, marginBottom: 14 }}>
+        Every transfer that's fired from the Gloe platform balance to their Connect account.
+      </p>
+      {releases.length === 0 ? (
+        <div style={{ color: 'var(--text-tertiary)', fontSize: 14 }}>No releases yet.</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {releases.map((r, i) => (
+            <div
+              key={r.transactionId}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 14,
+                padding: '12px 0',
+                borderBottom: i === releases.length - 1 ? 'none' : '1px solid var(--border-subtle)',
+              }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 600 }}>
+                  {r.dealTitle ?? 'Untitled deal'}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginTop: 2 }}>
+                  <span>{new Date(r.releasedAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</span>
+                  <span>·</span>
+                  <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{r.transactionDisplayId}</span>
+                  {r.customerEmail ? <><span>·</span><span>{r.customerEmail}</span></> : null}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                  Stripe transfer:{' '}
+                  <a
+                    href={`https://dashboard.stripe.com/test/connect/transfers/${r.stripeTransferId}`}
+                    target="_blank" rel="noopener noreferrer"
+                    style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', color: 'var(--brand-600)', textDecoration: 'underline', textDecorationColor: 'rgba(0,0,0,0.15)' }}
+                  >
+                    {r.stripeTransferId}
+                  </a>
+                </div>
+              </div>
+              <div style={{ fontSize: 16, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>
+                {money(r.amountCents)}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }
 
@@ -549,6 +670,24 @@ function Toggle({ on, disabled, onChange }: { on: boolean; disabled?: boolean; o
   );
 }
 
+function PnlRow({ label, value, subtle, bold }: { label: string; value: string; subtle?: boolean; bold?: boolean }) {
+  return (
+    <div
+      style={{
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        padding: '10px 0',
+        borderTop: '1px solid var(--border-subtle)',
+        fontSize: bold ? 16 : 14,
+        color: subtle ? 'var(--text-secondary)' : 'var(--text-primary)',
+        fontWeight: bold ? 700 : 500,
+      }}
+    >
+      <span>{label}</span>
+      <span style={{ fontVariantNumeric: 'tabular-nums', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{value}</span>
+    </div>
+  );
+}
+
 function MoneyCard({ label, value, hero }: { label: string; value: string; hero?: boolean }) {
   return (
     <Card style={hero ? { background: 'var(--brand-50)', border: '1px solid var(--brand-100)' } : undefined}>
@@ -566,6 +705,170 @@ function PayoutStat({ label, value, alert }: { label: string; value: string; ale
     </div>
   );
 }
+
+/**
+ * God-mode quick-edit modal. Fetches the deal's current title/description/
+ * fine print/expiry, lets admin tweak in place. Hits admin.quickEditDeal —
+ * preserves status (no bounce-to-pending_review) and audit-logs the change.
+ */
+function DealQuickEditModal({
+  dealId, onClose, onSaved,
+}: {
+  dealId: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const detail = trpc.admin.dealDetail.useQuery({ dealId });
+  const save = trpc.admin.quickEditDeal.useMutation();
+  const d = detail.data;
+
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [finePrint, setFinePrint] = useState('');
+  const [expiresAt, setExpiresAt] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  // Prefill once the data lands.
+  useEffect(() => {
+    if (!d) return;
+    setTitle(d.title);
+    setDescription(d.description);
+    setFinePrint(d.finePrint ?? '');
+    // <input type="datetime-local"> expects YYYY-MM-DDTHH:mm — slice off TZ + seconds.
+    setExpiresAt(new Date(d.expiresAt).toISOString().slice(0, 16));
+  }, [d]);
+
+  const submit = async () => {
+    setError(null);
+    try {
+      await save.mutateAsync({
+        dealId,
+        title,
+        description,
+        finePrint: finePrint.trim() === '' ? null : finePrint,
+        expiresAt: new Date(expiresAt).toISOString(),
+      });
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Save failed.');
+    }
+  };
+
+  return (
+    <div
+      onClick={onClose}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(20,16,10,0.5)', zIndex: 600, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: 'min(560px, 92vw)',
+          maxHeight: '88vh',
+          overflowY: 'auto',
+          background: 'var(--surface-elevated)',
+          border: '1px solid var(--border-default)',
+          borderRadius: 'var(--radius-lg)',
+          padding: 22,
+          display: 'flex', flexDirection: 'column', gap: 14,
+        }}
+      >
+        <div>
+          <h2 style={{ fontSize: 19 }}>Quick edit deal</h2>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
+            Edits stay live without re-review. Audit-logged. For variant / photo / video changes, route the vendor to edit it themselves.
+          </div>
+        </div>
+
+        {!d ? (
+          <div style={{ color: 'var(--text-tertiary)', fontSize: 13 }}>Loading…</div>
+        ) : (
+          <>
+            <Field label="Title">
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                maxLength={140}
+                style={modalInput}
+              />
+            </Field>
+
+            <Field label="Description">
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                maxLength={2000}
+                rows={5}
+                style={{ ...modalInput, fontFamily: 'inherit', resize: 'vertical' }}
+              />
+            </Field>
+
+            <Field label="Fine print (optional)">
+              <textarea
+                value={finePrint}
+                onChange={(e) => setFinePrint(e.target.value)}
+                maxLength={2000}
+                rows={3}
+                style={{ ...modalInput, fontFamily: 'inherit', resize: 'vertical' }}
+              />
+            </Field>
+
+            <Field label="Expires at">
+              <input
+                type="datetime-local"
+                value={expiresAt}
+                onChange={(e) => setExpiresAt(e.target.value)}
+                style={modalInput}
+              />
+            </Field>
+
+            {error ? (
+              <div style={{ fontSize: 12, color: 'var(--error)', padding: '8px 10px', background: 'rgba(218,79,71,0.08)', borderRadius: 'var(--radius-md)' }}>
+                {error}
+              </div>
+            ) : null}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={save.isPending}
+                style={{ padding: '8px 14px', fontSize: 13, border: '1px solid var(--border-subtle)', background: 'transparent', borderRadius: 'var(--radius-md)', color: 'var(--text-secondary)', cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={submit}
+                disabled={save.isPending}
+                style={{ padding: '8px 16px', fontSize: 13, fontWeight: 700, border: '1px solid var(--brand-500)', background: 'var(--brand-500)', color: '#fff', borderRadius: 'var(--radius-md)', cursor: 'pointer' }}
+              >
+                {save.isPending ? 'Saving…' : 'Save changes'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-tertiary)' }}>{label}</span>
+      {children}
+    </label>
+  );
+}
+
+const modalInput: React.CSSProperties = {
+  padding: '8px 10px',
+  fontSize: 14,
+  border: '1px solid var(--border-default)',
+  borderRadius: 'var(--radius-md)',
+  background: 'var(--surface-default)',
+  color: 'var(--text-primary)',
+};
 
 function Tag({ ok, label }: { ok: boolean | null; label: string }) {
   const c = ok === null ? 'var(--text-tertiary)' : ok ? 'var(--success)' : 'var(--accent-500)';

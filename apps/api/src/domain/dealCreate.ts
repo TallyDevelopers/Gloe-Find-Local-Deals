@@ -116,12 +116,21 @@ export interface UpdateDealInput extends Omit<CreateDealInput, 'vendorId' | 'asD
   vendorId: string;
   /** Save as draft instead of (re)submitting for review. */
   asDraft?: boolean;
+  /**
+   * God-mode flag. When true, the deal keeps its current status instead of
+   * being bounced to pending_review. Vendors NEVER set this; only the admin
+   * router sets it via the admin.updateDeal procedure.
+   */
+  preserveStatus?: boolean;
 }
 
 /**
  * Replaces a deal's content + children. Editing a live (active) deal bounces it
  * back to 'pending_review' so an admin re-approves the changed content.
  * Drafts stay drafts unless submitted; everything else lands in pending_review.
+ *
+ * When `preserveStatus` is set (admin-only) the deal keeps its existing status —
+ * admins can fix typos on live deals without disrupting the customer experience.
  */
 export async function updateDeal(sql: Sql, input: UpdateDealInput): Promise<{ id: string; status: string }> {
   return sql.begin(async (tx) => {
@@ -134,30 +143,56 @@ export async function updateDeal(sql: Sql, input: UpdateDealInput): Promise<{ id
       throw new Error('This deal can no longer be edited.');
     }
 
-    const nextStatus = input.asDraft ? 'draft' : 'pending_review';
+    const nextStatus = input.preserveStatus
+      ? row.status                                 // admin in-place edit
+      : input.asDraft ? 'draft' : 'pending_review';
 
-    await tx`
-      UPDATE public.deals SET
-        category_id = ${input.categoryId},
-        subtype_id = ${input.subtypeId ?? null},
-        title = ${input.title},
-        description = ${input.description},
-        whats_included = ${tx.json(input.whatsIncluded)},
-        restrictions = ${tx.json(input.restrictions)},
-        fine_print = ${input.finePrint ?? null},
-        redemption_address = ${input.redemptionAddress ?? null},
-        redemption_lat = ${input.redemptionLat ?? null},
-        redemption_lng = ${input.redemptionLng ?? null},
-        starts_at = ${input.startsAt ?? tx`starts_at`},
-        expires_at = ${input.expiresAt},
-        per_customer_limit = ${input.perCustomerLimit},
-        code_validity_days = ${input.codeValidityDays},
-        status = ${nextStatus},
-        approved_by = NULL,
-        approved_at = NULL,
-        updated_at = now()
-      WHERE id = ${input.dealId}
-    `;
+    // Vendor edits invalidate the approval record (so an admin re-reviews).
+    // Admin edits preserve it (admins are already the approver).
+    if (input.preserveStatus) {
+      await tx`
+        UPDATE public.deals SET
+          category_id = ${input.categoryId},
+          subtype_id = ${input.subtypeId ?? null},
+          title = ${input.title},
+          description = ${input.description},
+          whats_included = ${tx.json(input.whatsIncluded)},
+          restrictions = ${tx.json(input.restrictions)},
+          fine_print = ${input.finePrint ?? null},
+          redemption_address = ${input.redemptionAddress ?? null},
+          redemption_lat = ${input.redemptionLat ?? null},
+          redemption_lng = ${input.redemptionLng ?? null},
+          starts_at = ${input.startsAt ?? tx`starts_at`},
+          expires_at = ${input.expiresAt},
+          per_customer_limit = ${input.perCustomerLimit},
+          code_validity_days = ${input.codeValidityDays},
+          updated_at = now()
+        WHERE id = ${input.dealId}
+      `;
+    } else {
+      await tx`
+        UPDATE public.deals SET
+          category_id = ${input.categoryId},
+          subtype_id = ${input.subtypeId ?? null},
+          title = ${input.title},
+          description = ${input.description},
+          whats_included = ${tx.json(input.whatsIncluded)},
+          restrictions = ${tx.json(input.restrictions)},
+          fine_print = ${input.finePrint ?? null},
+          redemption_address = ${input.redemptionAddress ?? null},
+          redemption_lat = ${input.redemptionLat ?? null},
+          redemption_lng = ${input.redemptionLng ?? null},
+          starts_at = ${input.startsAt ?? tx`starts_at`},
+          expires_at = ${input.expiresAt},
+          per_customer_limit = ${input.perCustomerLimit},
+          code_validity_days = ${input.codeValidityDays},
+          status = ${nextStatus},
+          approved_by = NULL,
+          approved_at = NULL,
+          updated_at = now()
+        WHERE id = ${input.dealId}
+      `;
+    }
 
     await tx`DELETE FROM public.deal_variants WHERE deal_id = ${input.dealId}`;
     await tx`DELETE FROM public.deal_photos WHERE deal_id = ${input.dealId}`;

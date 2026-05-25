@@ -205,6 +205,22 @@ export async function getConnectedAccountBalance(
 }
 
 /**
+ * Live balance on the Gloe platform Stripe account: customer charges land here,
+ * vendor transfers come out of here, refunds go back to customers from here.
+ * Available = ready to sweep to Gloe's bank. Pending = still in Stripe's
+ * settlement window (typical T+2 for US cards). Sums across USD entries.
+ */
+export async function getPlatformBalance(): Promise<{ availableCents: number; pendingCents: number }> {
+  const balance = await client().balance.retrieve();
+  const sumUsd = (entries: { amount: number; currency: string }[] | undefined) =>
+    (entries ?? []).filter((e) => e.currency === 'usd').reduce((s, e) => s + e.amount, 0);
+  return {
+    availableCents: sumUsd(balance.available),
+    pendingCents: sumUsd(balance.pending),
+  };
+}
+
+/**
  * Whether a connected account is eligible for Instant Payouts: needs a
  * default external debit card (not just a bank account) and active capabilities.
  */
@@ -324,6 +340,96 @@ export async function createTransferForClaim(args: {
     { idempotencyKey: args.idempotencyKey },
   );
   return transfer.id;
+}
+
+export interface CheckoutSessionResult {
+  sessionId: string;
+  url: string;
+}
+
+/**
+ * Creates a Stripe-hosted Checkout Session for a "share to pay" purchase.
+ * Used when the in-app customer wants someone else to pay (e.g. partner /
+ * parent) — they generate a link, send it, the payer completes checkout on
+ * Stripe's hosted page. Funds land on the platform balance and are held the
+ * same way as in-app charges; the vendor is paid out separately after
+ * redemption (no transfer_data here).
+ *
+ * Metadata mirrors createPaymentIntent so the same `fulfillPurchase` code
+ * path can credit the voucher to the original (redeemer) user on success.
+ *
+ * 3DS is left to Stripe Radar to decide (automatic), which is the right
+ * default for a shared-link flow — Stripe sees the elevated risk and prompts
+ * authentication on its own, shifting liability to the issuing bank.
+ */
+export async function createGiftCheckoutSession(args: {
+  amountCents: number;
+  productName: string;
+  /** Vendor name + variant label, shown under the product name on Stripe checkout. */
+  productDescription: string;
+  /** Photo of the deal, shown on the Stripe checkout page. Optional. */
+  productImageUrl?: string | null;
+  /** Where Stripe sends the payer after success — our hosted "done" page. */
+  successUrl: string;
+  /** Where Stripe sends the payer if they back out. */
+  cancelUrl: string;
+  metadata: Record<string, string>;
+}): Promise<CheckoutSessionResult> {
+  const session = await client().checkout.sessions.create({
+    mode: 'payment',
+    line_items: [
+      {
+        price_data: {
+          currency: 'usd',
+          unit_amount: args.amountCents,
+          product_data: {
+            name: args.productName,
+            description: args.productDescription,
+            ...(args.productImageUrl ? { images: [args.productImageUrl] } : {}),
+          },
+        },
+        quantity: 1,
+      },
+    ],
+    // Capture payer identity — we record these on the transaction so we know
+    // who actually paid (not just who redeems).
+    billing_address_collection: 'auto',
+    phone_number_collection: { enabled: false },
+    success_url: args.successUrl,
+    cancel_url: args.cancelUrl,
+    metadata: args.metadata,
+    payment_intent_data: {
+      // The PaymentIntent inherits the same metadata so the existing
+      // payment_intent.succeeded webhook can still fulfill if Stripe fires
+      // that event before checkout.session.completed (rare, but possible).
+      metadata: args.metadata,
+    },
+  });
+  if (!session.url) throw new Error('Stripe did not return a Checkout Session URL');
+  return { sessionId: session.id, url: session.url };
+}
+
+/**
+ * Fetches a Checkout Session for the gift-link landing page. Returns just the
+ * fields we render (status, line item, image, amount). Throws if not found.
+ */
+export async function retrieveCheckoutSession(sessionId: string): Promise<{
+  id: string;
+  status: 'open' | 'complete' | 'expired' | null;
+  paymentStatus: 'paid' | 'unpaid' | 'no_payment_required' | null;
+  amountTotalCents: number | null;
+  metadata: Record<string, string>;
+  url: string | null;
+}> {
+  const session = await client().checkout.sessions.retrieve(sessionId);
+  return {
+    id: session.id,
+    status: (session.status as 'open' | 'complete' | 'expired' | null) ?? null,
+    paymentStatus: (session.payment_status as 'paid' | 'unpaid' | 'no_payment_required' | null) ?? null,
+    amountTotalCents: session.amount_total ?? null,
+    metadata: (session.metadata as Record<string, string> | null) ?? {},
+    url: session.url ?? null,
+  };
 }
 
 /** Minimal shape the webhook handler reads — avoids depending on Stripe.Event. */

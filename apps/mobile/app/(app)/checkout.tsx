@@ -1,9 +1,10 @@
 import { trpc } from '@gloe/api-client';
-import { Button, Stack, Text, color, radius, space } from '@gloe/ui';
+import { Button, Stack, Text, radius, space, useTheme } from '@gloe/ui';
 import { useStripe } from '@stripe/stripe-react-native';
+import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Image, Pressable, ScrollView, View } from 'react-native';
+import { Image, Pressable, ScrollView, Share, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { formatPrice } from '../../features/discover/format';
@@ -38,10 +39,13 @@ export default function CheckoutScreen() {
 
   const { initPaymentSheet, presentPaymentSheet } = useStripe();
   const createPurchase = trpc.checkout.createPurchase.useMutation();
+  const createGiftLink = trpc.checkout.createGiftLink.useMutation();
   const utils = trpc.useUtils();
+  const { color: palette } = useTheme();
 
   const [qty, setQty] = useState(1);
   const [busy, setBusy] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const originalPriceCents = Number(params.originalPriceCents);
@@ -56,6 +60,7 @@ export default function CheckoutScreen() {
   const savedCents = (originalPriceCents - dealPriceCents) * qty;
 
   const handleBuy = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setError(null);
     setBusy(true);
     try {
@@ -71,51 +76,84 @@ export default function CheckoutScreen() {
         // Gloē-branded sheet: warm ivory surfaces, champagne accent.
         appearance: {
           colors: {
-            primary: color.brand[500],
-            background: color.surface.elevated,
-            componentBackground: color.surface.secondary,
-            componentBorder: color.brand[200],
-            componentDivider: color.brand[100],
-            primaryText: color.text.primary,
-            secondaryText: color.text.secondary,
-            componentText: color.text.primary,
-            placeholderText: color.text.tertiary,
-            icon: color.text.secondary,
-            error: color.semantic.error,
+            primary: palette.brand[500],
+            background: palette.surface.elevated,
+            componentBackground: palette.surface.secondary,
+            componentBorder: palette.brand[200],
+            componentDivider: palette.brand[100],
+            primaryText: palette.text.primary,
+            secondaryText: palette.text.secondary,
+            componentText: palette.text.primary,
+            placeholderText: palette.text.tertiary,
+            icon: palette.text.secondary,
+            error: palette.semantic.error,
           },
           shapes: { borderRadius: radius.lg, borderWidth: 1 },
           primaryButton: {
             colors: {
-              background: color.brand[500],
-              text: color.text.inverse,
-              border: color.brand[500],
+              background: palette.brand[500],
+              text: palette.text.inverse,
+              border: palette.brand[500],
             },
             shapes: { borderRadius: radius.lg },
           },
         },
       });
       if (init.error) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         setError(init.error.message);
         return;
       }
       // 3. Present the sheet.
       const { error: payError } = await presentPaymentSheet();
       if (payError) {
-        if (payError.code !== 'Canceled') setError(payError.message);
+        if (payError.code !== 'Canceled') {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          setError(payError.message);
+        }
         return;
       }
       // 4. Paid. Webhook creates the voucher(s); refresh wallet + route there.
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       void utils.invalidate();
       router.replace('/(app)/(tabs)/saved');
     } catch (e) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       setError((e as Error).message);
     } finally {
       setBusy(false);
     }
   };
 
+  /**
+   * "Share to pay" — generate a Stripe Checkout Session URL and hand it to
+   * iOS's native share sheet. Voucher credits to *this* (signed-in) user when
+   * the recipient pays — same fulfillment path as in-app, different webhook.
+   */
+  const handleShareToPay = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setError(null);
+    setSharing(true);
+    try {
+      const res = await createGiftLink.mutateAsync({ variantId: params.variantId, quantity: qty });
+      // iOS renders the URL itself as a rich preview card (via the page's
+      // OG tags) — passing `url` alone gives us the preview without a raw
+      // URL in the message body. We add a short prefix as the message so
+      // recipients see one preview card with a brief note above it.
+      await Share.share({
+        message: "Picked something out — here's the link ✨",
+        url: res.giftUrl,
+      });
+    } catch (e) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setError((e as Error).message);
+    } finally {
+      setSharing(false);
+    }
+  };
+
   return (
-    <View style={{ flex: 1, backgroundColor: color.surface.primary }}>
+    <View style={{ flex: 1, backgroundColor: palette.surface.primary }}>
       {/* Header with back button */}
       <View
         style={{
@@ -126,8 +164,8 @@ export default function CheckoutScreen() {
           alignItems: 'center',
           gap: space[3],
           borderBottomWidth: 1,
-          borderBottomColor: color.border.subtle,
-          backgroundColor: color.surface.elevated,
+          borderBottomColor: palette.border.subtle,
+          backgroundColor: palette.surface.elevated,
         }}
       >
         <Pressable
@@ -139,7 +177,7 @@ export default function CheckoutScreen() {
             borderRadius: radius.pill,
             alignItems: 'center',
             justifyContent: 'center',
-            backgroundColor: color.surface.secondary,
+            backgroundColor: palette.surface.secondary,
             opacity: busy ? 0.4 : 1,
           }}
         >
@@ -153,12 +191,12 @@ export default function CheckoutScreen() {
       >
         <Stack gap={5}>
           {/* Item card — photo + what they're getting */}
-          <View style={{ backgroundColor: color.surface.elevated, borderRadius: radius.lg, padding: space[4], gap: space[4] }}>
+          <View style={{ backgroundColor: palette.surface.elevated, borderRadius: radius.lg, padding: space[4], gap: space[4] }}>
             <Stack direction="row" gap={4}>
               {params.photoUrl ? (
                 <Image
                   source={{ uri: params.photoUrl }}
-                  style={{ width: 72, height: 72, borderRadius: radius.md, backgroundColor: color.surface.secondary }}
+                  style={{ width: 72, height: 72, borderRadius: radius.md, backgroundColor: palette.surface.secondary }}
                 />
               ) : null}
               <Stack gap={1} style={{ flex: 1 }}>
@@ -178,7 +216,7 @@ export default function CheckoutScreen() {
             {/* Quantity stepper — only when more than one is allowed. */}
             {maxQty > 1 ? (
               <>
-                <View style={{ height: 1, backgroundColor: color.border.subtle }} />
+                <View style={{ height: 1, backgroundColor: palette.border.subtle }} />
                 <Stack direction="row" justify="space-between" align="center">
                   <Text variant="body-md" tone="secondary">Quantity</Text>
                   <Stack direction="row" gap={4} align="center">
@@ -190,14 +228,14 @@ export default function CheckoutScreen() {
               </>
             ) : (
               <>
-                <View style={{ height: 1, backgroundColor: color.border.subtle }} />
+                <View style={{ height: 1, backgroundColor: palette.border.subtle }} />
                 <Text variant="body-sm" tone="tertiary">Limit 1 per customer</Text>
               </>
             )}
           </View>
 
           {/* Price breakdown — they see the deal */}
-          <View style={{ backgroundColor: color.surface.elevated, borderRadius: radius.lg, padding: space[4], gap: space[3] }}>
+          <View style={{ backgroundColor: palette.surface.elevated, borderRadius: radius.lg, padding: space[4], gap: space[3] }}>
             <Stack direction="row" justify="space-between" align="center">
               <Text variant="body-md" tone="secondary">Original</Text>
               <Text variant="body-md" tone="tertiary" style={{ textDecorationLine: 'line-through' }}>
@@ -209,17 +247,17 @@ export default function CheckoutScreen() {
                 <Stack direction="row" gap={2} align="center">
                   <Text variant="body-md" tone="secondary">You save</Text>
                   {discountPct > 0 ? (
-                    <View style={{ backgroundColor: color.brand[500], borderRadius: radius.pill, paddingHorizontal: space[2], paddingVertical: 2 }}>
-                      <Text variant="caption" weight="semibold" style={{ color: color.text.inverse }}>{discountPct}% off</Text>
+                    <View style={{ backgroundColor: palette.brand[500], borderRadius: radius.pill, paddingHorizontal: space[2], paddingVertical: 2 }}>
+                      <Text variant="caption" weight="semibold" style={{ color: palette.text.inverse }}>{discountPct}% off</Text>
                     </View>
                   ) : null}
                 </Stack>
-                <Text variant="body-md" weight="semibold" style={{ color: color.semantic.success }}>
+                <Text variant="body-md" weight="semibold" style={{ color: palette.semantic.success }}>
                   −{formatPrice(savedCents)}
                 </Text>
               </Stack>
             ) : null}
-            <View style={{ height: 1, backgroundColor: color.border.subtle }} />
+            <View style={{ height: 1, backgroundColor: palette.border.subtle }} />
             <Stack direction="row" justify="space-between" align="baseline">
               <Text variant="body-lg" tone="primary" weight="semibold">Total</Text>
               <Text variant="display-sm" tone="primary" weight="semibold">{formatPrice(totalCents)}</Text>
@@ -230,7 +268,7 @@ export default function CheckoutScreen() {
           <Stack gap={2}>
             {spotsLeft != null ? (
               <Stack direction="row" gap={2} align="center">
-                <Text variant="body-sm" weight="semibold" style={{ color: color.brand[600] }}>
+                <Text variant="body-sm" weight="semibold" style={{ color: palette.brand[600] }}>
                   {spotsLeft} spots left
                 </Text>
                 {params.expiresAt ? (
@@ -254,8 +292,9 @@ export default function CheckoutScreen() {
           paddingTop: space[4],
           paddingBottom: insets.bottom + space[3],
           borderTopWidth: 1,
-          borderTopColor: color.border.subtle,
-          backgroundColor: color.surface.elevated,
+          borderTopColor: palette.border.subtle,
+          backgroundColor: palette.surface.elevated,
+          gap: space[3],
         }}
       >
         <Button
@@ -263,9 +302,20 @@ export default function CheckoutScreen() {
           size="lg"
           fullWidth
           onPress={handleBuy}
-          disabled={busy}
+          disabled={busy || sharing}
           loading={busy}
         />
+        {/* Secondary action: hand off payment to someone else. Quiet by design
+            — the hero action stays Pay; this is discoverable, not competing. */}
+        <Pressable
+          onPress={busy || sharing ? undefined : handleShareToPay}
+          hitSlop={8}
+          style={{ alignSelf: 'center', paddingVertical: space[2], opacity: busy || sharing ? 0.4 : 1 }}
+        >
+          <Text variant="body-sm" weight="medium" style={{ color: palette.brand[600] }}>
+            {sharing ? 'Generating link…' : 'Share to pay'}
+          </Text>
+        </Pressable>
       </View>
     </View>
   );
@@ -280,13 +330,14 @@ function formatExpiry(iso: string): string {
 }
 
 function StepBtn({ label, onPress, disabled }: { label: string; onPress: () => void; disabled?: boolean }) {
+  const { color: palette } = useTheme();
   return (
     <Pressable
       onPress={disabled ? undefined : onPress}
       hitSlop={8}
       style={{
         width: 34, height: 34, borderRadius: radius.pill,
-        borderWidth: 1, borderColor: disabled ? color.border.subtle : color.border.default,
+        borderWidth: 1, borderColor: disabled ? palette.border.subtle : palette.border.default,
         alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.4 : 1,
       }}
     >

@@ -1,5 +1,6 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
 import type { RouterOutputs } from '@gloe/api-client';
@@ -31,7 +32,13 @@ function money(cents: number): string {
   return '$' + (cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-export function TransactionsView() {
+interface TransactionsViewProps {
+  /** Tell the shell to switch to Customers and open this customer's drawer. */
+  onJumpToCustomer?: (customerId: string) => void;
+}
+
+export function TransactionsView({ onJumpToCustomer }: TransactionsViewProps = {}) {
+  const router = useRouter();
   const [filter, setFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
@@ -130,8 +137,26 @@ export function TransactionsView() {
                   }}
                 >
                   <Td>{r.paidAt ? new Date(r.paidAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '—'}</Td>
-                  <Td>{r.vendorName}</Td>
-                  <Td style={{ color: r.customerName ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>{r.customerName ?? r.customerEmail ?? '—'}</Td>
+                  <Td>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); router.push(`/admin/vendor/${r.vendorId}`); }}
+                      style={inlineLinkBtn}
+                    >
+                      {r.vendorName}
+                    </button>
+                  </Td>
+                  <Td style={{ color: r.customerName ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>
+                    {r.customerId && onJumpToCustomer ? (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onJumpToCustomer(r.customerId!); }}
+                        style={inlineLinkBtn}
+                      >
+                        {r.customerName ?? r.customerEmail ?? '—'}
+                      </button>
+                    ) : (
+                      r.customerName ?? r.customerEmail ?? '—'
+                    )}
+                  </Td>
                   <Td align="right" mono>{money(r.consumerPaidCents)}</Td>
                   <Td align="right" mono>{money(r.platformFeeCents)}</Td>
                   <Td align="right" mono>{money(r.vendorPayoutCents)}</Td>
@@ -165,6 +190,19 @@ const stripeLink: React.CSSProperties = {
   textDecoration: 'none',
   fontFamily: 'monospace',
   fontSize: 12,
+};
+
+const inlineLinkBtn: React.CSSProperties = {
+  background: 'none',
+  border: 'none',
+  padding: 0,
+  font: 'inherit',
+  color: 'var(--brand-600)',
+  textDecoration: 'underline',
+  textDecorationColor: 'rgba(0,0,0,0.15)',
+  textUnderlineOffset: 2,
+  cursor: 'pointer',
+  textAlign: 'left',
 };
 
 function Th({ children, align }: { children: React.ReactNode; align?: 'right' }) {

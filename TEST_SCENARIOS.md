@@ -224,36 +224,136 @@ This is in [CREDITS_AND_FEES.md §6](./CREDITS_AND_FEES.md) as an open question.
 
 ---
 
-## 7. Refund flow (NOT YET BUILT — placeholder)
+## 7. Refunds — admin-initiated, pre-redemption only
 
-**Goal:** When built, verify refunds work correctly at every stage of the lifecycle.
+**Goal:** Verify the admin refund tool works end-to-end. Refunds are issued from `/admin` (Customer drawer → Refund button on a transaction row). Eligibility rule: **claim must be `active` or `expired` (never redeemed)**; transaction must be `paid` or `partially_refunded`.
 
-**Sub-scenarios to test once built:**
+**Money policy (current):** Gloe **keeps** the platform fee on every refund (Stripe Connect default, `refund_application_fee: false`). Vendor's share is reversed back to us by Stripe automatically. Customer is refunded only the amount requested.
 
-### 7a. Pre-redemption customer-initiated refund
-- Customer buys, then cancels before redeeming.
-- Expected: refund the PaymentIntent. Voucher → `'cancelled'`. Transaction → `'refunded'`. No vendor involvement (they were never paid).
-- Stripe keeps the ~30¢ processing fee; Gloē eats it (policy decision in §6b).
+### 7a. Full refund of an unredeemed transaction
 
-### 7b. Pre-redemption vendor-initiated cancel
-- Vendor decides to comp customer for whatever reason before they show up.
-- Same flow as 7a but initiated by vendor.
+**Setup:**
+- A `transactions` row with `status='paid'`, `refunded_cents=0`, and its claim `status='active'`.
+- Note the values before: `consumer_paid_cents`, `platform_fee_cents`, `vendor_payout_cents`.
 
-### 7c. Post-redemption refund (vendor comp after service)
-- Customer was served. Vendor decides to give a partial or full refund as goodwill.
-- Expected: `transfers.createReversal` to claw back from vendor's Connect balance, then `refunds.create` on the PaymentIntent. `claims.status` stays `'redeemed'` (service happened), `transactions.status` → `'refunded'` or `'partially_refunded'`.
-- **Vendor consent required** — they're authorizing the clawback.
+**Steps:**
 
-### 7d. Post-redemption refund WHEN money is already paid out to bank
-- Service done, Transfer fired, Stripe automatic payout already deposited to vendor's bank.
-- Stripe's `createReversal` can still pull money back — but if the Connect balance is insufficient, the vendor's bank account gets debited. They must have negative balance handling. **Risk to test in production-like conditions.**
+1. Admin opens `/admin` → Customers → click the customer who owns this transaction.
+2. Click **Refund** on the transaction row in the drawer.
+3. Modal pre-fills with the full refundable amount and Max highlighted.
+4. Enter reason (e.g. "test full refund"). Click Refund.
 
-### 7e. Customer dispute / chargeback
-- Customer disputes the charge with their bank (real-world: claim fraud or "not as described").
-- Stripe sends `charge.dispute.created`. We need to respond.
-- **Policy:** what's our default response? Submit evidence (the voucher was redeemed) or auto-refund?
+**Expected:**
+- [ ] DB `transactions.status='refunded'`, `refunded_cents = consumer_paid_cents`, `refunded_at` populated.
+- [ ] DB `claims.status='cancelled'`.
+- [ ] DB `audit_log` has a `refund.issued` row with `meta.stripeRefundId`, `meta.amountCents`, `meta.reason`, and `actor_user_id` set to the admin.
+- [ ] Stripe Dashboard → Refunds: new refund matching `amountCents`, status `succeeded`, metadata includes `gloe_reason` and `transaction_id`.
+- [ ] Customer is charged back the full amount (visible on their card statement after ~5–10 business days; in test mode, immediately via webhook).
+- [ ] Gloe's platform balance: **keeps** the platform fee (verify via Stripe Connect "application fees" dashboard — no fee refund recorded).
+- [ ] If vendor was already paid (Transfer had fired): Stripe automatically reverses the transfer back to the platform. Vendor's Connect balance drops by `vendor_payout_cents`.
+- [ ] Customer drawer refetches: refund button gone on this row, refund reflected in "Refunded" stat.
 
-**None of 7a–7e is built yet.** This section is a forward-looking checklist for when we get there.
+### 7b. Partial refund of an unredeemed transaction
+
+**Setup:**
+- A different `transactions` row, same eligibility as 7a.
+
+**Steps:**
+
+1. Admin opens drawer, clicks Refund.
+2. In the modal, override the amount to roughly half (e.g. `$50` on a `$200` deal). Enter reason ("partial test"). Submit.
+
+**Expected:**
+- [ ] DB `transactions.status='partially_refunded'`, `refunded_cents=5000`, `refunded_at` populated.
+- [ ] DB `claims.status='active'` (voucher stays live — customer can still redeem for the remaining $150).
+- [ ] DB `audit_log` row `refund.partial` with `meta.amountCents=5000`, `meta.cumulativeRefundedCents=5000`.
+- [ ] Stripe shows a single partial refund of $50.
+
+**Follow-up: second partial on the same transaction**
+
+3. Click Refund again on the same row. Modal shows refundable balance = $150. Refund another $25.
+
+**Expected:**
+- [ ] DB `refunded_cents=7500`, status still `partially_refunded`.
+- [ ] DB `audit_log`: another `refund.partial` with `cumulativeRefundedCents=7500`.
+- [ ] Stripe shows a second refund of $25 (separate refund object — *not* a modification of the first).
+- [ ] Idempotency key was `refund_txn_${id}_5000` for the second call (different from first which was `_0`), so both go through.
+
+**Follow-up: top up to full from a partial**
+
+4. Click Refund a third time. Click Max (should pre-fill the remaining $125). Submit.
+
+**Expected:**
+- [ ] DB `transactions.status='refunded'`, `refunded_cents=20000`.
+- [ ] DB `claims.status='cancelled'` (now killed because amount hit the full).
+- [ ] DB `audit_log`: `refund.issued` (full), not `refund.partial`.
+
+### 7c. Refund refused — voucher already redeemed
+
+**Setup:**
+- A transaction whose claim was redeemed: `claims.status='redeemed'`.
+
+**Steps:**
+
+1. Admin opens drawer. **Refund button should not appear** on this row (UI checks `claimStatus === 'redeemed'`).
+
+**Expected (UI):**
+- [ ] No Refund button rendered.
+
+**Backend check (paranoid case — bypass the UI):**
+- [ ] If the mutation is called directly with this transaction ID, server responds with `BAD_REQUEST` and message `claim is redeemed, only active or expired (unredeemed) claims can be refunded`.
+- [ ] DB `audit_log` shows a `refund.refused` row with that exact reason.
+- [ ] No Stripe refund created.
+
+### 7d. Refund refused — amount exceeds refundable balance
+
+**Setup:**
+- A `partially_refunded` transaction with `consumer_paid_cents=20000, refunded_cents=15000` (remaining $50 refundable).
+
+**Steps (direct API call, since UI input enforces max):**
+
+1. Call `admin.refundTransaction({ transactionId, amountCents: 10000, reason: "overshoot test" })`.
+
+**Expected:**
+- [ ] Mutation throws `BAD_REQUEST` with message `amount 10000 exceeds refundable balance 5000`.
+- [ ] DB unchanged: still `refunded_cents=15000`, status `partially_refunded`.
+- [ ] DB `audit_log` `refund.refused` row.
+
+### 7e. Refund refused — reason too short
+
+**Setup:**
+- Any eligible transaction.
+
+**Steps:**
+
+1. Open modal, enter `$1` amount, leave reason as `ab` (2 chars).
+2. Confirm button should be disabled. If somehow submitted: zod validation rejects.
+
+**Expected:**
+- [ ] UI Confirm button disabled when reason < 3 chars.
+- [ ] If forced via API: tRPC zod error, no DB write, no Stripe call.
+
+### 7f. Idempotency — double-submitting the same refund
+
+**Goal:** Confirm a double-click doesn't double-refund the customer.
+
+**Steps:**
+
+1. In the modal, click Refund. Before the response returns, click it a second time (you may need to test by replaying the mutation manually with the same `transactionId` and `amountCents` while the first is still pending).
+
+**Expected:**
+- [ ] Only **one** refund object created in Stripe (idempotency key `refund_txn_${id}_${refunded_cents_before}` matches both calls → Stripe returns the original).
+- [ ] DB `refunded_cents` increases by `amountCents` exactly once.
+- [ ] DB `audit_log`: depending on timing, one or two `refund.issued`/`refund.partial` rows (we don't dedupe audits — but the money state is correct).
+
+### Not yet built — explicitly out of scope for v1
+
+The following came up during design but were intentionally deferred. If you hit one of these cases, escalate, don't try to use the admin tool:
+
+- **Post-redemption refunds.** Customer received the service, vendor wants to comp them. Requires `transfers.createReversal` and vendor consent. Hard refuse: the UI hides the Refund button.
+- **Customer-self-serve refunds.** No customer-facing refund button exists. Customer must email/call.
+- **Chargebacks (`charge.dispute.created`).** Webhook handler not wired. Stripe will collect evidence URL but we don't auto-respond.
+- **Fee-tier-aware partial refund accounting.** We pro-rate fees with Stripe's automatic logic; we don't write a per-line breakdown into our DB. If accounting needs that, add a `refund_events` table later.
 
 ---
 

@@ -16,6 +16,8 @@ export interface ClaimedDeal {
   };
   /** Token encoded into the QR. In production this is server-signed. */
   qrPayload: string;
+  /** Short human-readable code (e.g. "GLOE-7K2QX") for staff to type if QR fails. */
+  humanCode: string;
   status: ClaimStatus;
   createdAt: number;       // ms epoch
   expiresAt: number;       // ms epoch — typically createdAt + 7 days

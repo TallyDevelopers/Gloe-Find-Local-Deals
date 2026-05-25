@@ -13,6 +13,7 @@ const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const BUCKETS = {
   photo: 'deal-photos',
   video: 'deal-videos',
+  review: 'review-photos',
 } as const;
 
 export type UploadKind = keyof typeof BUCKETS;

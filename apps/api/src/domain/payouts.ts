@@ -98,6 +98,13 @@ export async function releaseTransferForClaim(
   if (ctx!.transaction_status !== 'paid') refuse(`transaction status is ${ctx!.transaction_status}, expected paid`);
   if (ctx!.existing_transfer_id) refuse(`transfer already exists for this claim (${ctx!.existing_transfer_id})`);
   if (!ctx!.stripe_account_id) refuse('vendor has no connected Stripe account');
+  // Stripe Connect IDs are `acct_` + 16+ chars. Anything else (e.g. our old
+  // `acct_test_bypass` placeholder) is a local-only marker, not a real
+  // destination — refuse here instead of letting Stripe reject with "No such
+  // destination" mid-flight.
+  if (!/^acct_[A-Za-z0-9]{16,}$/.test(ctx!.stripe_account_id ?? '')) {
+    refuse(`vendor stripe_account_id (${ctx!.stripe_account_id}) is not a real Stripe Connect account`);
+  }
   if (ctx!.stripe_account_status !== 'active') refuse(`vendor stripe_account_status is ${ctx!.stripe_account_status}, expected active`);
   if (!Number.isFinite(ctx!.vendor_payout_cents) || ctx!.vendor_payout_cents <= 0) refuse(`vendor_payout_cents must be > 0 (got ${ctx!.vendor_payout_cents})`);
 

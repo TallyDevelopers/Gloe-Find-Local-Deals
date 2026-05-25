@@ -96,8 +96,18 @@ export async function searchEverything(sql: Sql, query: string): Promise<SearchH
  * Pulse — at-a-glance "right now" for the admin home.
  * Optimized for frequent polling; everything resolvable in <50ms.
  * ============================================================ */
+/**
+ * The founder operating dashboard. One mega-query that tells you everything
+ * you need to know about the business state right now — money position,
+ * day/week/month rollups, vendor health, and operational alerts.
+ *
+ * Hot path — polled every 10s by the Pulse view. Keep it index-friendly.
+ * The Stripe live balance is fetched separately (network call) by
+ * getStripeBalanceForPlatform.
+ */
 export async function getAdminPulse(sql: Sql) {
   const rows = await sql<{
+    // --- Today (kept for backward compat) ---
     paid_today_cents: number;
     paid_today_count: number;
     fee_today_cents: number;
@@ -108,8 +118,31 @@ export async function getAdminPulse(sql: Sql) {
     pending_deals: number;
     vendors_blocked: number;
     vendors_total: number;
+    // --- Money position ---
+    owed_active_cents: number;        // bought but not redeemed (we hold this till redemption)
+    owed_redeemed_cents: number;      // redeemed but not yet transferred (we owe this NOW)
+    refund_liability_cents: number;   // refunds pending settlement (rare, but possible)
+    // --- Time rollups ---
+    paid_yesterday_cents: number;
+    fee_yesterday_cents: number;
+    paid_week_cents: number;
+    fee_week_cents: number;
+    paid_month_cents: number;
+    fee_month_cents: number;
+    refunded_today_cents: number;
+    refunded_week_cents: number;
+    refunded_month_cents: number;
+    // --- Vendor health ---
+    vendors_active_count: number;
+    vendors_with_held_money_count: number;
+    vendors_stale_30d_count: number;
+    // --- Operational alerts ---
+    vouchers_expiring_7d: number;
+    refunds_recent_7d: number;
+    audit_warnings_24h: number;
   }[]>`
     SELECT
+      -- Today
       COALESCE((SELECT SUM(consumer_paid_cents) FROM public.transactions
                 WHERE status IN ('paid','released','partially_refunded')
                   AND paid_at::date = current_date), 0)::int AS paid_today_cents,
@@ -132,7 +165,75 @@ export async function getAdminPulse(sql: Sql) {
       COALESCE((SELECT COUNT(*) FROM public.payouts WHERE status = 'failed'), 0)::int AS failed_payouts,
       COALESCE((SELECT COUNT(*) FROM public.deals WHERE status = 'pending_review'), 0)::int AS pending_deals,
       COALESCE((SELECT COUNT(*) FROM public.vendors WHERE stripe_account_status != 'active'), 0)::int AS vendors_blocked,
-      (SELECT COUNT(*) FROM public.vendors)::int AS vendors_total
+      (SELECT COUNT(*) FROM public.vendors)::int AS vendors_total,
+
+      -- Money position: what we owe vendors but haven't sent yet.
+      -- Active claims = customer paid but hasn't redeemed; if they redeem, we transfer.
+      COALESCE((SELECT SUM(t.vendor_payout_cents)
+                FROM public.claims c
+                JOIN public.transactions t ON t.id = c.transaction_id
+                WHERE c.status = 'active' AND t.status = 'paid' AND t.stripe_transfer_id IS NULL), 0)::int AS owed_active_cents,
+      -- Redeemed but not yet transferred (auto-release off, or transfer refused). We owe this NOW.
+      COALESCE((SELECT SUM(t.vendor_payout_cents)
+                FROM public.claims c
+                JOIN public.transactions t ON t.id = c.transaction_id
+                WHERE c.status = 'redeemed' AND t.status = 'paid' AND t.stripe_transfer_id IS NULL), 0)::int AS owed_redeemed_cents,
+      -- Refund liability (customer is owed money back, refund not yet completed in Stripe)
+      0::int AS refund_liability_cents,
+
+      -- Time rollups
+      COALESCE((SELECT SUM(consumer_paid_cents) FROM public.transactions
+                WHERE status IN ('paid','released','partially_refunded')
+                  AND paid_at::date = current_date - 1), 0)::int AS paid_yesterday_cents,
+      COALESCE((SELECT SUM(platform_fee_cents) FROM public.transactions
+                WHERE status IN ('paid','released','partially_refunded')
+                  AND paid_at::date = current_date - 1), 0)::int AS fee_yesterday_cents,
+      COALESCE((SELECT SUM(consumer_paid_cents) FROM public.transactions
+                WHERE status IN ('paid','released','partially_refunded')
+                  AND paid_at >= current_date - INTERVAL '7 days'), 0)::int AS paid_week_cents,
+      COALESCE((SELECT SUM(platform_fee_cents) FROM public.transactions
+                WHERE status IN ('paid','released','partially_refunded')
+                  AND paid_at >= current_date - INTERVAL '7 days'), 0)::int AS fee_week_cents,
+      COALESCE((SELECT SUM(consumer_paid_cents) FROM public.transactions
+                WHERE status IN ('paid','released','partially_refunded')
+                  AND paid_at >= date_trunc('month', current_date)), 0)::int AS paid_month_cents,
+      COALESCE((SELECT SUM(platform_fee_cents) FROM public.transactions
+                WHERE status IN ('paid','released','partially_refunded')
+                  AND paid_at >= date_trunc('month', current_date)), 0)::int AS fee_month_cents,
+      COALESCE((SELECT SUM(refunded_cents) FROM public.transactions
+                WHERE refunded_at::date = current_date), 0)::int AS refunded_today_cents,
+      COALESCE((SELECT SUM(refunded_cents) FROM public.transactions
+                WHERE refunded_at >= current_date - INTERVAL '7 days'), 0)::int AS refunded_week_cents,
+      COALESCE((SELECT SUM(refunded_cents) FROM public.transactions
+                WHERE refunded_at >= date_trunc('month', current_date)), 0)::int AS refunded_month_cents,
+
+      -- Vendor health
+      COALESCE((SELECT COUNT(*) FROM public.vendors WHERE stripe_account_status = 'active'), 0)::int AS vendors_active_count,
+      -- Vendors who have at least one redeemed-but-unreleased payout (we're holding their money)
+      COALESCE((SELECT COUNT(DISTINCT c.vendor_id)
+                FROM public.claims c
+                JOIN public.transactions t ON t.id = c.transaction_id
+                WHERE c.status = 'redeemed' AND t.status = 'paid' AND t.stripe_transfer_id IS NULL), 0)::int AS vendors_with_held_money_count,
+      -- Active vendors with no sales in 30 days (churn risk signal)
+      COALESCE((SELECT COUNT(*) FROM public.vendors v
+                WHERE v.status = 'active' AND v.stripe_account_status = 'active'
+                  AND NOT EXISTS (
+                    SELECT 1 FROM public.transactions t
+                    WHERE t.vendor_id = v.id
+                      AND t.status IN ('paid','released','partially_refunded')
+                      AND t.paid_at >= current_date - INTERVAL '30 days'
+                  )), 0)::int AS vendors_stale_30d_count,
+
+      -- Operational alerts
+      COALESCE((SELECT COUNT(*) FROM public.claims
+                WHERE status = 'active'
+                  AND expires_at BETWEEN now() AND now() + INTERVAL '7 days'), 0)::int AS vouchers_expiring_7d,
+      COALESCE((SELECT COUNT(*) FROM public.transactions
+                WHERE status IN ('refunded','partially_refunded')
+                  AND refunded_at >= current_date - INTERVAL '7 days'), 0)::int AS refunds_recent_7d,
+      COALESCE((SELECT COUNT(*) FROM public.audit_log
+                WHERE action IN ('transfer.refused','refund.refused','payout.failed')
+                  AND created_at >= now() - INTERVAL '24 hours'), 0)::int AS audit_warnings_24h
   `;
   return rows[0]!;
 }
@@ -171,6 +272,7 @@ export async function listAdminTransactions(sql: Sql, filters: TransactionListFi
     created_at: string;
     vendor_id: string;
     business_name: string;
+    customer_id: string | null;
     customer_name: string | null;
     customer_email: string | null;
     claim_status: string | null;
@@ -179,6 +281,7 @@ export async function listAdminTransactions(sql: Sql, filters: TransactionListFi
       t.id, t.status, t.consumer_paid_cents, t.platform_fee_cents, t.vendor_payout_cents,
       t.stripe_payment_intent_id, t.stripe_transfer_id, t.paid_at, t.created_at,
       v.id AS vendor_id, v.business_name,
+      u.id AS customer_id,
       COALESCE(NULLIF(TRIM(CONCAT(u.first_name, ' ', u.last_name)), ''), u.email) AS customer_name,
       u.email AS customer_email,
       (SELECT c.status FROM public.claims c WHERE c.transaction_id = t.id LIMIT 1) AS claim_status
@@ -209,6 +312,7 @@ export async function listAdminTransactions(sql: Sql, filters: TransactionListFi
     createdAt: r.created_at,
     vendorId: r.vendor_id,
     vendorName: r.business_name,
+    customerId: r.customer_id,
     customerName: r.customer_name,
     customerEmail: r.customer_email,
     claimStatus: r.claim_status,
@@ -329,6 +433,7 @@ export async function listAdminCustomers(sql: Sql, query: string | undefined) {
   const queryLike = query && query.trim().length >= 2 ? `%${query.trim()}%` : null;
   const rows = await sql<{
     id: string;
+    display_id: string;
     first_name: string | null;
     last_name: string | null;
     email: string | null;
@@ -339,7 +444,7 @@ export async function listAdminCustomers(sql: Sql, query: string | undefined) {
     last_paid_at: string | null;
   }[]>`
     SELECT
-      u.id, u.first_name, u.last_name, u.email, u.phone, u.created_at,
+      u.id, u.display_id, u.first_name, u.last_name, u.email, u.phone, u.created_at,
       COALESCE((SELECT COUNT(*) FROM public.transactions t
                 WHERE t.user_id = u.id AND t.status IN ('paid','released','partially_refunded')), 0)::int AS purchase_count,
       COALESCE((SELECT SUM(consumer_paid_cents) FROM public.transactions t
@@ -356,6 +461,7 @@ export async function listAdminCustomers(sql: Sql, query: string | undefined) {
   `;
   return rows.map((r) => ({
     id: r.id,
+    displayId: r.display_id,
     firstName: r.first_name,
     lastName: r.last_name,
     email: r.email,
@@ -370,13 +476,14 @@ export async function listAdminCustomers(sql: Sql, query: string | undefined) {
 export async function getAdminCustomerDetail(sql: Sql, customerId: string) {
   const rows = await sql<{
     id: string;
+    display_id: string;
     first_name: string | null;
     last_name: string | null;
     email: string | null;
     phone: string | null;
     created_at: string;
   }[]>`
-    SELECT id, first_name, last_name, email, phone, created_at
+    SELECT id, display_id, first_name, last_name, email, phone, created_at
     FROM public.users WHERE id = ${customerId} LIMIT 1
   `;
   const u = rows[0];
@@ -384,8 +491,10 @@ export async function getAdminCustomerDetail(sql: Sql, customerId: string) {
 
   const transactions = await sql<{
     id: string;
+    display_id: string;
     status: string;
     consumer_paid_cents: number;
+    refunded_cents: number;
     paid_at: string | null;
     created_at: string;
     vendor_name: string;
@@ -393,7 +502,7 @@ export async function getAdminCustomerDetail(sql: Sql, customerId: string) {
     deal_title: string | null;
   }[]>`
     SELECT
-      t.id, t.status, t.consumer_paid_cents, t.paid_at, t.created_at,
+      t.id, t.display_id, t.status, t.consumer_paid_cents, t.refunded_cents, t.paid_at, t.created_at,
       v.business_name AS vendor_name,
       (SELECT c.status FROM public.claims c WHERE c.transaction_id = t.id LIMIT 1) AS claim_status,
       (SELECT (c.snapshot ->> 'dealTitle') FROM public.claims c WHERE c.transaction_id = t.id LIMIT 1) AS deal_title
@@ -421,6 +530,7 @@ export async function getAdminCustomerDetail(sql: Sql, customerId: string) {
   return {
     customer: {
       id: u.id,
+      displayId: u.display_id,
       firstName: u.first_name,
       lastName: u.last_name,
       email: u.email,
@@ -430,8 +540,10 @@ export async function getAdminCustomerDetail(sql: Sql, customerId: string) {
     totals: totals[0]!,
     transactions: transactions.map((t) => ({
       id: t.id,
+      displayId: t.display_id,
       status: t.status,
       consumerPaidCents: t.consumer_paid_cents,
+      refundedCents: t.refunded_cents,
       paidAt: t.paid_at,
       createdAt: t.created_at,
       vendorName: t.vendor_name,
@@ -680,6 +792,7 @@ export async function getVendorRoster(sql: Sql) {
 export async function getVendorDetail(sql: Sql, vendorId: string) {
   const vRows = await sql<{
     id: string;
+    display_id: string;
     business_name: string;
     status: string;
     city: string;
@@ -694,13 +807,15 @@ export async function getVendorDetail(sql: Sql, vendorId: string) {
     purchases: number;
     gross_cents: number;
     income_cents: number;
+    stripe_fee_cents: number;
   }[]>`
-    SELECT v.id, v.business_name, v.status, v.city, v.region, v.address_line1, v.phone,
+    SELECT v.id, v.display_id, v.business_name, v.status, v.city, v.region, v.address_line1, v.phone,
       (v.owner_user_id IS NOT NULL) AS has_owner, v.admin_bypass,
       v.stripe_account_status, v.google_place_id, v.auto_release_on_redemption,
       COALESCE((SELECT COUNT(*)::int FROM public.transactions t WHERE t.vendor_id=v.id AND t.status IN ('paid','released','partially_refunded')),0) AS purchases,
       COALESCE((SELECT SUM(consumer_paid_cents) FROM public.transactions t WHERE t.vendor_id=v.id AND t.status IN ('paid','released','partially_refunded')),0)::int AS gross_cents,
-      COALESCE((SELECT SUM(platform_fee_cents) FROM public.transactions t WHERE t.vendor_id=v.id AND t.status IN ('paid','released','partially_refunded')),0)::int AS income_cents
+      COALESCE((SELECT SUM(platform_fee_cents) FROM public.transactions t WHERE t.vendor_id=v.id AND t.status IN ('paid','released','partially_refunded')),0)::int AS income_cents,
+      COALESCE((SELECT SUM(stripe_fee_cents)   FROM public.transactions t WHERE t.vendor_id=v.id AND t.status IN ('paid','released','partially_refunded')),0)::int AS stripe_fee_cents
     FROM public.vendors v WHERE v.id = ${vendorId} LIMIT 1
   `;
   const v = vRows[0];
@@ -753,6 +868,35 @@ export async function getVendorDetail(sql: Sql, vendorId: string) {
     ORDER BY c.redeemed_at DESC
   `;
 
+  // Every transfer that has fired for this vendor — for "where's my money?" support
+  // calls. We never delete rows from `transactions`, so this is the full history.
+  const releases = await sql<{
+    transaction_id: string;
+    transaction_display_id: string;
+    amount_cents: number;
+    deal_title: string | null;
+    customer_email: string | null;
+    stripe_transfer_id: string;
+    released_at: string;
+  }[]>`
+    SELECT
+      t.id                  AS transaction_id,
+      t.display_id          AS transaction_display_id,
+      t.vendor_payout_cents AS amount_cents,
+      d.title               AS deal_title,
+      u.email               AS customer_email,
+      t.stripe_transfer_id  AS stripe_transfer_id,
+      t.released_at         AS released_at
+    FROM public.transactions t
+    LEFT JOIN public.claims c ON c.transaction_id = t.id
+    LEFT JOIN public.deals d  ON d.id = c.deal_id
+    LEFT JOIN public.users u  ON u.id = t.user_id
+    WHERE t.vendor_id           = ${vendorId}
+      AND t.stripe_transfer_id IS NOT NULL
+    ORDER BY t.released_at DESC NULLS LAST
+    LIMIT 100
+  `;
+
   const deals = await sql<{
     id: string;
     title: string;
@@ -780,6 +924,7 @@ export async function getVendorDetail(sql: Sql, vendorId: string) {
   return {
     vendor: {
       id: v.id,
+      displayId: v.display_id,
       businessName: v.business_name,
       status: v.status,
       city: v.city,
@@ -793,6 +938,9 @@ export async function getVendorDetail(sql: Sql, vendorId: string) {
       purchases: v.purchases,
       grossCents: v.gross_cents,
       incomeCents: v.income_cents,
+      stripeFeeCents: v.stripe_fee_cents,
+      // Net we actually keep after Stripe's processing fee comes out of our cut.
+      netIncomeCents: v.income_cents - v.stripe_fee_cents,
       // Their earnings = what's owed/paid to the vendor (gross minus your fee).
       vendorEarnedCents: v.gross_cents - v.income_cents,
       stripeConnected: v.stripe_account_status === 'active',
@@ -813,6 +961,15 @@ export async function getVendorDetail(sql: Sql, vendorId: string) {
       amountCents: r.vendor_payout_cents,
       dealTitle: r.deal_title,
       redeemedAt: r.redeemed_at,
+    })),
+    releases: releases.map((r) => ({
+      transactionId: r.transaction_id,
+      transactionDisplayId: r.transaction_display_id,
+      amountCents: r.amount_cents,
+      dealTitle: r.deal_title,
+      customerEmail: r.customer_email,
+      stripeTransferId: r.stripe_transfer_id,
+      releasedAt: r.released_at,
     })),
     deals: deals.map((d) => ({
       id: d.id,
