@@ -67,7 +67,7 @@ export async function generateMetadata({ params }: GiftPageProps): Promise<Metad
   const { sessionId } = await params;
   const session = await fetchSession(sessionId).catch(() => null);
   const product = session?.line_items?.data?.[0]?.price?.product;
-  const title = product?.name ? `${product.name} · Gloē` : 'A little something for you · Gloē';
+  const title = product?.name ?? 'A little something for you';
   return {
     title,
     description: 'Continue to secure checkout.',
