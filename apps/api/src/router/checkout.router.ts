@@ -9,7 +9,7 @@ import { protectedProcedure, router } from './trpc';
  * the URL we hand back to the customer for sharing. Defaults to the prod web
  * domain — override locally with PUBLIC_WEB_ORIGIN.
  */
-const PUBLIC_WEB_ORIGIN = process.env.PUBLIC_WEB_ORIGIN ?? 'https://app.gloe.beauty';
+const PUBLIC_WEB_ORIGIN = process.env.PUBLIC_WEB_ORIGIN ?? 'https://gloe.app';
 
 export const checkoutRouter = router({
   /**
