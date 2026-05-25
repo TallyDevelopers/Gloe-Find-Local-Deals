@@ -1,4 +1,4 @@
-import { Text, color, radius, space } from '@gloe/ui';
+import { Text, radius, space, useTheme } from '@gloe/ui';
 import { useState } from 'react';
 import { Pressable } from 'react-native';
 
@@ -12,6 +12,7 @@ import { useSelectedLocation } from './SelectedLocationProvider';
  */
 export function LocationPill() {
   const { location } = useSelectedLocation();
+  const { color: palette } = useTheme();
   const [open, setOpen] = useState(false);
 
   // Strip the state suffix for a tighter pill ("San Diego, CA" -> "San Diego")
@@ -29,14 +30,14 @@ export function LocationPill() {
           paddingHorizontal: space[3],
           paddingVertical: space[2],
           borderRadius: radius.pill,
-          backgroundColor: color.surface.secondary,
+          backgroundColor: palette.surface.secondary,
         }}
       >
-        <Icon name="pin" size={16} color={color.text.primary} strokeWidth={2.25} />
+        <Icon name="pin" size={16} color={palette.text.primary} strokeWidth={2.25} />
         <Text variant="body-md" tone="primary" weight="semibold">
           {display}
         </Text>
-        <Icon name="chevronDown" size={14} color={color.text.tertiary} strokeWidth={2.5} />
+        <Icon name="chevronDown" size={14} color={palette.text.tertiary} strokeWidth={2.5} />
       </Pressable>
 
       <LocationPickerSheet open={open} onClose={() => setOpen(false)} />

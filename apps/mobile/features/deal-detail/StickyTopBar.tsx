@@ -1,4 +1,4 @@
-import { color, radius, shadow, space } from '@gloe/ui';
+import { radius, shadow, space, useTheme } from '@gloe/ui';
 import { useRouter } from 'expo-router';
 import { Pressable, View } from 'react-native';
 import Animated, { interpolate, useAnimatedStyle, type SharedValue } from 'react-native-reanimated';
@@ -20,6 +20,7 @@ interface StickyTopBarProps {
 export function StickyTopBar({ scrollY, heroHeight }: StickyTopBarProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { color: palette } = useTheme();
 
   // Fade the bar's solid background in over the back half of the hero scroll.
   const barBg = useAnimatedStyle(() => ({
@@ -50,9 +51,9 @@ export function StickyTopBar({ scrollY, heroHeight }: StickyTopBarProps) {
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: color.surface.primary,
+            backgroundColor: palette.surface.primary,
             borderBottomWidth: 1,
-            borderBottomColor: color.border.subtle,
+            borderBottomColor: palette.border.subtle,
           },
           barBg,
         ]}
@@ -67,7 +68,7 @@ export function StickyTopBar({ scrollY, heroHeight }: StickyTopBarProps) {
 function FloatingButton({
   onPress,
   iconName,
-  iconColor = color.text.primary,
+  iconColor,
   iconFill = 'none',
 }: {
   onPress: () => void;
@@ -75,6 +76,8 @@ function FloatingButton({
   iconColor?: string;
   iconFill?: string;
 }) {
+  const { color: palette } = useTheme();
+  const resolvedIconColor = iconColor ?? palette.text.primary;
   return (
     <Pressable
       onPress={onPress}
@@ -83,13 +86,13 @@ function FloatingButton({
         width: 40,
         height: 40,
         borderRadius: radius.pill,
-        backgroundColor: color.surface.elevated,
+        backgroundColor: palette.surface.elevated,
         alignItems: 'center',
         justifyContent: 'center',
         ...shadow.sm,
       }}
     >
-      <Icon name={iconName} size={20} color={iconColor} fill={iconFill} strokeWidth={2.25} />
+      <Icon name={iconName} size={20} color={resolvedIconColor} fill={iconFill} strokeWidth={2.25} />
     </Pressable>
   );
 }

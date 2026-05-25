@@ -11,15 +11,14 @@ import {
   useFonts,
 } from '@expo-google-fonts/inter';
 import { Outfit_500Medium, Outfit_600SemiBold } from '@expo-google-fonts/outfit';
-import { color } from '@gloe/ui';
 import Constants from 'expo-constants';
 import { Slot } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 
 import { GloeProviders } from '../features/providers/GloeProviders';
 import { SplashShimmer } from '../features/splash/SplashShimmer';
+import { ThemedStatusBar } from '../features/theme/ThemedStatusBar';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -76,7 +75,7 @@ export default function RootLayout() {
       stripePublishableKey={requireEnv('EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY')}
       apiUrl={resolveApiUrl()}
     >
-      <StatusBar style="dark" backgroundColor={color.surface.primary} />
+      <ThemedStatusBar />
       <Slot />
       {showSplash ? <SplashShimmer onDone={() => setShowSplash(false)} /> : null}
     </GloeProviders>

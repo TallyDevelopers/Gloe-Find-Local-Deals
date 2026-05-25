@@ -1,4 +1,4 @@
-import { Stack, Text, color, radius, space } from '@gloe/ui';
+import { Stack, Text, radius, space, useTheme } from '@gloe/ui';
 import { Pressable, ScrollView } from 'react-native';
 
 import { formatPrice } from '../discover/format';
@@ -16,6 +16,7 @@ interface VariantPickerProps {
 }
 
 export function VariantPicker({ variants, selectedId, onSelect }: VariantPickerProps) {
+  const { color: palette } = useTheme();
   if (variants.length <= 1) return null;
 
   return (
@@ -39,8 +40,8 @@ export function VariantPicker({ variants, selectedId, onSelect }: VariantPickerP
                 paddingVertical: space[3],
                 borderRadius: radius.lg,
                 borderWidth: 1.5,
-                borderColor: isSelected ? color.brand[500] : color.border.default,
-                backgroundColor: isSelected ? color.brand[50] : color.surface.elevated,
+                borderColor: isSelected ? palette.brand[500] : palette.border.default,
+                backgroundColor: isSelected ? palette.brand[50] : palette.surface.elevated,
                 minWidth: 110,
               }}
             >

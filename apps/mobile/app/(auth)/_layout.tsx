@@ -13,7 +13,7 @@ export default function AuthLayout() {
       screenOptions={{
         headerShown: false,
         animation: 'slide_from_right',
-        contentStyle: { backgroundColor: '#FBF8F3' },
+        contentStyle: { backgroundColor: '#FAF5F2' },
       }}
     />
   );

@@ -1,5 +1,5 @@
 import { trpc, type DealSummary } from '@gloe/api-client';
-import { Stack, Text, color, space } from '@gloe/ui';
+import { Stack, Text, space, useTheme } from '@gloe/ui';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Dimensions, FlatList, Pressable, View } from 'react-native';
 
@@ -16,6 +16,14 @@ interface CategoryRailProps {
   savedIds: Set<string>;
   onSave: (dealId: string) => void;
   onSeeAll: (slug: string) => void;
+  /** Optional filter overrides from the FilterSheet. Each rail honors the
+   *  same constraints as the main grid so a 5-mi filter actually means 5 mi. */
+  maxDistanceMiles?: number;
+  minPriceCents?: number;
+  maxPriceCents?: number;
+  minDiscountPct?: number;
+  /** Per-install seed for ranking jitter — keeps every rail in sync. */
+  anonSeed?: string | null;
 }
 
 /**
@@ -31,7 +39,13 @@ export function CategoryRail({
   savedIds,
   onSave,
   onSeeAll,
+  maxDistanceMiles,
+  minPriceCents,
+  maxPriceCents,
+  minDiscountPct,
+  anonSeed,
 }: CategoryRailProps) {
+  const { color: palette } = useTheme();
   const [offset, setOffset] = useState(0);
 
   // Paging by offset; accumulate each fetched page into a local map.
@@ -39,13 +53,27 @@ export function CategoryRail({
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
 
+  // When the filter set changes, reset paging — otherwise we'd append pages
+  // from one filter onto pages from another (e.g. the user goes from 50 mi to
+  // 5 mi and we'd still show the old 23-mi cards from the previous page 0).
+  const filterKey = `${maxDistanceMiles ?? 'd'}|${minPriceCents ?? 'p'}|${maxPriceCents ?? 'P'}|${minDiscountPct ?? 'g'}|${anonSeed ?? ''}`;
+  useEffect(() => {
+    setPages({});
+    setHasMore(true);
+    setOffset(0);
+  }, [filterKey]);
+
   const query = trpc.deals.list.useQuery({
     userLat,
     userLng,
-    maxDistanceMiles: 50,
+    maxDistanceMiles: maxDistanceMiles ?? 50,
     category: categorySlug,
     limit: PAGE,
     offset,
+    ...(minPriceCents !== undefined ? { minPriceCents } : {}),
+    ...(maxPriceCents !== undefined ? { maxPriceCents } : {}),
+    ...(minDiscountPct !== undefined ? { minDiscountPct } : {}),
+    ...(anonSeed ? { anonSeed } : {}),
   });
 
   // RQ v5 has no onSuccess — append whenever the current offset's data arrives.
@@ -108,7 +136,7 @@ export function CategoryRail({
         ListFooterComponent={
           loadingMore ? (
             <View style={{ width: 60, alignItems: 'center', justifyContent: 'center' }}>
-              <ActivityIndicator color={color.brand[500]} />
+              <ActivityIndicator color={palette.brand[500]} />
             </View>
           ) : null
         }

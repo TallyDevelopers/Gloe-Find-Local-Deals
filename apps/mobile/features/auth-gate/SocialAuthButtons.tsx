@@ -1,5 +1,5 @@
 import type { SocialProvider } from '@gloe/auth';
-import { Button, Stack, Text, color, space } from '@gloe/ui';
+import { Button, Stack, Text, space, useTheme } from '@gloe/ui';
 import { View } from 'react-native';
 
 /** Providers we offer, in display order. Must be enabled in the Clerk dashboard. */
@@ -41,13 +41,14 @@ export function SocialAuthButtons({ onPress, pending, error }: Props) {
 }
 
 function Divider() {
+  const { color: palette } = useTheme();
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[3], marginVertical: space[1] }}>
-      <View style={{ flex: 1, height: 1, backgroundColor: color.border.subtle }} />
+      <View style={{ flex: 1, height: 1, backgroundColor: palette.border.subtle }} />
       <Text variant="body-sm" tone="tertiary">
         or
       </Text>
-      <View style={{ flex: 1, height: 1, backgroundColor: color.border.subtle }} />
+      <View style={{ flex: 1, height: 1, backgroundColor: palette.border.subtle }} />
     </View>
   );
 }

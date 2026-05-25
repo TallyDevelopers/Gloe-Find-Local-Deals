@@ -9,6 +9,8 @@ import { AuthGateProvider } from '../auth-gate/AuthGateProvider';
 import { ClaimedDealsProvider } from '../claimed/ClaimedDealsProvider';
 import { SelectedLocationProvider } from '../discover-header/SelectedLocationProvider';
 import { SavedDealsProvider } from '../saved/SavedDealsProvider';
+import { SavedVendorsProvider } from '../saved/SavedVendorsProvider';
+import { ThemePreferenceProvider } from '../theme/ThemePreferenceProvider';
 
 interface GloeProvidersProps {
   clerkPublishableKey: string;
@@ -39,19 +41,23 @@ export function GloeProviders({
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <StripeProvider publishableKey={stripePublishableKey} merchantIdentifier="merchant.com.gloe.app">
-        <AuthProvider publishableKey={clerkPublishableKey}>
-          <ApiBridge apiUrl={apiUrl}>
-            <AuthGateProvider>
-              <SelectedLocationProvider>
-                <SavedDealsProvider>
-                  <ClaimedDealsProvider>{children}</ClaimedDealsProvider>
-                </SavedDealsProvider>
-              </SelectedLocationProvider>
-            </AuthGateProvider>
-          </ApiBridge>
-          </AuthProvider>
-        </StripeProvider>
+        <ThemePreferenceProvider>
+          <StripeProvider publishableKey={stripePublishableKey} merchantIdentifier="merchant.com.gloe.app">
+          <AuthProvider publishableKey={clerkPublishableKey}>
+            <ApiBridge apiUrl={apiUrl}>
+              <AuthGateProvider>
+                <SelectedLocationProvider>
+                  <SavedDealsProvider>
+                    <SavedVendorsProvider>
+                      <ClaimedDealsProvider>{children}</ClaimedDealsProvider>
+                    </SavedVendorsProvider>
+                  </SavedDealsProvider>
+                </SelectedLocationProvider>
+              </AuthGateProvider>
+            </ApiBridge>
+            </AuthProvider>
+          </StripeProvider>
+        </ThemePreferenceProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

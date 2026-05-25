@@ -1,5 +1,5 @@
 import { useSignUpFlow, useSocialAuth } from '@gloe/auth';
-import { Button, Input, Stack, Text, Wordmark, color, radius, space } from '@gloe/ui';
+import { Button, Input, Stack, Text, Wordmark, radius, space, useTheme } from '@gloe/ui';
 import { Link, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
@@ -12,6 +12,7 @@ export default function SignUpScreen() {
   const insets = useSafeAreaInsets();
   const { stage, signUp, verifyCode, isLoading, error } = useSignUpFlow();
   const social = useSocialAuth();
+  const { color: palette } = useTheme();
 
   const handleSocial = async (provider: Parameters<typeof social.signInWithSocial>[0]) => {
     const result = await social.signInWithSocial(provider);
@@ -43,7 +44,7 @@ export default function SignUpScreen() {
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={{ flex: 1, backgroundColor: color.surface.primary }}
+      style={{ flex: 1, backgroundColor: palette.surface.primary }}
     >
       <ScrollView
         contentContainerStyle={{
@@ -64,7 +65,7 @@ export default function SignUpScreen() {
                 width: 40,
                 height: 40,
                 borderRadius: radius.pill,
-                backgroundColor: color.surface.elevated,
+                backgroundColor: palette.surface.elevated,
                 alignItems: 'center',
                 justifyContent: 'center',
               }}

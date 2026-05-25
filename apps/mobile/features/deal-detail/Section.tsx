@@ -1,4 +1,4 @@
-import { Stack, Text, color, space } from '@gloe/ui';
+import { Stack, Text, space, useTheme } from '@gloe/ui';
 import type { ReactNode } from 'react';
 import { View } from 'react-native';
 
@@ -13,11 +13,12 @@ interface SectionProps {
  * consistent spacing and a subtle divider above.
  */
 export function Section({ title, children, action }: SectionProps) {
+  const { color: palette } = useTheme();
   return (
     <View
       style={{
         borderTopWidth: 1,
-        borderTopColor: color.border.subtle,
+        borderTopColor: palette.border.subtle,
         paddingTop: space[6],
         gap: space[4],
       }}

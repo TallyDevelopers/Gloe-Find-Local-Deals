@@ -2,10 +2,14 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Clock,
+  Globe,
   Heart,
+  Instagram,
   type LucideProps,
   MapPin,
   MessageSquare,
+  Phone,
   Search,
   Share2,
   SlidersHorizontal,
@@ -33,6 +37,13 @@ const ICONS = {
   // Actions
   heart: Heart,
   share: Share2,
+
+  // Contact / vendor storefront
+  phone: Phone,
+  clock: Clock,
+  globe: Globe,
+  instagram: Instagram,
+  'map-pin': MapPin,
 
   // Bottom tabs
   'tab.discover': Sparkles,

@@ -1,5 +1,5 @@
 import type { DealSummary } from '@gloe/api-client';
-import { Stack, Text, color, radius, shadow, space } from '@gloe/ui';
+import { Stack, Text, radius, shadow, space, useTheme } from '@gloe/ui';
 import { useRouter } from 'expo-router';
 import { Dimensions, Image, Pressable, ScrollView, View } from 'react-native';
 
@@ -61,6 +61,7 @@ interface FeaturedCardProps {
 
 function FeaturedCard({ deal, width, isSaved, onSave }: FeaturedCardProps) {
   const router = useRouter();
+  const { color: palette } = useTheme();
   const variant = deal.headlineVariant;
   if (!variant) return null;
 
@@ -73,7 +74,7 @@ function FeaturedCard({ deal, width, isSaved, onSave }: FeaturedCardProps) {
       onPress={() => router.push(`/(app)/deal/${deal.id}`)}
       style={{
         width,
-        backgroundColor: color.surface.elevated,
+        backgroundColor: palette.surface.elevated,
         borderRadius: radius.xl,
         overflow: 'hidden',
         ...shadow.md,
@@ -88,7 +89,7 @@ function FeaturedCard({ deal, width, isSaved, onSave }: FeaturedCardProps) {
           />
         ) : (
           <View
-            style={{ width: '100%', height: '100%', backgroundColor: color.neutral[200] }}
+            style={{ width: '100%', height: '100%', backgroundColor: palette.neutral[200] }}
           />
         )}
         <Pressable
@@ -104,7 +105,7 @@ function FeaturedCard({ deal, width, isSaved, onSave }: FeaturedCardProps) {
             width: 36,
             height: 36,
             borderRadius: radius.pill,
-            backgroundColor: color.surface.elevated,
+            backgroundColor: palette.surface.elevated,
             alignItems: 'center',
             justifyContent: 'center',
             ...shadow.sm,
@@ -113,8 +114,8 @@ function FeaturedCard({ deal, width, isSaved, onSave }: FeaturedCardProps) {
           <Icon
             name="heart"
             size={18}
-            color={isSaved ? color.accent[500] : color.text.primary}
-            fill={isSaved ? color.accent[500] : 'none'}
+            color={isSaved ? palette.accent[500] : palette.text.primary}
+            fill={isSaved ? palette.accent[500] : 'none'}
             strokeWidth={2.25}
           />
         </Pressable>
@@ -123,7 +124,7 @@ function FeaturedCard({ deal, width, isSaved, onSave }: FeaturedCardProps) {
             position: 'absolute',
             top: space[3],
             left: space[3],
-            backgroundColor: color.brand[500],
+            backgroundColor: palette.brand[500],
             paddingHorizontal: space[3],
             paddingVertical: space[1],
             borderRadius: radius.pill,
@@ -150,10 +151,10 @@ function FeaturedCard({ deal, width, isSaved, onSave }: FeaturedCardProps) {
               paddingHorizontal: space[2],
               paddingVertical: 2,
               borderRadius: radius.sm,
-              backgroundColor: color.lavender[50],
+              backgroundColor: palette.brand[100],
             }}
           >
-            <Text variant="caption" tone="tertiary" weight="medium">
+            <Text variant="caption" weight="medium" style={{ color: palette.brand[700] }}>
               Sponsored
             </Text>
           </View>

@@ -1,5 +1,5 @@
 import { trpc } from '@gloe/api-client';
-import { Stack, Text, color, radius, space } from '@gloe/ui';
+import { Stack, Text, radius, space, useTheme } from '@gloe/ui';
 import * as Location from 'expo-location';
 import { useState } from 'react';
 import { ActionSheetIOS, Image, Linking, Platform, Pressable, View } from 'react-native';
@@ -24,6 +24,7 @@ type Mode = 'driving' | 'walking';
  * walk times.
  */
 export function RedemptionMap({ redemption, vendorName }: RedemptionMapProps) {
+  const { color: palette } = useTheme();
   const [origin, setOrigin] = useState<{ lat: number; lng: number } | null>(null);
   const [locating, setLocating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -125,7 +126,7 @@ export function RedemptionMap({ redemption, vendorName }: RedemptionMapProps) {
 
   return (
     <Stack gap={3}>
-      <View style={{ borderRadius: radius.lg, overflow: 'hidden', height: 180, backgroundColor: color.surface.secondary }}>
+      <View style={{ borderRadius: radius.lg, overflow: 'hidden', height: 180, backgroundColor: palette.surface.secondary }}>
         {origin ? (
           <MapView
             provider={PROVIDER_DEFAULT}
@@ -136,7 +137,7 @@ export function RedemptionMap({ redemption, vendorName }: RedemptionMapProps) {
             pitchEnabled={false}
             rotateEnabled={false}
           >
-            <Marker coordinate={{ latitude: dest.lat, longitude: dest.lng }} title={vendorName} pinColor={color.brand[500]} />
+            <Marker coordinate={{ latitude: dest.lat, longitude: dest.lng }} title={vendorName} pinColor={palette.brand[500]} />
             <Marker coordinate={{ latitude: origin.lat, longitude: origin.lng }} title="You" pinColor="#1a73e8" />
             {routeCoords ? (
               <Polyline coordinates={routeCoords} strokeColor="#1a73e8" strokeWidth={5} />
@@ -158,7 +159,7 @@ export function RedemptionMap({ redemption, vendorName }: RedemptionMapProps) {
       {driveResult ? (
         <View
           style={{
-            backgroundColor: color.surface.elevated,
+            backgroundColor: palette.surface.elevated,
             borderRadius: radius.md,
             paddingHorizontal: space[4],
             paddingVertical: space[3],
@@ -177,7 +178,7 @@ export function RedemptionMap({ redemption, vendorName }: RedemptionMapProps) {
           disabled={locating || driving.isFetching}
           style={{
             borderWidth: 1,
-            borderColor: color.border.default,
+            borderColor: palette.border.default,
             borderRadius: radius.pill,
             paddingVertical: space[3],
             alignItems: 'center',

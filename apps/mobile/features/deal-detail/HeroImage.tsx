@@ -1,4 +1,4 @@
-import { color, radius, space } from '@gloe/ui';
+import { radius, space, useTheme } from '@gloe/ui';
 import { useState } from 'react';
 import {
   Dimensions,
@@ -15,6 +15,7 @@ interface HeroImageProps {
 }
 
 export function HeroImage({ images }: HeroImageProps) {
+  const { color: palette } = useTheme();
   const screenWidth = Dimensions.get('window').width;
   const aspectRatio = 3 / 2; // a touch shorter than 4:3 — less screen real estate
   const height = screenWidth / aspectRatio;
@@ -64,7 +65,7 @@ export function HeroImage({ images }: HeroImageProps) {
                 width: i === activeIndex ? 24 : 6,
                 height: 6,
                 borderRadius: radius.pill,
-                backgroundColor: i === activeIndex ? color.surface.elevated : 'rgba(255,255,255,0.6)',
+                backgroundColor: i === activeIndex ? palette.surface.elevated : 'rgba(255,255,255,0.6)',
               }}
             />
           ))}
@@ -84,7 +85,7 @@ export function HeroImage({ images }: HeroImageProps) {
             borderRadius: radius.pill,
           }}
         >
-          <Text style={{ color: color.text.inverse, fontSize: 12, fontWeight: '600' }}>
+          <Text style={{ color: palette.text.inverse, fontSize: 12, fontWeight: '600' }}>
             {activeIndex + 1} / {images.length}
           </Text>
         </View>

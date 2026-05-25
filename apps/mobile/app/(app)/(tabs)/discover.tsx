@@ -1,6 +1,6 @@
 import { trpc } from '@gloe/api-client';
 import { useAuth } from '@gloe/auth';
-import { Stack, Text, color, space } from '@gloe/ui';
+import { Stack, Text, space, useTheme } from '@gloe/ui';
 import * as Haptics from 'expo-haptics';
 import { Link, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
@@ -8,10 +8,12 @@ import { ActivityIndicator, Pressable, RefreshControl, ScrollView, View } from '
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useRequireAuth } from '../../../features/auth-gate/useRequireAuth';
+import { useAnonSeed } from '../../../features/discover/anonSeed';
 import { CategoryRail } from '../../../features/discover/CategoryRail';
 import { DealCardLarge } from '../../../features/discover/DealCardLarge';
 import { FeaturedCarousel } from '../../../features/discover/FeaturedCarousel';
 import { CATEGORY_OPTIONS, FilterPills } from '../../../features/discover-header/FilterPills';
+import { FilterSheet, type DiscoverFilters } from '../../../features/discover-header/FilterSheet';
 import { LocationPill } from '../../../features/discover-header/LocationPill';
 import { SearchBar } from '../../../features/discover-header/SearchBar';
 import { useSelectedLocation } from '../../../features/discover-header/SelectedLocationProvider';
@@ -24,17 +26,31 @@ export default function DiscoverScreen() {
   const requireAuth = useRequireAuth();
   const { savedIds, toggle } = useSavedDeals();
   const { location } = useSelectedLocation();
+  const { color: palette } = useTheme();
+  const anonSeed = useAnonSeed();
 
   const [categorySlug, setCategorySlug] = useState<string | null>(null);
+  const [filters, setFilters] = useState<DiscoverFilters>({});
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+
+  // Count of non-default filter sections, for the "Filters · 2" affordance.
+  const activeFilterCount =
+    (filters.maxDistanceMiles !== undefined ? 1 : 0) +
+    (filters.minPriceCents !== undefined || filters.maxPriceCents !== undefined ? 1 : 0) +
+    (filters.minDiscountPct !== undefined ? 1 : 0);
 
   // Featured (sponsored) carousel + the filtered grid both read this query.
   // When "All" is selected the body shows category rails instead of the grid.
   const dealsQuery = trpc.deals.list.useQuery({
     userLat: location.latitude,
     userLng: location.longitude,
-    maxDistanceMiles: 50,
+    maxDistanceMiles: filters.maxDistanceMiles ?? 50,
     limit: 50,
     ...(categorySlug ? { category: categorySlug } : {}),
+    ...(filters.minPriceCents !== undefined ? { minPriceCents: filters.minPriceCents } : {}),
+    ...(filters.maxPriceCents !== undefined ? { maxPriceCents: filters.maxPriceCents } : {}),
+    ...(filters.minDiscountPct !== undefined ? { minDiscountPct: filters.minDiscountPct } : {}),
+    ...(anonSeed ? { anonSeed } : {}),
   });
 
   const isSignedIn = status === 'signed-in';
@@ -50,7 +66,7 @@ export default function DiscoverScreen() {
   const utils = trpc.useUtils();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const onRefresh = useCallback(async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     setIsRefreshing(true);
     try {
       await utils.deals.list.invalidate();
@@ -60,7 +76,7 @@ export default function DiscoverScreen() {
   }, [utils]);
 
   return (
-    <View style={{ flex: 1, backgroundColor: color.surface.primary }}>
+    <View style={{ flex: 1, backgroundColor: palette.surface.primary }}>
       <ScrollView
         contentContainerStyle={{
           paddingTop: insets.top + space[3],
@@ -71,7 +87,7 @@ export default function DiscoverScreen() {
           <RefreshControl
             refreshing={isRefreshing}
             onRefresh={onRefresh}
-            tintColor={color.brand[500]}
+            tintColor={palette.brand[500]}
           />
         }
       >
@@ -105,16 +121,15 @@ export default function DiscoverScreen() {
             <FilterPills
               selectedSlug={categorySlug}
               onSelect={setCategorySlug}
-              onOpenFilters={() => {
-                // TODO: open advanced filters sheet (distance, price, rating)
-              }}
+              onOpenFilters={() => setFilterSheetOpen(true)}
+              activeFilterCount={activeFilterCount}
             />
           </View>
 
           {/* Feed */}
           {dealsQuery.isLoading ? (
             <View style={{ paddingVertical: space[10], alignItems: 'center' }}>
-              <ActivityIndicator color={color.brand[500]} />
+              <ActivityIndicator color={palette.brand[500]} />
             </View>
           ) : dealsQuery.isError ? (
             <View style={{ paddingHorizontal: space[5] }}>
@@ -141,6 +156,11 @@ export default function DiscoverScreen() {
                   savedIds={savedIds}
                   onSave={toggleSave}
                   onSeeAll={(slug) => setCategorySlug(slug)}
+                  maxDistanceMiles={filters.maxDistanceMiles}
+                  minPriceCents={filters.minPriceCents}
+                  maxPriceCents={filters.maxPriceCents}
+                  minDiscountPct={filters.minDiscountPct}
+                  anonSeed={anonSeed}
                 />
               ))}
             </Stack>
@@ -165,6 +185,13 @@ export default function DiscoverScreen() {
           )}
         </Stack>
       </ScrollView>
+
+      <FilterSheet
+        open={filterSheetOpen}
+        initial={filters}
+        onClose={() => setFilterSheetOpen(false)}
+        onApply={setFilters}
+      />
     </View>
   );
 }

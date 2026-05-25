@@ -1,5 +1,5 @@
 import { useAuth } from '@gloe/auth';
-import { color } from '@gloe/ui';
+import { useTheme } from '@gloe/ui';
 import { Redirect } from 'expo-router';
 import { ActivityIndicator, View } from 'react-native';
 
@@ -9,18 +9,19 @@ import { ActivityIndicator, View } from 'react-native';
  */
 export default function Index() {
   const { status } = useAuth();
+  const { color: palette } = useTheme();
 
   if (status === 'loading') {
     return (
       <View
         style={{
           flex: 1,
-          backgroundColor: color.surface.primary,
+          backgroundColor: palette.surface.primary,
           alignItems: 'center',
           justifyContent: 'center',
         }}
       >
-        <ActivityIndicator color={color.brand[500]} />
+        <ActivityIndicator color={palette.brand[500]} />
       </View>
     );
   }

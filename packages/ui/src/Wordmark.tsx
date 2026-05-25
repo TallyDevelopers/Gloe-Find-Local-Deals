@@ -1,6 +1,6 @@
 import { Text } from 'react-native';
 
-import { color } from './tokens';
+import { useTheme } from './theme';
 
 export interface WordmarkProps {
   size?: number;
@@ -15,8 +15,9 @@ export interface WordmarkProps {
  * macron (U+0113).
  */
 export function Wordmark({ size = 40, tone = 'gold' }: WordmarkProps) {
+  const { color: palette } = useTheme();
   const tint =
-    tone === 'gold' ? color.gold.DEFAULT : tone === 'light' ? color.text.inverse : color.text.primary;
+    tone === 'gold' ? palette.gold.DEFAULT : tone === 'light' ? palette.text.inverse : palette.text.primary;
   return (
     <Text
       allowFontScaling={false}

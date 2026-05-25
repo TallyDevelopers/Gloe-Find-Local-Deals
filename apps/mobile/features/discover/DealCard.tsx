@@ -1,9 +1,10 @@
 import type { DealSummary } from '@gloe/api-client';
-import { Stack, Text, color, radius, shadow, space } from '@gloe/ui';
+import { Stack, Text, radius, shadow, space, useTheme } from '@gloe/ui';
 import { useRouter } from 'expo-router';
 import { Image, Pressable, View } from 'react-native';
 
 import { Icon } from '../icon/Icon';
+import { formatDistance, formatDriveTime, formatRating } from './cardMeta';
 import { formatPrice } from './format';
 
 interface DealCardProps {
@@ -20,6 +21,7 @@ interface DealCardProps {
  */
 export function DealCard({ deal, onSave, isSaved = false, width }: DealCardProps) {
   const router = useRouter();
+  const { color: palette } = useTheme();
   const variant = deal.headlineVariant;
   if (!variant) return null;
 
@@ -30,13 +32,15 @@ export function DealCard({ deal, onSave, isSaved = false, width }: DealCardProps
   const spotsLeft =
     variant.spotsTotal !== null ? variant.spotsTotal - variant.spotsClaimed : null;
 
-  const distanceLabel = formatDistanceLabel(deal.distanceMiles);
+  const rating = formatRating(deal.vendor);
+  const driveTime = formatDriveTime(deal.driveSeconds);
+  const distance = formatDistance(deal.distanceMiles);
 
   return (
     <Pressable
       onPress={() => router.push(`/(app)/deal/${deal.id}`)}
       style={{
-        backgroundColor: color.surface.elevated,
+        backgroundColor: palette.surface.elevated,
         borderRadius: radius.lg,
         overflow: 'hidden',
         ...(width ? { width } : {}),
@@ -52,7 +56,7 @@ export function DealCard({ deal, onSave, isSaved = false, width }: DealCardProps
           />
         ) : (
           <View
-            style={{ width: '100%', height: '100%', backgroundColor: color.neutral[200] }}
+            style={{ width: '100%', height: '100%', backgroundColor: palette.neutral[200] }}
           />
         )}
         <Pressable
@@ -68,7 +72,7 @@ export function DealCard({ deal, onSave, isSaved = false, width }: DealCardProps
             width: 32,
             height: 32,
             borderRadius: radius.pill,
-            backgroundColor: color.surface.elevated,
+            backgroundColor: palette.surface.elevated,
             alignItems: 'center',
             justifyContent: 'center',
             ...shadow.sm,
@@ -77,8 +81,8 @@ export function DealCard({ deal, onSave, isSaved = false, width }: DealCardProps
           <Icon
             name="heart"
             size={16}
-            color={isSaved ? color.accent[500] : color.text.primary}
-            fill={isSaved ? color.accent[500] : 'none'}
+            color={isSaved ? palette.accent[500] : palette.text.primary}
+            fill={isSaved ? palette.accent[500] : 'none'}
             strokeWidth={2.25}
           />
         </Pressable>
@@ -87,7 +91,7 @@ export function DealCard({ deal, onSave, isSaved = false, width }: DealCardProps
             position: 'absolute',
             top: space[2],
             left: space[2],
-            backgroundColor: color.brand[500],
+            backgroundColor: palette.brand[500],
             paddingHorizontal: space[2],
             paddingVertical: 2,
             borderRadius: radius.pill,
@@ -114,12 +118,12 @@ export function DealCard({ deal, onSave, isSaved = false, width }: DealCardProps
                 paddingHorizontal: space[2],
                 paddingVertical: 2,
                 borderRadius: radius.sm,
-                backgroundColor: color.lavender[50],
+                backgroundColor: palette.brand[100],
                 marginTop: 2,
                 marginBottom: 2,
               }}
             >
-              <Text variant="caption" tone="tertiary" weight="medium">
+              <Text variant="caption" weight="medium" style={{ color: palette.brand[700] }}>
                 Sponsored
               </Text>
             </View>
@@ -136,12 +140,26 @@ export function DealCard({ deal, onSave, isSaved = false, width }: DealCardProps
               {formatPrice(variant.originalPriceCents)}
             </Text>
           </Stack>
-          <Stack direction="row" gap={1} align="center">
-            <Text variant="caption" tone="secondary" numberOfLines={1} style={{ flex: 1 }}>
-              {deal.vendor.ratingAvg !== null ? `★ ${deal.vendor.ratingAvg.toFixed(1)} · ` : ''}
-              {distanceLabel ?? deal.vendor.city}
-            </Text>
-          </Stack>
+          <Text variant="caption" tone="secondary" numberOfLines={1} weight="medium">
+            {deal.vendor.businessName}
+          </Text>
+          {rating || driveTime || distance ? (
+            <Stack direction="row" gap={1} align="center" style={{ flexWrap: 'wrap' }}>
+              {rating ? <Text variant="caption" tone="tertiary">{rating}</Text> : null}
+              {driveTime ? (
+                <>
+                  {rating ? <Text variant="caption" tone="tertiary"> · </Text> : null}
+                  <Icon name="clock" size={11} color={palette.text.tertiary} strokeWidth={2} />
+                  <Text variant="caption" tone="tertiary"> {driveTime}</Text>
+                </>
+              ) : null}
+              {distance ? (
+                <Text variant="caption" tone="tertiary">
+                  {(rating || driveTime) ? ' · ' : ''}{distance}
+                </Text>
+              ) : null}
+            </Stack>
+          ) : null}
           {spotsLeft !== null && spotsLeft <= 10 ? (
             <Text variant="caption" tone="brand" weight="medium">
               {spotsLeft} spots left
@@ -153,9 +171,3 @@ export function DealCard({ deal, onSave, isSaved = false, width }: DealCardProps
   );
 }
 
-function formatDistanceLabel(miles: number | null): string | null {
-  if (miles === null) return null;
-  if (miles < 0.1) return `${Math.round(miles * 5280)} ft`;
-  if (miles < 10) return `${miles.toFixed(1)} mi`;
-  return `${Math.round(miles)} mi`;
-}

@@ -1,4 +1,5 @@
-import { color, fontFamily, fontSize, fontWeight } from '@gloe/ui';
+import { fontFamily, fontSize, fontWeight, useTheme } from '@gloe/ui';
+import * as Haptics from 'expo-haptics';
 import { Tabs } from 'expo-router';
 
 import { TabIcon } from '../../../features/tabs/TabIcon';
@@ -12,25 +13,31 @@ import { TabIcon } from '../../../features/tabs/TabIcon';
  * they present as swipe-down modals over the entire tab bar.
  */
 export default function TabsLayout() {
+  const { color: palette } = useTheme();
   return (
     <Tabs
+      screenListeners={{
+        tabPress: () => {
+          Haptics.selectionAsync();
+        },
+      }}
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: color.brand[500],
-        tabBarInactiveTintColor: color.text.tertiary,
+        tabBarActiveTintColor: palette.brand[500],
+        tabBarInactiveTintColor: palette.text.tertiary,
         tabBarLabelStyle: {
           fontFamily: fontFamily.body,
           fontSize: fontSize.xs,
           fontWeight: fontWeight.medium,
         },
         tabBarStyle: {
-          backgroundColor: color.surface.elevated,
-          borderTopColor: color.border.subtle,
+          backgroundColor: palette.surface.elevated,
+          borderTopColor: palette.border.subtle,
           borderTopWidth: 1,
           height: 88,
           paddingTop: 8,
         },
-        sceneStyle: { backgroundColor: color.surface.primary },
+        sceneStyle: { backgroundColor: palette.surface.primary },
       }}
     >
       <Tabs.Screen

@@ -1,6 +1,6 @@
 import { trpc, type DealVariant } from '@gloe/api-client';
 import { useAuth } from '@gloe/auth';
-import { Stack, Text, color, radius, space } from '@gloe/ui';
+import { Stack, Text, radius, space, useTheme } from '@gloe/ui';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { ActivityIndicator, Dimensions, Image, Pressable, View } from 'react-native';
@@ -22,6 +22,7 @@ export default function DealDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { status } = useAuth();
+  const { color: palette } = useTheme();
   const requireAuth = useRequireAuth();
   const { isSaved: getIsSaved, toggle: toggleSavedGlobal } = useSavedDeals();
 
@@ -53,12 +54,12 @@ export default function DealDetailScreen() {
       <View
         style={{
           flex: 1,
-          backgroundColor: color.surface.primary,
+          backgroundColor: palette.surface.primary,
           alignItems: 'center',
           justifyContent: 'center',
         }}
       >
-        <ActivityIndicator color={color.brand[500]} />
+        <ActivityIndicator color={palette.brand[500]} />
       </View>
     );
   }
@@ -68,7 +69,7 @@ export default function DealDetailScreen() {
       <View
         style={{
           flex: 1,
-          backgroundColor: color.surface.primary,
+          backgroundColor: palette.surface.primary,
           alignItems: 'center',
           justifyContent: 'center',
           padding: space[6],
@@ -140,7 +141,7 @@ export default function DealDetailScreen() {
   const ctaLabel = status === 'signed-in' ? 'Buy now' : 'Sign in to buy now';
 
   return (
-    <View style={{ flex: 1, backgroundColor: color.surface.primary }}>
+    <View style={{ flex: 1, backgroundColor: palette.surface.primary }}>
       <StickyTopBar scrollY={scrollY} heroHeight={heroHeight} />
       <Animated.ScrollView
         contentContainerStyle={{ paddingBottom: 140 }}
@@ -191,7 +192,7 @@ export default function DealDetailScreen() {
 
             <View
               style={{
-                backgroundColor: color.surface.elevated,
+                backgroundColor: palette.surface.elevated,
                 borderRadius: radius.lg,
                 padding: space[5],
                 gap: space[2],
@@ -206,7 +207,7 @@ export default function DealDetailScreen() {
                 </Text>
                 <View
                   style={{
-                    backgroundColor: color.brand[500],
+                    backgroundColor: palette.brand[500],
                     paddingHorizontal: space[3],
                     paddingVertical: space[1],
                     borderRadius: radius.pill,
@@ -265,7 +266,7 @@ export default function DealDetailScreen() {
                         width: 72,
                         height: 72,
                         borderRadius: 36,
-                        backgroundColor: color.neutral[200],
+                        backgroundColor: palette.neutral[200],
                       }}
                     />
                   ) : (
@@ -274,7 +275,7 @@ export default function DealDetailScreen() {
                         width: 72,
                         height: 72,
                         borderRadius: 36,
-                        backgroundColor: color.brand[100],
+                        backgroundColor: palette.brand[100],
                         alignItems: 'center',
                         justifyContent: 'center',
                       }}

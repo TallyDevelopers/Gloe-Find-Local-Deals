@@ -1,5 +1,5 @@
 import { trpc, type RouterOutputs } from '@gloe/api-client';
-import { Stack, Text, color, radius, space } from '@gloe/ui';
+import { Stack, Text, radius, space, useTheme } from '@gloe/ui';
 import { useState } from 'react';
 import { ActivityIndicator, Image, Linking, Pressable, View } from 'react-native';
 
@@ -86,10 +86,11 @@ function GloeReviews({ reviews, reviewCount }: { reviews: InternalReview[]; revi
 type GoogleReviewsData = RouterOutputs['maps']['googleReviews'];
 
 function GoogleReviews({ data, loading }: { data: GoogleReviewsData | undefined; loading: boolean }) {
+  const { color: palette } = useTheme();
   if (loading) {
     return (
       <View style={{ paddingVertical: space[5], alignItems: 'center' }}>
-        <ActivityIndicator color={color.brand[500]} />
+        <ActivityIndicator color={palette.brand[500]} />
       </View>
     );
   }
@@ -136,6 +137,7 @@ function GoogleReviews({ data, loading }: { data: GoogleReviewsData | undefined;
 }
 
 function TabPill({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+  const { color: palette } = useTheme();
   return (
     <Pressable
       onPress={onPress}
@@ -143,9 +145,9 @@ function TabPill({ label, active, onPress }: { label: string; active: boolean; o
         paddingHorizontal: space[4],
         paddingVertical: space[2],
         borderRadius: radius.pill,
-        backgroundColor: active ? color.brand[500] : color.surface.elevated,
+        backgroundColor: active ? palette.brand[500] : palette.surface.elevated,
         borderWidth: 1,
-        borderColor: active ? color.brand[500] : color.border.default,
+        borderColor: active ? palette.brand[500] : palette.border.default,
       }}
     >
       <Text variant="body-sm" tone={active ? 'inverse' : 'primary'} weight="semibold">{label}</Text>

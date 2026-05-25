@@ -366,7 +366,7 @@ function HeroCarousel({ photoUrls, pctOff }: { photoUrls: string[]; pctOff: numb
             style={{
               flex: '0 0 100%',
               height: '100%',
-              background: url ? `center/cover url(${url})` : 'linear-gradient(135deg, #e9c8ac, #c68b5f)',
+              background: url ? `center/cover url(${url})` : 'linear-gradient(135deg, #f6e4de, #c89a8c)',
             }}
           />
         ))}

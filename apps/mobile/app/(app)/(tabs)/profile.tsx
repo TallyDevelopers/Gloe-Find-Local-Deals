@@ -1,7 +1,7 @@
 import { useAuth } from '@gloe/auth';
-import { Button, Stack, Text, color, radius, space } from '@gloe/ui';
+import { Button, Stack, Text, radius, space, useTheme } from '@gloe/ui';
 import { useRouter } from 'expo-router';
-import { Image, Pressable, ScrollView, View } from 'react-native';
+import { Image, Linking, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useClaimedDeals } from '../../../features/claimed/ClaimedDealsProvider';
@@ -10,12 +10,13 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { status, user, signOut } = useAuth();
+  const { color: palette } = useTheme();
   const { activeClaims } = useClaimedDeals();
 
   const isSignedIn = status === 'signed-in';
 
   return (
-    <View style={{ flex: 1, backgroundColor: color.surface.primary }}>
+    <View style={{ flex: 1, backgroundColor: palette.surface.primary }}>
       <ScrollView
         contentContainerStyle={{
           paddingTop: insets.top + space[4],
@@ -43,7 +44,7 @@ export default function ProfileScreen() {
               </Text>
               <View
                 style={{
-                  backgroundColor: color.surface.elevated,
+                  backgroundColor: palette.surface.elevated,
                   borderRadius: radius.lg,
                   overflow: 'hidden',
                 }}
@@ -69,7 +70,7 @@ export default function ProfileScreen() {
                           height: 22,
                           paddingHorizontal: space[2],
                           borderRadius: 11,
-                          backgroundColor: color.brand[500],
+                          backgroundColor: palette.brand[500],
                           alignItems: 'center',
                           justifyContent: 'center',
                         }}
@@ -88,7 +89,7 @@ export default function ProfileScreen() {
             </Stack>
           ) : null}
 
-          <SettingsList />
+          <SettingsList onAppearance={() => router.push('/(app)/settings/appearance')} />
         </Stack>
       </ScrollView>
     </View>
@@ -102,6 +103,7 @@ function SignedInBody({
   user: ReturnType<typeof useAuth>['user'];
   onSignOut: () => void | Promise<void>;
 }) {
+  const { color: palette } = useTheme();
   const initials =
     (user?.firstName?.[0] ?? user?.email?.[0] ?? '?').toUpperCase();
 
@@ -109,7 +111,7 @@ function SignedInBody({
     <Stack gap={5}>
       <View
         style={{
-          backgroundColor: color.surface.elevated,
+          backgroundColor: palette.surface.elevated,
           borderRadius: radius.lg,
           padding: space[5],
         }}
@@ -126,7 +128,7 @@ function SignedInBody({
                 width: 64,
                 height: 64,
                 borderRadius: 32,
-                backgroundColor: color.brand[100],
+                backgroundColor: palette.brand[100],
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
@@ -159,11 +161,12 @@ function SignedInBody({
 }
 
 function AnonymousBody({ onSignIn, onSignUp }: { onSignIn: () => void; onSignUp: () => void }) {
+  const { color: palette } = useTheme();
   return (
     <Stack gap={5}>
       <View
         style={{
-          backgroundColor: color.surface.elevated,
+          backgroundColor: palette.surface.elevated,
           borderRadius: radius.lg,
           padding: space[6],
         }}
@@ -194,6 +197,7 @@ function AnonymousBody({ onSignIn, onSignUp }: { onSignIn: () => void; onSignUp:
 }
 
 function StatRow({ label, value }: { label: string; value: string }) {
+  const { color: palette } = useTheme();
   return (
     <Stack
       direction="row"
@@ -202,7 +206,7 @@ function StatRow({ label, value }: { label: string; value: string }) {
       style={{
         paddingVertical: space[3],
         paddingHorizontal: space[4],
-        backgroundColor: color.surface.elevated,
+        backgroundColor: palette.surface.elevated,
         borderRadius: radius.md,
       }}
     >
@@ -216,13 +220,18 @@ function StatRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function SettingsList() {
-  const rows: { label: string; onPress?: () => void }[] = [
-    { label: 'Notifications' },
-    { label: 'Location settings' },
-    { label: 'Help & support' },
-    { label: 'Terms & privacy' },
-    { label: 'About Gloe' },
+function SettingsList({ onAppearance }: { onAppearance: () => void }) {
+  const { color: palette } = useTheme();
+  // Notifications / Location both deeplink to iOS Settings → Gloe — the only
+  // place the user can actually toggle these permissions. Doing it in-app
+  // would just be a fake control that calls openSettings() anyway.
+  const rows: { label: string; onPress: () => void; external?: boolean }[] = [
+    { label: 'Appearance', onPress: onAppearance },
+    { label: 'Notifications', onPress: () => Linking.openSettings(), external: true },
+    { label: 'Location settings', onPress: () => Linking.openSettings(), external: true },
+    { label: 'Help & support', onPress: () => Linking.openURL('mailto:support@gloe.app?subject=Gloe%20support'), external: true },
+    { label: 'Terms & privacy', onPress: () => Linking.openURL('https://gloe.app/terms'), external: true },
+    { label: 'About Gloe', onPress: () => Linking.openURL('https://gloe.app/about'), external: true },
   ];
 
   return (
@@ -232,7 +241,7 @@ function SettingsList() {
       </Text>
       <View
         style={{
-          backgroundColor: color.surface.elevated,
+          backgroundColor: palette.surface.elevated,
           borderRadius: radius.lg,
           overflow: 'hidden',
         }}
@@ -248,14 +257,14 @@ function SettingsList() {
               justifyContent: 'space-between',
               alignItems: 'center',
               borderBottomWidth: i === rows.length - 1 ? 0 : 1,
-              borderBottomColor: color.border.subtle,
+              borderBottomColor: palette.border.subtle,
             }}
           >
             <Text variant="body-md" tone="primary">
               {row.label}
             </Text>
             <Text variant="body-md" tone="tertiary">
-              ›
+              {row.external ? '↗' : '›'}
             </Text>
           </Pressable>
         ))}

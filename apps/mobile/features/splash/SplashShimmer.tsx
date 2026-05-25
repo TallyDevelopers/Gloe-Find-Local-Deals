@@ -1,4 +1,4 @@
-import { Wordmark, color } from '@gloe/ui';
+import { Wordmark, useTheme } from '@gloe/ui';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect } from 'react';
 import { Dimensions, StyleSheet, View } from 'react-native';
@@ -20,6 +20,7 @@ const { width } = Dimensions.get('window');
  * reveal the app. Purely cosmetic; calls onDone when finished.
  */
 export function SplashShimmer({ onDone }: { onDone: () => void }) {
+  const { color: palette } = useTheme();
   const sweep = useSharedValue(-1); // -1 (off left) → 1 (off right)
   const fade = useSharedValue(1);
 
@@ -40,7 +41,10 @@ export function SplashShimmer({ onDone }: { onDone: () => void }) {
   }));
 
   return (
-    <Animated.View style={[styles.overlay, overlayStyle]} pointerEvents="none">
+    <Animated.View
+      style={[styles.overlay, { backgroundColor: palette.surface.primary }, overlayStyle]}
+      pointerEvents="none"
+    >
       <MaskedView
         style={styles.mask}
         maskElement={
@@ -50,7 +54,7 @@ export function SplashShimmer({ onDone }: { onDone: () => void }) {
         }
       >
         {/* Base rose-gold fill */}
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: color.gold.DEFAULT }]} />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: palette.gold.DEFAULT }]} />
         {/* The travelling shimmer band */}
         <Animated.View style={[StyleSheet.absoluteFill, shimmerStyle]}>
           <LinearGradient
@@ -69,7 +73,6 @@ export function SplashShimmer({ onDone }: { onDone: () => void }) {
 const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: color.surface.primary,
     zIndex: 1000,
   },
   mask: { flex: 1 },

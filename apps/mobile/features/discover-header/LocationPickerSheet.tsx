@@ -1,4 +1,4 @@
-import { Stack, Text, color, radius, space } from '@gloe/ui';
+import { Stack, Text, radius, space, useTheme } from '@gloe/ui';
 import { useEffect, useRef } from 'react';
 import { Animated, Modal, Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -20,6 +20,7 @@ interface LocationPickerSheetProps {
  */
 export function LocationPickerSheet({ open, onClose }: LocationPickerSheetProps) {
   const insets = useSafeAreaInsets();
+  const { color: palette } = useTheme();
   const { location, setLocation } = useSelectedLocation();
   const translateY = useRef(new Animated.Value(800)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
@@ -69,7 +70,7 @@ export function LocationPickerSheet({ open, onClose }: LocationPickerSheetProps)
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: color.surface.overlay,
+            backgroundColor: palette.surface.overlay,
             opacity: overlayOpacity,
           }}
         >
@@ -79,7 +80,7 @@ export function LocationPickerSheet({ open, onClose }: LocationPickerSheetProps)
         <Animated.View
           style={{
             transform: [{ translateY }],
-            backgroundColor: color.surface.primary,
+            backgroundColor: palette.surface.primary,
             borderTopLeftRadius: radius['2xl'],
             borderTopRightRadius: radius['2xl'],
             paddingTop: space[4],
@@ -93,7 +94,7 @@ export function LocationPickerSheet({ open, onClose }: LocationPickerSheetProps)
               width: 40,
               height: 4,
               borderRadius: radius.pill,
-              backgroundColor: color.neutral[300],
+              backgroundColor: palette.neutral[300],
               marginBottom: space[6],
             }}
           />
@@ -114,7 +115,7 @@ export function LocationPickerSheet({ open, onClose }: LocationPickerSheetProps)
               </Text>
               <View
                 style={{
-                  backgroundColor: color.surface.elevated,
+                  backgroundColor: palette.surface.elevated,
                   borderRadius: radius.lg,
                   overflow: 'hidden',
                 }}
@@ -132,7 +133,7 @@ export function LocationPickerSheet({ open, onClose }: LocationPickerSheetProps)
                         justifyContent: 'space-between',
                         alignItems: 'center',
                         borderBottomWidth: i === POPULAR_CITIES.length - 1 ? 0 : 1,
-                        borderBottomColor: color.border.subtle,
+                        borderBottomColor: palette.border.subtle,
                       }}
                     >
                       <Text

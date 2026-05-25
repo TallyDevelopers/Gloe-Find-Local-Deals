@@ -1,28 +1,28 @@
 /* Gloe web — design tokens mirrored from @gloe/ui/tokens as CSS variables.
    Kept in sync manually for now; small surface, rarely changes. */
 :root {
-  --surface-primary: #fbf8f3;
-  --surface-secondary: #f5f0e8;
+  --surface-primary: #faf5f2;
+  --surface-secondary: #f3ebe6;
   --surface-elevated: #ffffff;
 
-  --brand-50: #fbf3ec;
-  --brand-100: #f4e3d2;
-  --brand-500: #a87044;
-  --brand-600: #8b5a36;
+  --brand-50: #fbf4f1;
+  --brand-100: #f6e4de;
+  --brand-500: #c89a8c;
+  --brand-600: #b8806f;
 
-  --accent-500: #b25d40;
+  --accent-500: #e8b4ab;
 
-  /* Brand gold for the Gloē wordmark — rose gold, leaning into the beauty/aesthetic palette */
+  /* Rose gold — same as brand-500 now that rose gold IS the brand */
   --gold: #c89a8c;
   --gold-deep: #b8806f;
 
   --text-primary: #2b2019;
   --text-secondary: #5e5147;
   --text-tertiary: #8c7f73;
-  --text-inverse: #fbf8f3;
+  --text-inverse: #faf5f2;
 
-  --border-subtle: #e8dfd2;
-  --border-default: #d4c7b5;
+  --border-subtle: #e8dad2;
+  --border-default: #d4c0b5;
 
   --success: #7a8b5c;
   --error: #b24545;
@@ -59,7 +59,7 @@ h3 {
 }
 
 a {
-  color: var(--brand-500);
+  color: var(--brand-600);
   text-decoration: none;
 }
 

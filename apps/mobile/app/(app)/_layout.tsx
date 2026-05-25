@@ -1,4 +1,4 @@
-import { color } from '@gloe/ui';
+import { useTheme } from '@gloe/ui';
 import { Stack } from 'expo-router';
 
 /**
@@ -18,11 +18,12 @@ const SHEET = {
  * left edge (or tap the back chevron) to return (Groupon-style).
  */
 export default function AppLayout() {
+  const { color: palette } = useTheme();
   return (
     <Stack
       screenOptions={{
         headerShown: false,
-        contentStyle: { backgroundColor: color.surface.primary },
+        contentStyle: { backgroundColor: palette.surface.primary },
       }}
     >
       <Stack.Screen name="(tabs)" />
@@ -34,6 +35,7 @@ export default function AppLayout() {
       <Stack.Screen name="my-deal/[id]" options={SHEET} />
       <Stack.Screen name="checkout" options={SHEET} />
       <Stack.Screen name="search" options={{ presentation: 'modal', gestureEnabled: true }} />
+      <Stack.Screen name="settings/appearance" options={SHEET} />
     </Stack>
   );
 }

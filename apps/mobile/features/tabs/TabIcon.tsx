@@ -1,4 +1,4 @@
-import { color } from '@gloe/ui';
+import { useTheme } from '@gloe/ui';
 
 import { Icon, type IconName } from '../icon/Icon';
 
@@ -22,10 +22,11 @@ interface TabIconProps {
  * stroke + brand-color fill on heart-shaped icons (saved tab).
  */
 export function TabIcon({ name, focused, size = 22 }: TabIconProps) {
+  const { color: palette } = useTheme();
   const iconName = iconForTab[name];
-  const tint = focused ? color.brand[500] : color.text.tertiary;
+  const tint = focused ? palette.brand[500] : palette.text.tertiary;
   // The saved tab is the heart icon — fill it when focused so it reads as "active heart"
-  const fill = focused && name === 'saved' ? color.brand[500] : 'none';
+  const fill = focused && name === 'saved' ? palette.brand[500] : 'none';
   return (
     <Icon
       name={iconName}

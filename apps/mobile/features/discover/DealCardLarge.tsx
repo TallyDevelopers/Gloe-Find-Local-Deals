@@ -1,9 +1,10 @@
 import type { DealSummary } from '@gloe/api-client';
-import { Stack, Text, color, radius, shadow, space } from '@gloe/ui';
+import { Stack, Text, radius, shadow, space, useTheme } from '@gloe/ui';
 import { useRouter } from 'expo-router';
 import { Dimensions, Image, Pressable, View } from 'react-native';
 
 import { Icon } from '../icon/Icon';
+import { formatDistance, formatDriveTime, formatRating } from './cardMeta';
 import { formatPrice } from './format';
 
 // Image height tuned so a centered card leaves a peek of the next one below,
@@ -23,6 +24,7 @@ interface DealCardLargeProps {
  */
 export function DealCardLarge({ deal, onSave, isSaved = false }: DealCardLargeProps) {
   const router = useRouter();
+  const { color: palette } = useTheme();
   const variant = deal.headlineVariant;
   if (!variant) return null;
 
@@ -30,13 +32,15 @@ export function DealCardLarge({ deal, onSave, isSaved = false }: DealCardLargePr
     ((variant.originalPriceCents - variant.dealPriceCents) / variant.originalPriceCents) * 100,
   );
   const spotsLeft = variant.spotsTotal !== null ? variant.spotsTotal - variant.spotsClaimed : null;
-  const distanceLabel = formatDistanceLabel(deal.distanceMiles);
+  const rating = formatRating(deal.vendor);
+  const driveTime = formatDriveTime(deal.driveSeconds);
+  const distance = formatDistance(deal.distanceMiles);
 
   return (
     <Pressable
       onPress={() => router.push(`/(app)/deal/${deal.id}`)}
       style={{
-        backgroundColor: color.surface.elevated,
+        backgroundColor: palette.surface.elevated,
         borderRadius: radius.lg,
         overflow: 'hidden',
         ...shadow.sm,
@@ -46,7 +50,7 @@ export function DealCardLarge({ deal, onSave, isSaved = false }: DealCardLargePr
         {deal.primaryPhotoUrl ? (
           <Image source={{ uri: deal.primaryPhotoUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
         ) : (
-          <View style={{ width: '100%', height: '100%', backgroundColor: color.neutral[200] }} />
+          <View style={{ width: '100%', height: '100%', backgroundColor: palette.neutral[200] }} />
         )}
 
         <View
@@ -54,7 +58,7 @@ export function DealCardLarge({ deal, onSave, isSaved = false }: DealCardLargePr
             position: 'absolute',
             top: space[3],
             left: space[3],
-            backgroundColor: color.brand[500],
+            backgroundColor: palette.brand[500],
             paddingHorizontal: space[3],
             paddingVertical: 3,
             borderRadius: radius.pill,
@@ -78,7 +82,7 @@ export function DealCardLarge({ deal, onSave, isSaved = false }: DealCardLargePr
             width: 38,
             height: 38,
             borderRadius: radius.pill,
-            backgroundColor: color.surface.elevated,
+            backgroundColor: palette.surface.elevated,
             alignItems: 'center',
             justifyContent: 'center',
             ...shadow.sm,
@@ -87,8 +91,8 @@ export function DealCardLarge({ deal, onSave, isSaved = false }: DealCardLargePr
           <Icon
             name="heart"
             size={18}
-            color={isSaved ? color.accent[500] : color.text.primary}
-            fill={isSaved ? color.accent[500] : 'none'}
+            color={isSaved ? palette.accent[500] : palette.text.primary}
+            fill={isSaved ? palette.accent[500] : 'none'}
             strokeWidth={2.25}
           />
         </Pressable>
@@ -99,13 +103,13 @@ export function DealCardLarge({ deal, onSave, isSaved = false }: DealCardLargePr
               position: 'absolute',
               bottom: space[3],
               left: space[3],
-              backgroundColor: 'rgba(43,32,25,0.6)',
+              backgroundColor: palette.brand[100],
               paddingHorizontal: space[2],
               paddingVertical: 2,
               borderRadius: radius.sm,
             }}
           >
-            <Text variant="caption" tone="inverse" weight="medium">
+            <Text variant="caption" weight="medium" style={{ color: palette.brand[700] }}>
               Sponsored
             </Text>
           </View>
@@ -135,13 +139,26 @@ export function DealCardLarge({ deal, onSave, isSaved = false }: DealCardLargePr
             ) : null}
           </Stack>
 
-          <Stack direction="row" gap={2} align="center">
-            <Text variant="body-sm" tone="secondary" numberOfLines={1} style={{ flex: 1 }}>
-              {deal.vendor.businessName}
-              {deal.vendor.ratingAvg !== null ? `  ·  ★ ${deal.vendor.ratingAvg.toFixed(1)}` : ''}
-              {distanceLabel ? `  ·  ${distanceLabel}` : ''}
-            </Text>
-          </Stack>
+          <Text variant="body-sm" tone="primary" weight="semibold" numberOfLines={1}>
+            {deal.vendor.businessName}
+          </Text>
+          {rating || driveTime || distance ? (
+            <Stack direction="row" gap={1} align="center" style={{ flexWrap: 'wrap' }}>
+              {rating ? <Text variant="body-sm" tone="secondary">{rating}</Text> : null}
+              {driveTime ? (
+                <>
+                  {rating ? <Text variant="body-sm" tone="secondary"> · </Text> : null}
+                  <Icon name="clock" size={13} color={palette.text.secondary} strokeWidth={2} />
+                  <Text variant="body-sm" tone="secondary"> {driveTime}</Text>
+                </>
+              ) : null}
+              {distance ? (
+                <Text variant="body-sm" tone="secondary">
+                  {(rating || driveTime) ? ' · ' : ''}{distance}
+                </Text>
+              ) : null}
+            </Stack>
+          ) : null}
 
           {spotsLeft !== null && spotsLeft <= 10 ? (
             <Text variant="body-sm" tone="brand" weight="semibold">
@@ -154,9 +171,3 @@ export function DealCardLarge({ deal, onSave, isSaved = false }: DealCardLargePr
   );
 }
 
-function formatDistanceLabel(miles: number | null): string | null {
-  if (miles === null) return null;
-  if (miles < 0.1) return `${Math.round(miles * 5280)} ft away`;
-  if (miles < 10) return `${miles.toFixed(1)} mi away`;
-  return `${Math.round(miles)} mi away`;
-}
