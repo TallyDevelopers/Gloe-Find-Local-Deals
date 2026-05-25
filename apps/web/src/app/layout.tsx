@@ -17,8 +17,8 @@ const outfit = Outfit({
 });
 
 export const metadata: Metadata = {
-  title: 'Gloē for Business',
-  description: 'Post deals, manage redemptions, and get paid — for med spas and aesthetic providers.',
+  title: { default: 'Gloē', template: '%s · Gloē' },
+  description: 'Beauty + wellness, beautifully booked.',
 };
 
 export const viewport: Viewport = {
