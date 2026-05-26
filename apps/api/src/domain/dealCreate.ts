@@ -194,10 +194,24 @@ export async function updateDeal(sql: Sql, input: UpdateDealInput): Promise<{ id
       `;
     }
 
-    await tx`DELETE FROM public.deal_variants WHERE deal_id = ${input.dealId}`;
+    // Variants: soft-delete (active=false) any variant with existing claims;
+    // hard-delete the rest. Claims reference deal_variants with ON DELETE
+    // CASCADE — wiping variants would destroy paid customer vouchers.
+    await tx`
+      UPDATE public.deal_variants SET active = false
+      WHERE deal_id = ${input.dealId}
+        AND id IN (SELECT variant_id FROM public.claims WHERE variant_id IS NOT NULL)
+    `;
+    await tx`
+      DELETE FROM public.deal_variants
+      WHERE deal_id = ${input.dealId}
+        AND id NOT IN (SELECT variant_id FROM public.claims WHERE variant_id IS NOT NULL)
+    `;
+    await insertVariants(tx, input.dealId, input.variants);
+
+    // Photos and videos have no downstream FKs from customer activity — safe to wipe.
     await tx`DELETE FROM public.deal_photos WHERE deal_id = ${input.dealId}`;
     await tx`DELETE FROM public.deal_videos WHERE deal_id = ${input.dealId}`;
-    await insertVariants(tx, input.dealId, input.variants);
     await insertPhotos(tx, input.dealId, input.photoUrls);
     await insertVideos(tx, input.dealId, input.videos ?? []);
 
