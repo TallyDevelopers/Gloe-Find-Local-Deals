@@ -55,10 +55,10 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
-        name="messages"
+        name="wallet"
         options={{
-          title: 'Messages',
-          tabBarIcon: ({ focused }) => <TabIcon name="messages" focused={focused} />,
+          title: 'Wallet',
+          tabBarIcon: ({ focused }) => <TabIcon name="wallet" focused={focused} />,
         }}
       />
       <Tabs.Screen

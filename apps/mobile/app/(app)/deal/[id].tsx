@@ -2,8 +2,9 @@ import { trpc, type DealVariant } from '@gloe/api-client';
 import { useAuth } from '@gloe/auth';
 import { Stack, Text, radius, space, useTheme } from '@gloe/ui';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as Haptics from 'expo-haptics';
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Dimensions, Image, Pressable, View } from 'react-native';
+import { ActivityIndicator, Dimensions, Image, Pressable, Share, View } from 'react-native';
 import Animated, { useAnimatedScrollHandler, useSharedValue } from 'react-native-reanimated';
 
 import { useRequireAuth } from '../../../features/auth-gate/useRequireAuth';
@@ -136,7 +137,20 @@ export default function DealDetailScreen() {
       },
     }),
   );
-  const handleShare = () => console.log('Share', deal.id);
+  const handleShare = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      // Pass `url` only — iOS auto-fetches OG tags from the page and renders
+      // a rich preview card in iMessage/WhatsApp/etc. Adding `message` here
+      // would force a plain-text concat and kill the preview.
+      const result = await Share.share({ url: `https://gloe.app/deal/${deal.id}` });
+      if (result.action === Share.sharedAction) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    } catch {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    }
+  };
 
   const ctaLabel = status === 'signed-in' ? 'Buy now' : 'Sign in to buy now';
 

@@ -2,12 +2,12 @@ import { useTheme } from '@gloe/ui';
 
 import { Icon, type IconName } from '../icon/Icon';
 
-export type TabIconName = 'discover' | 'saved' | 'messages' | 'profile';
+export type TabIconName = 'discover' | 'saved' | 'wallet' | 'profile';
 
 const iconForTab: Record<TabIconName, IconName> = {
   discover: 'tab.discover',
   saved: 'tab.saved',
-  messages: 'tab.messages',
+  wallet: 'tab.wallet',
   profile: 'tab.profile',
 };
 

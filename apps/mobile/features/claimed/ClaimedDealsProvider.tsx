@@ -19,6 +19,7 @@ interface ClaimedDealsContextValue {
   hasActiveClaimFor: (dealId: string, variantId: string) => boolean;
   createClaim: (input: CreateClaimInput) => Promise<ClaimedDeal>;
   markRedeemed: (claimId: string) => Promise<void>;
+  refetch: () => Promise<unknown>;
 }
 
 const ClaimedDealsContext = createContext<ClaimedDealsContextValue | null>(null);
@@ -91,6 +92,8 @@ export function ClaimedDealsProvider({ children }: { children: ReactNode }) {
     [devMarkRedeemedMutation],
   );
 
+  const refetch = useCallback(() => listQuery.refetch(), [listQuery]);
+
   const value = useMemo<ClaimedDealsContextValue>(
     () => ({
       claims,
@@ -100,8 +103,9 @@ export function ClaimedDealsProvider({ children }: { children: ReactNode }) {
       hasActiveClaimFor,
       createClaim,
       markRedeemed,
+      refetch,
     }),
-    [claims, activeClaims, pastClaims, getById, hasActiveClaimFor, createClaim, markRedeemed],
+    [claims, activeClaims, pastClaims, getById, hasActiveClaimFor, createClaim, markRedeemed, refetch],
   );
 
   return <ClaimedDealsContext.Provider value={value}>{children}</ClaimedDealsContext.Provider>;

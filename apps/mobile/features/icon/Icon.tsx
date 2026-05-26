@@ -1,4 +1,5 @@
 import {
+  Camera,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -11,9 +12,10 @@ import {
   MessageSquare,
   Phone,
   Search,
-  Share2,
+  Share,
   SlidersHorizontal,
   Sparkles,
+  Ticket,
   User,
   X,
 } from 'lucide-react-native';
@@ -36,7 +38,8 @@ const ICONS = {
 
   // Actions
   heart: Heart,
-  share: Share2,
+  share: Share,
+  camera: Camera,
 
   // Contact / vendor storefront
   phone: Phone,
@@ -49,6 +52,7 @@ const ICONS = {
   'tab.discover': Sparkles,
   'tab.saved': Heart,
   'tab.messages': MessageSquare,
+  'tab.wallet': Ticket,
   'tab.profile': User,
 } satisfies Record<string, ComponentType<LucideProps>>;
 

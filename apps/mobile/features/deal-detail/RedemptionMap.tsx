@@ -2,7 +2,7 @@ import { trpc } from '@gloe/api-client';
 import { Stack, Text, radius, space, useTheme } from '@gloe/ui';
 import * as Location from 'expo-location';
 import { useState } from 'react';
-import { ActionSheetIOS, Image, Linking, Platform, Pressable, View } from 'react-native';
+import { Image, Linking, Platform, Pressable, View } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
 
 interface RedemptionMapProps {
@@ -68,55 +68,21 @@ export function RedemptionMap({ redemption, vendorName }: RedemptionMapProps) {
     }
   };
 
-  // Open turn-by-turn navigation. On iOS we present the native action sheet
-  // listing whichever map apps are installed (Apple Maps, Google Maps, Waze)
-  // so the customer picks. On Android we hand off to the system chooser.
+  // One tap → Apple Maps. No chooser, no permission dance, no fallback prompts.
+  // iOS users have Apple Maps. Period. (Android falls through to web Google Maps.)
   const openInMaps = async () => {
     const label = encodeURIComponent(vendorName);
     const { lat, lng } = dest;
     setError(null);
-
-    const open = async (url: string) => {
-      try {
-        await Linking.openURL(url);
-      } catch {
-        setError("Couldn't open a maps app.");
-      }
-    };
-
-    if (Platform.OS !== 'ios') {
-      void open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`);
-      return;
+    const url =
+      Platform.OS === 'ios'
+        ? `http://maps.apple.com/?daddr=${lat},${lng}&q=${label}`
+        : `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+    try {
+      await Linking.openURL(url);
+    } catch {
+      setError("Couldn't open Maps.");
     }
-
-    // Apple Maps universal link always works on a real iOS device. Google/Waze
-    // are offered only if their app is installed (scheme resolves).
-    const available: { name: string; url: string }[] = [
-      { name: 'Apple Maps', url: `http://maps.apple.com/?daddr=${lat},${lng}&q=${label}` },
-    ];
-    if (await Linking.canOpenURL('comgooglemaps://')) {
-      available.push({ name: 'Google Maps', url: `comgooglemaps://?daddr=${lat},${lng}&directionsmode=driving` });
-    }
-    if (await Linking.canOpenURL('waze://')) {
-      available.push({ name: 'Waze', url: `waze://?ll=${lat},${lng}&navigate=yes` });
-    }
-
-    if (available.length === 1) {
-      void open(available[0]!.url);
-      return;
-    }
-
-    ActionSheetIOS.showActionSheetWithOptions(
-      {
-        title: 'Get directions',
-        options: [...available.map((a) => a.name), 'Cancel'],
-        cancelButtonIndex: available.length,
-      },
-      (i) => {
-        const choice = available[i];
-        if (choice) void open(choice.url);
-      },
-    );
   };
 
   const driveResult = driving.data?.found ? driving.data : null;
