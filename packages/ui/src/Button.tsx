@@ -9,7 +9,8 @@ import {
 } from 'react-native';
 
 import { Text } from './Text';
-import { color, motion, radius, space } from './tokens';
+import { useTheme } from './theme';
+import { motion, radius, space, type ColorPalette } from './tokens';
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'destructive';
 type ButtonSize = 'sm' | 'md' | 'lg';
@@ -31,32 +32,34 @@ interface ButtonVariantStyle {
   textTone: React.ComponentProps<typeof Text>['tone'];
 }
 
-const variantStyles: Record<ButtonVariant, ButtonVariantStyle> = {
-  primary: {
-    background: color.brand[500],
-    backgroundPressed: color.brand[600],
-    border: undefined,
-    textTone: 'inverse',
-  },
-  secondary: {
-    background: color.surface.elevated,
-    backgroundPressed: color.surface.secondary,
-    border: color.border.default,
-    textTone: 'primary',
-  },
-  ghost: {
-    background: 'transparent',
-    backgroundPressed: color.surface.secondary,
-    border: undefined,
-    textTone: 'primary',
-  },
-  destructive: {
-    background: color.semantic.error,
-    backgroundPressed: '#933737',
-    border: undefined,
-    textTone: 'inverse',
-  },
-};
+function buildVariantStyles(palette: ColorPalette): Record<ButtonVariant, ButtonVariantStyle> {
+  return {
+    primary: {
+      background: palette.brand[500],
+      backgroundPressed: palette.brand[600],
+      border: undefined,
+      textTone: 'inverse',
+    },
+    secondary: {
+      background: palette.surface.elevated,
+      backgroundPressed: palette.surface.secondary,
+      border: palette.border.default,
+      textTone: 'primary',
+    },
+    ghost: {
+      background: 'transparent',
+      backgroundPressed: palette.surface.secondary,
+      border: undefined,
+      textTone: 'primary',
+    },
+    destructive: {
+      background: palette.semantic.error,
+      backgroundPressed: '#933737',
+      border: undefined,
+      textTone: 'inverse',
+    },
+  };
+}
 
 interface ButtonSizeStyle {
   paddingV: number;
@@ -99,7 +102,8 @@ export function Button({
   ...rest
 }: ButtonProps) {
   const scale = useRef(new Animated.Value(1)).current;
-  const v = variantStyles[variant];
+  const { color: palette } = useTheme();
+  const v = buildVariantStyles(palette)[variant];
   const s = sizeStyles[size];
   const isDisabled = disabled || loading;
 
@@ -151,7 +155,7 @@ export function Button({
       >
         {loading ? (
           <ActivityIndicator
-            color={v.textTone === 'inverse' ? color.text.inverse : color.text.primary}
+            color={v.textTone === 'inverse' ? palette.text.inverse : palette.text.primary}
             size="small"
           />
         ) : (

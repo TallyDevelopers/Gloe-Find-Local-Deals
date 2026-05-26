@@ -11,7 +11,7 @@ export function BrandPanel() {
       style={{
         flex: '1 1 0',
         minWidth: 0,
-        background: 'linear-gradient(160deg, #2b2019 0%, #4a3a2a 55%, #6e4628 100%)',
+        background: 'linear-gradient(160deg, #2b2019 0%, #4a3028 55%, #9a6757 100%)',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -105,7 +105,7 @@ function PhoneMockup() {
             <div
               style={{
                 height: 150,
-                background: 'linear-gradient(135deg, #e9c8ac, #c68b5f)',
+                background: 'linear-gradient(135deg, #f6e4de, #c89a8c)',
                 position: 'relative',
               }}
             >

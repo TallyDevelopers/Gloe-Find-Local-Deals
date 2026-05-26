@@ -1,4 +1,4 @@
-import { Text, color, radius, space } from '@gloe/ui';
+import { Text, radius, space, useTheme } from '@gloe/ui';
 import { Pressable, View } from 'react-native';
 
 interface SegmentedControlProps<T extends string> {
@@ -12,11 +12,12 @@ export function SegmentedControl<T extends string>({
   value,
   onChange,
 }: SegmentedControlProps<T>) {
+  const { color: palette } = useTheme();
   return (
     <View
       style={{
         flexDirection: 'row',
-        backgroundColor: color.surface.secondary,
+        backgroundColor: palette.surface.secondary,
         borderRadius: radius.pill,
         padding: space[1],
       }}
@@ -32,7 +33,7 @@ export function SegmentedControl<T extends string>({
               paddingVertical: space[2],
               paddingHorizontal: space[3],
               borderRadius: radius.pill,
-              backgroundColor: isActive ? color.surface.elevated : 'transparent',
+              backgroundColor: isActive ? palette.surface.elevated : 'transparent',
               alignItems: 'center',
               flexDirection: 'row',
               justifyContent: 'center',
@@ -53,7 +54,7 @@ export function SegmentedControl<T extends string>({
                   height: 18,
                   borderRadius: 9,
                   paddingHorizontal: 4,
-                  backgroundColor: isActive ? color.brand[500] : color.neutral[400],
+                  backgroundColor: isActive ? palette.brand[500] : palette.neutral[400],
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}

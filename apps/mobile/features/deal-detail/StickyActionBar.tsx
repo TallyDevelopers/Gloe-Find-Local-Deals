@@ -1,6 +1,5 @@
-import { Button, Stack, color, radius, shadow, space } from '@gloe/ui';
+import { Button, Stack, radius, shadow, space, useTheme } from '@gloe/ui';
 import { Pressable, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, type IconName } from '../icon/Icon';
 
@@ -19,8 +18,7 @@ export function StickyActionBar({
   onRedeem,
   ctaLabel,
 }: StickyActionBarProps) {
-  const insets = useSafeAreaInsets();
-
+  const { color: palette } = useTheme();
   return (
     <View
       style={{
@@ -28,12 +26,14 @@ export function StickyActionBar({
         bottom: 0,
         left: 0,
         right: 0,
-        backgroundColor: color.surface.elevated,
+        backgroundColor: palette.surface.elevated,
         borderTopWidth: 1,
-        borderTopColor: color.border.subtle,
+        borderTopColor: palette.border.subtle,
         paddingHorizontal: space[5],
         paddingTop: space[3],
-        paddingBottom: insets.bottom + space[3],
+        // Sits just above the tab bar, which already clears the home indicator —
+        // so only a small bottom pad, not the full safe-area inset.
+        paddingBottom: space[3],
         ...shadow.lg,
       }}
     >
@@ -41,8 +41,8 @@ export function StickyActionBar({
         <IconButton
           onPress={onSave}
           iconName="heart"
-          iconColor={isSaved ? color.accent[500] : color.text.primary}
-          iconFill={isSaved ? color.accent[500] : 'none'}
+          iconColor={isSaved ? palette.accent[500] : palette.text.primary}
+          iconFill={isSaved ? palette.accent[500] : 'none'}
         />
         <IconButton onPress={onShare} iconName="share" />
         <View style={{ flex: 1 }}>
@@ -63,9 +63,11 @@ interface IconButtonProps {
 function IconButton({
   onPress,
   iconName,
-  iconColor = color.text.primary,
+  iconColor,
   iconFill = 'none',
 }: IconButtonProps) {
+  const { color: palette } = useTheme();
+  const resolvedIconColor = iconColor ?? palette.text.primary;
   return (
     <Pressable
       onPress={onPress}
@@ -75,12 +77,12 @@ function IconButton({
         height: 52,
         borderRadius: radius.pill,
         borderWidth: 1,
-        borderColor: color.border.default,
+        borderColor: palette.border.default,
         alignItems: 'center',
         justifyContent: 'center',
       }}
     >
-      <Icon name={iconName} size={22} color={iconColor} fill={iconFill} strokeWidth={2.25} />
+      <Icon name={iconName} size={22} color={resolvedIconColor} fill={iconFill} strokeWidth={2.25} />
     </Pressable>
   );
 }

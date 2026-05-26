@@ -1,5 +1,4 @@
-import { color, radius, shadow, space } from '@gloe/ui';
-import { useRouter } from 'expo-router';
+import { radius, space, useTheme } from '@gloe/ui';
 import { useState } from 'react';
 import {
   Dimensions,
@@ -7,26 +6,18 @@ import {
   Image,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
-  Pressable,
   Text,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-import { Icon, type IconName } from '../icon/Icon';
 
 interface HeroImageProps {
   images: string[];
-  isSaved: boolean;
-  onSave: () => void;
-  onShare: () => void;
 }
 
-export function HeroImage({ images, isSaved, onSave, onShare }: HeroImageProps) {
-  const router = useRouter();
-  const insets = useSafeAreaInsets();
+export function HeroImage({ images }: HeroImageProps) {
+  const { color: palette } = useTheme();
   const screenWidth = Dimensions.get('window').width;
-  const aspectRatio = 4 / 3;
+  const aspectRatio = 3 / 2; // a touch shorter than 4:3 — less screen real estate
   const height = screenWidth / aspectRatio;
   const [activeIndex, setActiveIndex] = useState(0);
 
@@ -54,29 +45,6 @@ export function HeroImage({ images, isSaved, onSave, onShare }: HeroImageProps) 
         )}
       />
 
-      {/* Top controls */}
-      <View
-        style={{
-          position: 'absolute',
-          top: insets.top + space[2],
-          left: space[4],
-          right: space[4],
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-        }}
-      >
-        <FloatingButton onPress={() => router.back()} iconName="chevronLeft" />
-        <View style={{ flexDirection: 'row', gap: space[2] }}>
-          <FloatingButton onPress={onShare} iconName="share" />
-          <FloatingButton
-            onPress={onSave}
-            iconName="heart"
-            iconColor={isSaved ? color.accent[500] : color.text.primary}
-            iconFill={isSaved ? color.accent[500] : 'none'}
-          />
-        </View>
-      </View>
-
       {/* Page indicator dots */}
       {images.length > 1 ? (
         <View
@@ -97,7 +65,7 @@ export function HeroImage({ images, isSaved, onSave, onShare }: HeroImageProps) 
                 width: i === activeIndex ? 24 : 6,
                 height: 6,
                 borderRadius: radius.pill,
-                backgroundColor: i === activeIndex ? color.surface.elevated : 'rgba(255,255,255,0.6)',
+                backgroundColor: i === activeIndex ? palette.surface.elevated : 'rgba(255,255,255,0.6)',
               }}
             />
           ))}
@@ -117,7 +85,7 @@ export function HeroImage({ images, isSaved, onSave, onShare }: HeroImageProps) 
             borderRadius: radius.pill,
           }}
         >
-          <Text style={{ color: color.text.inverse, fontSize: 12, fontWeight: '600' }}>
+          <Text style={{ color: palette.text.inverse, fontSize: 12, fontWeight: '600' }}>
             {activeIndex + 1} / {images.length}
           </Text>
         </View>
@@ -126,34 +94,3 @@ export function HeroImage({ images, isSaved, onSave, onShare }: HeroImageProps) 
   );
 }
 
-interface FloatingButtonProps {
-  onPress: () => void;
-  iconName: IconName;
-  iconColor?: string;
-  iconFill?: string;
-}
-
-function FloatingButton({
-  onPress,
-  iconName,
-  iconColor = color.text.primary,
-  iconFill = 'none',
-}: FloatingButtonProps) {
-  return (
-    <Pressable
-      onPress={onPress}
-      hitSlop={12}
-      style={{
-        width: 40,
-        height: 40,
-        borderRadius: radius.pill,
-        backgroundColor: color.surface.elevated,
-        alignItems: 'center',
-        justifyContent: 'center',
-        ...shadow.sm,
-      }}
-    >
-      <Icon name={iconName} size={20} color={iconColor} fill={iconFill} strokeWidth={2.25} />
-    </Pressable>
-  );
-}

@@ -1,6 +1,7 @@
 import { Text as RNText, type TextProps as RNTextProps, type TextStyle } from 'react-native';
 
-import { color, fontFamily, fontSize, fontWeight, lineHeight } from './tokens';
+import { useTheme } from './theme';
+import { fontFamily, fontSize, fontWeight, lineHeight, type ColorPalette } from './tokens';
 
 type TextVariant =
   | 'display-xl'
@@ -80,15 +81,24 @@ const variantStyles: Record<TextVariant, TextStyle> = {
   },
 };
 
-const toneColors: Record<TextColor, string> = {
-  primary: color.text.primary,
-  secondary: color.text.secondary,
-  tertiary: color.text.tertiary,
-  inverse: color.text.inverse,
-  link: color.text.link,
-  brand: color.brand[500],
-  error: color.semantic.error,
-};
+function resolveTone(palette: ColorPalette, tone: TextColor): string {
+  switch (tone) {
+    case 'primary':
+      return palette.text.primary;
+    case 'secondary':
+      return palette.text.secondary;
+    case 'tertiary':
+      return palette.text.tertiary;
+    case 'inverse':
+      return palette.text.inverse;
+    case 'link':
+      return palette.text.link;
+    case 'brand':
+      return palette.brand[500];
+    case 'error':
+      return palette.semantic.error;
+  }
+}
 
 export function Text({
   variant = 'body-md',
@@ -98,11 +108,12 @@ export function Text({
   style,
   ...rest
 }: TextProps) {
+  const { color: palette } = useTheme();
   return (
     <RNText
       style={[
         variantStyles[variant],
-        { color: toneColors[tone] },
+        { color: resolveTone(palette, tone) },
         weight ? { fontWeight: fontWeight[weight] } : null,
         align ? { textAlign: align } : null,
         style,

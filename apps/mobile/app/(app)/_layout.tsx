@@ -1,73 +1,41 @@
-import { color, fontFamily, fontSize, fontWeight } from '@gloe/ui';
-import { Tabs } from 'expo-router';
-
-import { TabIcon } from '../../features/tabs/TabIcon';
+import { useTheme } from '@gloe/ui';
+import { Stack } from 'expo-router';
 
 /**
- * Main app navigation — bottom tabs.
- * Open to everyone (anonymous + signed-in). Individual actions inside tabs
- * (redeem, save, review, message) gate themselves via useRequireAuth.
- *
- * Detail screens (deal/[id], vendor/[id]) live as siblings of (tabs) so they
- * push over the entire tab bar. See expo-router docs for the (tabs) +
- * Stack-sibling pattern.
+ * Shared options for detail/checkout screens: a standard card push — slides in
+ * from the right, swipe from the left edge to go back (Groupon-style). Edge-to-
+ * edge, and the horizontal back-gesture never fights the vertical scroll.
+ */
+const SHEET = {
+  animation: 'slide_from_right' as const,
+  gestureEnabled: true,
+  gestureDirection: 'horizontal' as const,
+};
+
+/**
+ * App stack. The bottom tabs live in (tabs); detail and checkout screens are
+ * Stack siblings that push in from the right over the tab bar — swipe from the
+ * left edge (or tap the back chevron) to return (Groupon-style).
  */
 export default function AppLayout() {
+  const { color: palette } = useTheme();
   return (
-    <Tabs
+    <Stack
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: color.brand[500],
-        tabBarInactiveTintColor: color.text.tertiary,
-        tabBarLabelStyle: {
-          fontFamily: fontFamily.body,
-          fontSize: fontSize.xs,
-          fontWeight: fontWeight.medium,
-        },
-        tabBarStyle: {
-          backgroundColor: color.surface.elevated,
-          borderTopColor: color.border.subtle,
-          borderTopWidth: 1,
-          height: 88,
-          paddingTop: 8,
-        },
-        sceneStyle: { backgroundColor: color.surface.primary },
+        contentStyle: { backgroundColor: palette.surface.primary },
       }}
     >
-      <Tabs.Screen
-        name="discover"
-        options={{
-          title: 'Discover',
-          tabBarIcon: ({ focused }) => <TabIcon name="discover" focused={focused} />,
-        }}
-      />
-      <Tabs.Screen
-        name="saved"
-        options={{
-          title: 'Saved',
-          tabBarIcon: ({ focused }) => <TabIcon name="saved" focused={focused} />,
-        }}
-      />
-      <Tabs.Screen
-        name="messages"
-        options={{
-          title: 'Messages',
-          tabBarIcon: ({ focused }) => <TabIcon name="messages" focused={focused} />,
-        }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{
-          title: 'Profile',
-          tabBarIcon: ({ focused }) => <TabIcon name="profile" focused={focused} />,
-        }}
-      />
-
-      {/* Hide detail routes from the tab bar. They push over the tabs. */}
-      <Tabs.Screen name="deal/[id]" options={{ href: null }} />
-      <Tabs.Screen name="vendor/[id]" options={{ href: null }} />
-      <Tabs.Screen name="my-deal/[id]" options={{ href: null }} />
-      <Tabs.Screen name="search" options={{ href: null }} />
-    </Tabs>
+      <Stack.Screen name="(tabs)" />
+      {/* formSheet pinned to a tall 92% detent: a thin intentional peek at the
+          top signals "pull down to dismiss" without the big default-modal gap.
+          Native swipe-down comes free at this presentation. */}
+      <Stack.Screen name="deal/[id]" options={SHEET} />
+      <Stack.Screen name="vendor/[id]" options={SHEET} />
+      <Stack.Screen name="my-deal/[id]" options={SHEET} />
+      <Stack.Screen name="checkout" options={SHEET} />
+      <Stack.Screen name="search" options={{ presentation: 'modal', gestureEnabled: true }} />
+      <Stack.Screen name="settings/appearance" options={SHEET} />
+    </Stack>
   );
 }

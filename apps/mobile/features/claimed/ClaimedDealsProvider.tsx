@@ -127,6 +127,7 @@ function apiToClient(api: ApiClaim): ClaimedDeal {
       dealPriceCents: api.snapshot.dealPriceCents,
     },
     qrPayload: api.qrPayload,
+    humanCode: api.humanCode,
     status: api.status === 'cancelled' ? 'expired' : api.status,
     createdAt: new Date(api.createdAt).getTime(),
     expiresAt: new Date(api.expiresAt).getTime(),

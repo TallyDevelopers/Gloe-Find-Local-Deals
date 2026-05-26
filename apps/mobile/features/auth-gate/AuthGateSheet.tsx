@@ -1,4 +1,4 @@
-import { Button, Stack, Text, color, radius, space } from '@gloe/ui';
+import { Button, Stack, Text, radius, space, useTheme } from '@gloe/ui';
 import { useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import {
@@ -20,6 +20,7 @@ interface AuthGateSheetProps {
 export function AuthGateSheet({ prompt, onClose }: AuthGateSheetProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { color: palette } = useTheme();
   const translateY = useAnimatedValue(800);
   const overlayOpacity = useAnimatedValue(0);
 
@@ -89,7 +90,7 @@ export function AuthGateSheet({ prompt, onClose }: AuthGateSheetProps) {
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: color.surface.overlay,
+            backgroundColor: palette.surface.overlay,
             opacity: overlayOpacity,
           }}
         >
@@ -99,7 +100,7 @@ export function AuthGateSheet({ prompt, onClose }: AuthGateSheetProps) {
         <Animated.View
           style={{
             transform: [{ translateY }],
-            backgroundColor: color.surface.primary,
+            backgroundColor: palette.surface.primary,
             borderTopLeftRadius: radius['2xl'],
             borderTopRightRadius: radius['2xl'],
             paddingTop: space[4],
@@ -114,7 +115,7 @@ export function AuthGateSheet({ prompt, onClose }: AuthGateSheetProps) {
               width: 40,
               height: 4,
               borderRadius: radius.pill,
-              backgroundColor: color.neutral[300],
+              backgroundColor: palette.neutral[300],
               marginBottom: space[6],
             }}
           />

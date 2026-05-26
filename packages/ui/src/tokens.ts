@@ -1,7 +1,7 @@
 /**
- * Gloe Design Tokens — v0
+ * Gloe Design Tokens
  *
- * Brand direction: Warm metallics (rose gold / champagne) + warm ivory surfaces
+ * Brand direction: Warm metallics (rose gold / champagne) + blush pearl surfaces
  * + dusty pastels. Premium consumer aesthetic — closer to Glossier / Aesop /
  * Tata Harper than Groupon.
  *
@@ -9,20 +9,58 @@
  * - All visual values in the app reference these tokens. Never hardcode hex
  *   codes or pixel values in components.
  * - Tokens are immutable from feature code. Refresh = change values here.
- * - Light mode only for v0. Dark mode tokens to be added later.
+ *
+ * `color` is the light theme and stays the default export for legacy code.
+ * `colorDark` mirrors its shape. New code should read from `useTheme()` so
+ * the active theme is picked automatically.
  */
 
 export const color = {
-  // Surfaces — warm ivory dominates
+  // Surfaces — blush pearl. Pink-undertone neutral, skincare-counter feel.
   surface: {
-    primary: '#FBF8F3',
-    secondary: '#F5F0E8',
+    primary: '#FAF5F2',
+    secondary: '#F3EBE6',
     elevated: '#FFFFFF',
     overlay: 'rgba(43, 32, 25, 0.4)',
   },
 
-  // Brand — champagne / warm metallic
+  // Brand — rose gold / champagne. The wordmark color is now the brand color.
   brand: {
+    50: '#FBF4F1',
+    100: '#F6E4DE',
+    200: '#EDCABF',
+    300: '#DDAB9C',
+    400: '#D0A294',
+    500: '#C89A8C',
+    600: '#B8806F',
+    700: '#9A6757',
+    800: '#704A3F',
+    900: '#4A3028',
+  },
+
+  // Rose gold alias — preserved for components that reference `color.gold`.
+  // Points at the brand ramp now that rose gold IS the brand.
+  gold: {
+    DEFAULT: '#C89A8C',
+    deep: '#B8806F',
+  },
+
+  // Accent — true blush (pink-leaning, not peach). Used for badges, highlights,
+  // hover wash. Pulled toward pink so it doesn't read as a peachy second brand.
+  accent: {
+    50: '#FCF2F1',
+    100: '#F9E0DE',
+    200: '#F2C1BE',
+    300: '#ECB1AD',
+    400: '#EBB7B0',
+    500: '#E8B4AB',
+    600: '#CE918A',
+    700: '#A86E69',
+  },
+
+  // Clay — old earthy brown ramp. Deprecated; kept temporarily so any
+  // unmigrated references don't break. Prefer `brand` for new code.
+  clay: {
     50: '#FBF3EC',
     100: '#F4E3D2',
     200: '#E9C8AC',
@@ -33,18 +71,6 @@ export const color = {
     700: '#6E4628',
     800: '#52351E',
     900: '#382415',
-  },
-
-  // Accent — dusty rose
-  accent: {
-    50: '#FBF1EE',
-    100: '#F5DDD5',
-    200: '#EBBAA9',
-    300: '#DC967D',
-    400: '#C97658',
-    500: '#B25D40',
-    600: '#8F4830',
-    700: '#6B3624',
   },
 
   // Lavender gray — sophistication accent
@@ -62,8 +88,8 @@ export const color = {
     primary: '#2B2019',
     secondary: '#5E5147',
     tertiary: '#8C7F73',
-    inverse: '#FBF8F3',
-    link: '#A87044',
+    inverse: '#FAF5F2',
+    link: '#C89A8C',
     disabled: '#C4B8AC',
   },
 
@@ -71,21 +97,21 @@ export const color = {
   semantic: {
     success: '#7A8B5C',
     error: '#B24545',
-    warning: '#C68B5F',
+    warning: '#D89A6E',
     info: '#6E5E76',
   },
 
-  // Neutrals — warm gray scale
+  // Neutrals — blush-undertone warm gray scale
   neutral: {
     0: '#FFFFFF',
-    50: '#FBF8F3',
-    100: '#F5F0E8',
-    200: '#E8DFD2',
-    300: '#D4C7B5',
-    400: '#B0A292',
-    500: '#8C7F73',
-    600: '#6B5F55',
-    700: '#4A413A',
+    50: '#FAF5F2',
+    100: '#F3EBE6',
+    200: '#E8DAD2',
+    300: '#D4C0B5',
+    400: '#B0998F',
+    500: '#8C7770',
+    600: '#6B5853',
+    700: '#4A3D38',
     800: '#2B2019',
     900: '#1A130F',
     950: '#0D0907',
@@ -93,9 +119,9 @@ export const color = {
 
   // Borders
   border: {
-    subtle: '#E8DFD2',
-    default: '#D4C7B5',
-    strong: '#8C7F73',
+    subtle: '#E8DAD2',
+    default: '#D4C0B5',
+    strong: '#8C7770',
   },
 } as const;
 
@@ -198,6 +224,81 @@ export const motion = {
     bouncy: { damping: 14, stiffness: 220 },
   },
 } as const;
+
+/**
+ * Structural shape both themes satisfy. We derive it from `color` then map
+ * every leaf to plain `string`, so dark hexes aren't rejected for failing to
+ * match the light theme's literal types.
+ */
+export type ColorPalette = {
+  readonly [G in keyof typeof color]: {
+    readonly [K in keyof (typeof color)[G]]: string;
+  };
+};
+
+/**
+ * Dark theme. Brand/accent/lavender/clay ramps are intentionally shared with
+ * the light theme — they're brand identity, not chrome. Only surfaces, text,
+ * borders, neutrals, and semantic tones flip.
+ *
+ * Dark surface direction: warm near-black with a faint blush undertone (not
+ * pure #000 and not cool slate). Rose gold needs to stay legible — we lift
+ * the brand text/link to brand[300] on dark so contrast clears WCAG AA.
+ */
+export const colorDark: ColorPalette = {
+  surface: {
+    primary: '#15110F',
+    secondary: '#1E1916',
+    elevated: '#27201C',
+    overlay: 'rgba(0, 0, 0, 0.55)',
+  },
+
+  // Brand ramps stay identical — same hex values in both themes.
+  brand: color.brand,
+  gold: color.gold,
+  accent: color.accent,
+  clay: color.clay,
+  lavender: color.lavender,
+
+  text: {
+    primary: '#F5EDE7',
+    secondary: '#C9BAB0',
+    tertiary: '#8C7F76',
+    inverse: '#2B2019',
+    // Lift link to brand[300] so rose gold reads cleanly on dark surfaces
+    link: '#DDAB9C',
+    disabled: '#5A4D45',
+  },
+
+  semantic: {
+    // Lift success/error/warning/info one notch for dark-bg legibility
+    success: '#9DAE7A',
+    error: '#D67070',
+    warning: '#E5B58A',
+    info: '#9888A0',
+  },
+
+  neutral: {
+    0: '#000000',
+    50: '#14100E',
+    100: '#1C1714',
+    200: '#241D19',
+    300: '#332B26',
+    400: '#564B45',
+    500: '#8A807A',
+    600: '#AEA59F',
+    700: '#C8BFBA',
+    800: '#E5DCD6',
+    900: '#F2EAE4',
+    950: '#FFFFFF',
+  },
+
+  border: {
+    subtle: '#272019',
+    default: '#332B26',
+    strong: '#564B45',
+  },
+};
 
 export const tokens = {
   color,

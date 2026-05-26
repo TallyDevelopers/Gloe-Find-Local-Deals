@@ -1,28 +1,28 @@
 /* Gloe web — design tokens mirrored from @gloe/ui/tokens as CSS variables.
    Kept in sync manually for now; small surface, rarely changes. */
 :root {
-  --surface-primary: #fbf8f3;
-  --surface-secondary: #f5f0e8;
+  --surface-primary: #faf5f2;
+  --surface-secondary: #f3ebe6;
   --surface-elevated: #ffffff;
 
-  --brand-50: #fbf3ec;
-  --brand-100: #f4e3d2;
-  --brand-500: #a87044;
-  --brand-600: #8b5a36;
+  --brand-50: #fbf4f1;
+  --brand-100: #f6e4de;
+  --brand-500: #c89a8c;
+  --brand-600: #b8806f;
 
-  --accent-500: #b25d40;
+  --accent-500: #e8b4ab;
 
-  /* Brand gold for the Gloē wordmark — champagne gold, more luminous than the bronze brand-500 */
-  --gold: #c9a961;
-  --gold-deep: #b8943f;
+  /* Rose gold — same as brand-500 now that rose gold IS the brand */
+  --gold: #c89a8c;
+  --gold-deep: #b8806f;
 
   --text-primary: #2b2019;
   --text-secondary: #5e5147;
   --text-tertiary: #8c7f73;
-  --text-inverse: #fbf8f3;
+  --text-inverse: #faf5f2;
 
-  --border-subtle: #e8dfd2;
-  --border-default: #d4c7b5;
+  --border-subtle: #e8dad2;
+  --border-default: #d4c0b5;
 
   --success: #7a8b5c;
   --error: #b24545;
@@ -59,7 +59,7 @@ h3 {
 }
 
 a {
-  color: var(--brand-500);
+  color: var(--brand-600);
   text-decoration: none;
 }
 
@@ -132,6 +132,77 @@ textarea {
   }
   h1 {
     font-size: 32px !important;
+  }
+}
+
+/* Admin console shell: fixed-width sidebar + scrolling main area */
+.admin-shell {
+  display: flex;
+  align-items: stretch;
+  min-height: calc(100vh - 57px); /* minus header */
+}
+.admin-sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border-subtle);
+  background: var(--surface-elevated);
+  padding: 20px 14px;
+  display: flex;
+  flex-direction: column;
+}
+.admin-main {
+  flex: 1;
+  min-width: 0;
+  padding: 32px;
+  max-width: 1000px;
+}
+.admin-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+@media (max-width: 860px) {
+  .admin-shell {
+    flex-direction: column;
+  }
+  .admin-sidebar {
+    width: 100%;
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 10px 14px;
+    border-right: none;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .admin-sidebar nav {
+    flex-direction: row !important;
+  }
+  .admin-sidebar > div:last-child {
+    margin-top: 0 !important;
+    margin-left: auto;
+    padding-top: 0 !important;
+  }
+  .admin-main {
+    padding: 20px 18px;
+  }
+  .admin-two-col {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Admin income cards: 3-up desktop, 2-up tablet, 1-up phone */
+.admin-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+@media (max-width: 880px) {
+  .admin-stat-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 520px) {
+  .admin-stat-grid {
+    grid-template-columns: 1fr;
   }
 }
 

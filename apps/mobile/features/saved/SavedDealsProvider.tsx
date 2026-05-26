@@ -1,5 +1,6 @@
 import { useAuth } from '@gloe/auth';
 import { trpc } from '@gloe/api-client';
+import * as Haptics from 'expo-haptics';
 import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react';
 
 interface SavedDealsContextValue {
@@ -54,9 +55,13 @@ export function SavedDealsProvider({ children }: { children: ReactNode }) {
   const toggle = useCallback(
     (dealId: string) => {
       if (!isSignedIn) return;
+      // Haptic only when adding a save, not when removing — feels like a "got it" confirmation.
+      if (!savedIds.has(dealId)) {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
       toggleMutation.mutate({ dealId });
     },
-    [isSignedIn, toggleMutation],
+    [isSignedIn, savedIds, toggleMutation],
   );
 
   const value = useMemo<SavedDealsContextValue>(

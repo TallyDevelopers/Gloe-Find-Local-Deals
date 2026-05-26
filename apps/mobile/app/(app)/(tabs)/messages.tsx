@@ -1,21 +1,22 @@
 import { useAuth } from '@gloe/auth';
-import { Button, Stack, Text, color, radius, space } from '@gloe/ui';
+import { Button, Stack, Text, radius, space, useTheme } from '@gloe/ui';
 import { useRouter } from 'expo-router';
 import { Image, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Icon } from '../../features/icon/Icon';
-import { mockThreads, type MockThread } from '../../features/messages/mockThreads';
+import { Icon } from '../../../features/icon/Icon';
+import { mockThreads, type MockThread } from '../../../features/messages/mockThreads';
 
 export default function MessagesScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { status } = useAuth();
+  const { color: palette } = useTheme();
 
   const isSignedIn = status === 'signed-in';
 
   return (
-    <View style={{ flex: 1, backgroundColor: color.surface.primary }}>
+    <View style={{ flex: 1, backgroundColor: palette.surface.primary }}>
       <ScrollView
         contentContainerStyle={{
           paddingTop: insets.top + space[4],
@@ -50,6 +51,7 @@ export default function MessagesScreen() {
 }
 
 function SignInGate({ onSignIn }: { onSignIn: () => void }) {
+  const { color: palette } = useTheme();
   return (
     <Stack gap={6} align="center" style={{ paddingVertical: space[12] }}>
       <View
@@ -57,12 +59,12 @@ function SignInGate({ onSignIn }: { onSignIn: () => void }) {
           width: 96,
           height: 96,
           borderRadius: 48,
-          backgroundColor: color.brand[50],
+          backgroundColor: palette.brand[50],
           alignItems: 'center',
           justifyContent: 'center',
         }}
       >
-        <Icon name="tab.messages" size={44} color={color.brand[500]} strokeWidth={1.75} />
+        <Icon name="tab.messages" size={44} color={palette.brand[500]} strokeWidth={1.75} />
       </View>
       <Stack gap={2} align="center" style={{ maxWidth: 320 }}>
         <Text variant="display-sm" tone="primary" weight="medium" align="center">
@@ -81,13 +83,14 @@ function SignInGate({ onSignIn }: { onSignIn: () => void }) {
 }
 
 function ThreadRow({ thread }: { thread: MockThread }) {
+  const { color: palette } = useTheme();
   return (
     <Pressable
       style={{
         flexDirection: 'row',
         gap: space[3],
         alignItems: 'center',
-        backgroundColor: color.surface.elevated,
+        backgroundColor: palette.surface.elevated,
         borderRadius: radius.lg,
         padding: space[3],
       }}
@@ -98,7 +101,7 @@ function ThreadRow({ thread }: { thread: MockThread }) {
           width: 52,
           height: 52,
           borderRadius: 26,
-          backgroundColor: color.neutral[200],
+          backgroundColor: palette.neutral[200],
         }}
       />
       <View style={{ flex: 1, gap: 2 }}>
@@ -131,7 +134,7 @@ function ThreadRow({ thread }: { thread: MockThread }) {
             height: 22,
             borderRadius: 11,
             paddingHorizontal: space[2],
-            backgroundColor: color.brand[500],
+            backgroundColor: palette.brand[500],
             alignItems: 'center',
             justifyContent: 'center',
           }}

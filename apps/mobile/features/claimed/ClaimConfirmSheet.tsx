@@ -1,4 +1,4 @@
-import { Button, Stack, Text, color, radius, space } from '@gloe/ui';
+import { Button, Stack, Text, radius, space, useTheme } from '@gloe/ui';
 import { useRouter } from 'expo-router';
 import { useEffect, useRef } from 'react';
 import { Animated, Modal, Pressable, View } from 'react-native';
@@ -43,6 +43,7 @@ export function ClaimConfirmSheet({
 }: ClaimConfirmSheetProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { color: palette } = useTheme();
   const { createClaim } = useClaimedDeals();
   const translateY = useRef(new Animated.Value(800)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
@@ -116,7 +117,7 @@ export function ClaimConfirmSheet({
             left: 0,
             right: 0,
             bottom: 0,
-            backgroundColor: color.surface.overlay,
+            backgroundColor: palette.surface.overlay,
             opacity: overlayOpacity,
           }}
         >
@@ -126,7 +127,7 @@ export function ClaimConfirmSheet({
         <Animated.View
           style={{
             transform: [{ translateY }],
-            backgroundColor: color.surface.primary,
+            backgroundColor: palette.surface.primary,
             borderTopLeftRadius: radius['2xl'],
             borderTopRightRadius: radius['2xl'],
             paddingTop: space[4],
@@ -140,7 +141,7 @@ export function ClaimConfirmSheet({
               width: 40,
               height: 4,
               borderRadius: radius.pill,
-              backgroundColor: color.neutral[300],
+              backgroundColor: palette.neutral[300],
               marginBottom: space[6],
             }}
           />
@@ -157,7 +158,7 @@ export function ClaimConfirmSheet({
 
             <View
               style={{
-                backgroundColor: color.surface.elevated,
+                backgroundColor: palette.surface.elevated,
                 borderRadius: radius.lg,
                 padding: space[4],
                 gap: space[3],
@@ -177,7 +178,7 @@ export function ClaimConfirmSheet({
               <View
                 style={{
                   height: 1,
-                  backgroundColor: color.border.subtle,
+                  backgroundColor: palette.border.subtle,
                 }}
               />
               <Stack direction="row" justify="space-between" align="baseline">

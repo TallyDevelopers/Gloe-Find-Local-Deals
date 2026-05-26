@@ -1,4 +1,4 @@
-import { Stack, Text, color, radius, shadow, space } from '@gloe/ui';
+import { Stack, Text, radius, shadow, space, useTheme } from '@gloe/ui';
 import { Dimensions, Image, Pressable, ScrollView, View } from 'react-native';
 
 import { Section } from './Section';
@@ -64,6 +64,7 @@ interface VideoCardProps {
 }
 
 function VideoCard({ video, width, onPlay }: VideoCardProps) {
+  const { color: palette } = useTheme();
   return (
     <Pressable onPress={onPlay} style={{ width }}>
       <Stack gap={2}>
@@ -73,7 +74,7 @@ function VideoCard({ video, width, onPlay }: VideoCardProps) {
             aspectRatio: 4 / 5,
             borderRadius: radius.lg,
             overflow: 'hidden',
-            backgroundColor: color.neutral[200],
+            backgroundColor: palette.neutral[200],
             ...shadow.sm,
           }}
         >
@@ -105,7 +106,7 @@ function VideoCard({ video, width, onPlay }: VideoCardProps) {
                 ...shadow.md,
               }}
             >
-              <Text style={{ fontSize: 22, color: color.text.primary, marginLeft: 4 }}>▶</Text>
+              <Text style={{ fontSize: 22, color: palette.text.primary, marginLeft: 4 }}>▶</Text>
             </View>
           </View>
           {video.duration ? (

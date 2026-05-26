@@ -7,7 +7,8 @@ import {
 } from 'react-native';
 
 import { Text } from './Text';
-import { color, fontFamily, fontSize, radius, space } from './tokens';
+import { useTheme } from './theme';
+import { fontFamily, fontSize, radius, space } from './tokens';
 
 export interface InputProps extends Omit<TextInputProps, 'style'> {
   label?: string;
@@ -30,12 +31,13 @@ export function Input({
   ...rest
 }: InputProps) {
   const [focused, setFocused] = useState(false);
+  const { color: palette } = useTheme();
 
   const borderColor = error
-    ? color.semantic.error
+    ? palette.semantic.error
     : focused
-      ? color.brand[500]
-      : color.border.default;
+      ? palette.brand[500]
+      : palette.border.default;
 
   return (
     <View style={[{ gap: space[2] }, containerStyle]}>
@@ -50,7 +52,7 @@ export function Input({
           flexDirection: 'row',
           alignItems: 'center',
           gap: space[2],
-          backgroundColor: color.surface.elevated,
+          backgroundColor: palette.surface.elevated,
           borderRadius: radius.lg,
           borderWidth: 1,
           borderColor,
@@ -64,10 +66,10 @@ export function Input({
             flex: 1,
             fontFamily: fontFamily.body,
             fontSize: fontSize.base,
-            color: color.text.primary,
+            color: palette.text.primary,
             paddingVertical: space[3],
           }}
-          placeholderTextColor={color.text.tertiary}
+          placeholderTextColor={palette.text.tertiary}
           onFocus={(e) => {
             setFocused(true);
             onFocus?.(e);

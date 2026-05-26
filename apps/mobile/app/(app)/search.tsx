@@ -1,4 +1,4 @@
-import { Stack, Text, color, radius, shadow, space } from '@gloe/ui';
+import { Stack, Text, radius, shadow, space, useTheme } from '@gloe/ui';
 import { useRouter } from 'expo-router';
 import { Pressable, ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,9 +12,10 @@ import { Icon } from '../../features/icon/Icon';
 export default function SearchScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { color: palette } = useTheme();
 
   return (
-    <View style={{ flex: 1, backgroundColor: color.surface.primary }}>
+    <View style={{ flex: 1, backgroundColor: palette.surface.primary }}>
       <ScrollView
         contentContainerStyle={{
           paddingTop: insets.top + space[3],
@@ -26,7 +27,7 @@ export default function SearchScreen() {
           {/* Header row */}
           <Stack direction="row" gap={3} align="center">
             <Pressable onPress={() => router.back()} hitSlop={12}>
-              <Icon name="close" size={22} color={color.text.primary} />
+              <Icon name="close" size={22} color={palette.text.primary} />
             </Pressable>
             <View
               style={{
@@ -34,22 +35,22 @@ export default function SearchScreen() {
                 flexDirection: 'row',
                 alignItems: 'center',
                 gap: space[3],
-                backgroundColor: color.surface.elevated,
+                backgroundColor: palette.surface.elevated,
                 borderRadius: radius.pill,
                 paddingHorizontal: space[4],
                 paddingVertical: space[3],
                 ...shadow.sm,
               }}
             >
-              <Icon name="search" size={18} color={color.text.tertiary} />
+              <Icon name="search" size={18} color={palette.text.tertiary} />
               <TextInput
                 placeholder="Search Botox, filler, lasers…"
-                placeholderTextColor={color.text.tertiary}
+                placeholderTextColor={palette.text.tertiary}
                 style={{
                   flex: 1,
                   fontFamily: 'Inter',
                   fontSize: 16,
-                  color: color.text.primary,
+                  color: palette.text.primary,
                 }}
                 autoFocus
                 returnKeyType="search"

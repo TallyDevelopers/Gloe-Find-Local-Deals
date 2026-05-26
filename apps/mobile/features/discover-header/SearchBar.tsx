@@ -1,4 +1,4 @@
-import { Text, color, radius, shadow, space } from '@gloe/ui';
+import { Text, radius, shadow, space, useTheme } from '@gloe/ui';
 import { Pressable, View } from 'react-native';
 
 import { Icon } from '../icon/Icon';
@@ -14,6 +14,7 @@ interface SearchBarProps {
  * keyboard, results, recents, etc.
  */
 export function SearchBar({ onPress }: SearchBarProps) {
+  const { color: palette } = useTheme();
   return (
     <Pressable
       onPress={onPress}
@@ -22,14 +23,14 @@ export function SearchBar({ onPress }: SearchBarProps) {
         flexDirection: 'row',
         alignItems: 'center',
         gap: space[2],
-        backgroundColor: color.surface.elevated,
+        backgroundColor: palette.surface.elevated,
         borderRadius: radius.pill,
         paddingHorizontal: space[4],
         paddingVertical: space[3],
         ...shadow.sm,
       }}
     >
-      <Icon name="search" size={18} color={color.text.tertiary} />
+      <Icon name="search" size={18} color={palette.text.tertiary} />
       <View style={{ flex: 1 }}>
         <Text variant="body-md" tone="tertiary">
           Search Botox, filler, lasers…

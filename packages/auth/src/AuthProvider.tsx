@@ -78,4 +78,5 @@ export function useAuth() {
 // Re-export for screens that need the multi-step sign-in / sign-up flows
 export { useSignInFlow } from './useSignInFlow';
 export { useSignUpFlow } from './useSignUpFlow';
+export { useSocialAuth } from './useSocialAuth';
 export type { SignInWithPasswordInput, SignUpWithPasswordInput, SocialProvider };

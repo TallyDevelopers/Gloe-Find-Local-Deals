@@ -22,6 +22,7 @@ interface ResolvedAddress {
   postalCode: string;
   latitude: number;
   longitude: number;
+  placeId: string;
 }
 
 export function VendorSignupForm({ onCreated }: { onCreated: () => void }) {
@@ -58,6 +59,7 @@ export function VendorSignupForm({ onCreated }: { onCreated: () => void }) {
         postalCode: details.postalCode,
         latitude: details.latitude,
         longitude: details.longitude,
+        placeId: details.placeId ?? placeId,
       });
     } catch {
       setError('Could not load that address. Pick another.');
@@ -89,6 +91,7 @@ export function VendorSignupForm({ onCreated }: { onCreated: () => void }) {
       postalCode: resolved.postalCode,
       latitude: resolved.latitude,
       longitude: resolved.longitude,
+      googlePlaceId: resolved.placeId,
       categorySlugs: [...categories],
     });
   };

@@ -36,3 +36,5 @@ export const sql = postgres({
 });
 
 export type Sql = typeof sql;
+/** The `tx` handle passed to sql.begin(...) callbacks. */
+export type TxSql = postgres.TransactionSql<Record<string, never>>;

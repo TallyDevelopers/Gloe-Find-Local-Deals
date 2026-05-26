@@ -1,4 +1,4 @@
-import { Stack, Text, color, radius, shadow, space } from '@gloe/ui';
+import { Stack, Text, radius, shadow, space, useTheme } from '@gloe/ui';
 import { useRouter } from 'expo-router';
 import { Image, Pressable, View } from 'react-native';
 
@@ -13,6 +13,7 @@ interface ClaimedDealRowProps {
 
 export function ClaimedDealRow({ claim }: ClaimedDealRowProps) {
   const router = useRouter();
+  const { color: palette } = useTheme();
   const dealQuery = trpc.deals.byId.useQuery({ id: claim.dealId }, { staleTime: 5 * 60_000 });
   const image = dealQuery.data?.photos[0]?.url;
 
@@ -35,7 +36,7 @@ export function ClaimedDealRow({ claim }: ClaimedDealRowProps) {
     <Pressable
       onPress={() => router.push(`/(app)/my-deal/${claim.id}`)}
       style={{
-        backgroundColor: color.surface.elevated,
+        backgroundColor: palette.surface.elevated,
         borderRadius: radius.lg,
         padding: space[3],
         flexDirection: 'row',
@@ -52,7 +53,7 @@ export function ClaimedDealRow({ claim }: ClaimedDealRowProps) {
             width: 64,
             height: 64,
             borderRadius: radius.md,
-            backgroundColor: color.neutral[200],
+            backgroundColor: palette.neutral[200],
           }}
         />
       ) : (
@@ -61,7 +62,7 @@ export function ClaimedDealRow({ claim }: ClaimedDealRowProps) {
             width: 64,
             height: 64,
             borderRadius: radius.md,
-            backgroundColor: color.neutral[200],
+            backgroundColor: palette.neutral[200],
           }}
         />
       )}
