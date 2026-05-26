@@ -7,13 +7,15 @@
     "scheme": "gloe",
     "userInterfaceStyle": "light",
     "newArchEnabled": false,
+    "icon": "./assets/icon.png",
     "splash": {
       "resizeMode": "contain",
-      "backgroundColor": "#FBF8F3"
+      "backgroundColor": "#FAF5F2"
     },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.gloe.app",
+      "icon": "./assets/icon.png",
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Gloe uses your location to show aesthetic deals near you.",
         "LSApplicationQueriesSchemes": [
@@ -23,7 +25,11 @@
       }
     },
     "android": {
-      "package": "com.gloe.app"
+      "package": "com.gloe.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1A130F"
+      }
     },
     "web": {
       "bundler": "metro",
