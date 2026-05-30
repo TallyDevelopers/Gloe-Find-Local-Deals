@@ -3,7 +3,6 @@ import { z } from 'zod';
 
 import {
   createClaim,
-  devMarkRedeemed,
   getClaimByIdForUser,
   listClaimsForUser,
 } from '../domain/claims';
@@ -42,10 +41,9 @@ export const claimsRouter = router({
       }
     }),
 
-  // Dev-only — until the vendor app exists
-  devMarkRedeemed: protectedProcedure
-    .input(z.object({ id: z.string().uuid() }))
-    .mutation(async ({ ctx, input }) => {
-      return devMarkRedeemed(ctx.sql, ctx.auth.userId, input.id);
-    }),
+  // NOTE: there is intentionally NO consumer-facing redeem mutation.
+  // Redemption is vendor-only via vendor.redeemVoucher → redeemClaimByVendor,
+  // which verifies the caller owns the vendor + claim before flipping status
+  // and firing the payout. A self-redeem path would let a payout fire without
+  // the customer ever showing up. (Old devMarkRedeemed removed 2026-05-29.)
 });

@@ -15,6 +15,19 @@ export interface ClaimSnapshot {
   dealPriceCents: number;
 }
 
+/**
+ * Live vendor info attached to the single-claim response. Separate from the
+ * frozen `snapshot` because these are read at request time — if the spa
+ * changes its phone number, the user gets the current one, not the one from
+ * 90 days ago when they bought the voucher.
+ */
+export interface ClaimVendorLive {
+  phone: string | null;
+  address: string | null;
+  lat: number | null;
+  lng: number | null;
+}
+
 export interface Claim {
   id: string;
   dealId: string;
@@ -27,6 +40,8 @@ export interface Claim {
   createdAt: string;
   expiresAt: string;
   redeemedAt: string | null;
+  /** Present on getClaimByIdForUser only — list rows omit to keep the query cheap. */
+  vendor?: ClaimVendorLive;
 }
 
 const HUMAN_CODE_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'; // no 0/O/1/I
@@ -193,15 +208,36 @@ export async function getClaimByIdForUser(
     created_at: string;
     expires_at: string;
     redeemed_at: string | null;
+    vendor_phone: string | null;
+    vendor_address_line1: string | null;
+    vendor_address_line2: string | null;
+    vendor_city: string | null;
+    vendor_region: string | null;
+    vendor_postal_code: string | null;
+    vendor_lat: number | null;
+    vendor_lng: number | null;
   }[]>`
-    SELECT id, deal_id, variant_id, vendor_id, snapshot, qr_payload, human_code,
-           status, created_at, expires_at, redeemed_at
-    FROM public.claims
-    WHERE id = ${claimId} AND user_id = ${userId}
+    SELECT
+      c.id, c.deal_id, c.variant_id, c.vendor_id, c.snapshot, c.qr_payload, c.human_code,
+      c.status, c.created_at, c.expires_at, c.redeemed_at,
+      v.phone           AS vendor_phone,
+      v.address_line1   AS vendor_address_line1,
+      v.address_line2   AS vendor_address_line2,
+      v.city            AS vendor_city,
+      v.region          AS vendor_region,
+      v.postal_code     AS vendor_postal_code,
+      ST_Y(v.location::geometry) AS vendor_lat,
+      ST_X(v.location::geometry) AS vendor_lng
+    FROM public.claims c
+    JOIN public.vendors v ON v.id = c.vendor_id
+    WHERE c.id = ${claimId} AND c.user_id = ${userId}
     LIMIT 1
   `;
   const r = rows[0];
   if (!r) return null;
+  const street = [r.vendor_address_line1, r.vendor_address_line2].filter(Boolean).join(' ');
+  const cityRegion = [r.vendor_city, r.vendor_region].filter(Boolean).join(', ');
+  const fullAddress = [street, cityRegion, r.vendor_postal_code].filter(Boolean).join(' · ') || null;
   return {
     id: r.id,
     dealId: r.deal_id,
@@ -214,6 +250,12 @@ export async function getClaimByIdForUser(
     createdAt: r.created_at,
     expiresAt: r.expires_at,
     redeemedAt: r.redeemed_at,
+    vendor: {
+      phone: r.vendor_phone,
+      address: fullAddress,
+      lat: r.vendor_lat,
+      lng: r.vendor_lng,
+    },
   };
 }
 
@@ -431,46 +473,8 @@ export async function redeemClaimByVendor(
   }
 }
 
-/**
- * @deprecated Use redeemClaimByVendor. Kept temporarily for the mobile
- * "test redeem" button if it still exists; new code shouldn't call this.
- */
-export async function devMarkRedeemed(
-  sql: Sql,
-  userId: string,
-  claimId: string,
-): Promise<{
-  redeemed: boolean;
-  released: { transferId: string; amountCents: number } | null;
-  releaseError: string | null;
-}> {
-  const flipped = await sql<{ id: string }[]>`
-    UPDATE public.claims
-    SET status = 'redeemed', redeemed_at = now()
-    WHERE id = ${claimId} AND user_id = ${userId} AND status = 'active'
-    RETURNING id
-  `;
-  if (flipped.length === 0) {
-    return { redeemed: false, released: null, releaseError: null };
-  }
-
-  const { shouldAutoReleaseForClaim, releaseTransferForClaim } = await import('./payouts');
-  if (!(await shouldAutoReleaseForClaim(sql, claimId))) {
-    return { redeemed: true, released: null, releaseError: null };
-  }
-
-  try {
-    const r = await releaseTransferForClaim(sql, claimId);
-    return {
-      redeemed: true,
-      released: { transferId: r.transferId, amountCents: r.amountCents },
-      releaseError: null,
-    };
-  } catch (e) {
-    return {
-      redeemed: true,
-      released: null,
-      releaseError: e instanceof Error ? e.message : 'unknown release error',
-    };
-  }
-}
+// NOTE: a consumer-facing `devMarkRedeemed` used to live here and was wired to
+// a "Simulate redemption" button in the mobile app. It let a customer flip
+// their own voucher to 'redeemed' (and auto-fire the vendor payout) without
+// ever showing up. Removed 2026-05-29. Redemption is vendor-only via
+// `redeemClaimByVendor` above — do not reintroduce a user-scoped redeem path.

@@ -18,7 +18,6 @@ interface ClaimedDealsContextValue {
   getById: (claimId: string) => ClaimedDeal | undefined;
   hasActiveClaimFor: (dealId: string, variantId: string) => boolean;
   createClaim: (input: CreateClaimInput) => Promise<ClaimedDeal>;
-  markRedeemed: (claimId: string) => Promise<void>;
   refetch: () => Promise<unknown>;
 }
 
@@ -39,10 +38,6 @@ export function ClaimedDealsProvider({ children }: { children: ReactNode }) {
   });
 
   const createMutation = trpc.claims.create.useMutation({
-    onSuccess: () => utils.claims.list.invalidate(),
-  });
-
-  const devMarkRedeemedMutation = trpc.claims.devMarkRedeemed.useMutation({
     onSuccess: () => utils.claims.list.invalidate(),
   });
 
@@ -85,13 +80,6 @@ export function ClaimedDealsProvider({ children }: { children: ReactNode }) {
     [createMutation],
   );
 
-  const markRedeemed = useCallback(
-    async (claimId: string) => {
-      await devMarkRedeemedMutation.mutateAsync({ id: claimId });
-    },
-    [devMarkRedeemedMutation],
-  );
-
   const refetch = useCallback(() => listQuery.refetch(), [listQuery]);
 
   const value = useMemo<ClaimedDealsContextValue>(
@@ -102,10 +90,9 @@ export function ClaimedDealsProvider({ children }: { children: ReactNode }) {
       getById,
       hasActiveClaimFor,
       createClaim,
-      markRedeemed,
       refetch,
     }),
-    [claims, activeClaims, pastClaims, getById, hasActiveClaimFor, createClaim, markRedeemed, refetch],
+    [claims, activeClaims, pastClaims, getById, hasActiveClaimFor, createClaim, refetch],
   );
 
   return <ClaimedDealsContext.Provider value={value}>{children}</ClaimedDealsContext.Provider>;

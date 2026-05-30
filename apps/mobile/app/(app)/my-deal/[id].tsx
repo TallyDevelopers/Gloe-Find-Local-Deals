@@ -1,14 +1,22 @@
+import { useAuth as useClerkAuth } from '@clerk/clerk-expo';
+import { trpc } from '@gloe/api-client';
 import { Button, Stack, Text, radius, shadow, space, useTheme } from '@gloe/ui';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Alert, Linking, Platform, Pressable, ScrollView, View } from 'react-native';
+import PassKit from 'react-native-passkit-wallet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import QRCode from 'react-native-qrcode-svg';
 
+import { getApiUrl } from '../../../features/api/apiUrl';
 import { useClaimedDeals } from '../../../features/claimed/ClaimedDealsProvider';
 import { formatPrice } from '../../../features/discover/format';
+import { useToast } from '../../../features/feedback/Toast';
+import { Icon } from '../../../features/icon/Icon';
+import { StatusBarBackdrop } from '../../../features/layout/StatusBarBackdrop';
 import { ReviewSheet } from '../../../features/reviews/ReviewSheet';
+import { AddToWalletBadge } from '../../../features/wallet/AddToWalletBadge';
 
 /**
  * The voucher screen — what a customer shows to the spa to get their service.
@@ -24,12 +32,23 @@ export default function MyDealScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { getById, markRedeemed } = useClaimedDeals();
+  const { getById } = useClaimedDeals();
   const { color: palette } = useTheme();
   const [, forceTick] = useState(0);
   const [reviewOpen, setReviewOpen] = useState(false);
 
   const claim = id ? getById(id) : undefined;
+
+  // Fetch live vendor info (phone, address, coords) for the Call + Directions
+  // quick-action buttons. The cached list claim doesn't include these — they
+  // come from a live JOIN on the vendors table — so we fetch byId in parallel.
+  // React Query dedupes; the screen renders instantly from cache and the
+  // action buttons enable as soon as this lands (~200ms).
+  const detailQuery = trpc.claims.byId.useQuery(
+    { id: id ?? '' },
+    { enabled: !!id, staleTime: 60_000 },
+  );
+  const liveVendor = detailQuery.data?.vendor;
 
   // Re-render every minute so the countdown updates.
   useEffect(() => {
@@ -77,29 +96,34 @@ export default function MyDealScreen() {
             <StatusPill label={statusLabel} kind={isRedeemed ? 'success' : isExpired ? 'error' : 'neutral'} />
           </Stack>
 
-          {/* Title block — vendor name in display serif with sparkle accents */}
+          {/* Title block — compact: vendor (display serif) over a single
+              "deal · variant" line. Skips the side sparkle accents to claw
+              back vertical space and keep the QR card above the fold. */}
           <Stack gap={1} align="center">
-            <Stack direction="row" align="center" gap={2}>
-              <Text variant="body-sm" tone="brand" weight="semibold">✦</Text>
-              <Text variant="display-md" tone="primary" weight="medium" align="center" style={{ letterSpacing: 0.2 }}>
-                {snapshot.vendorName ?? 'Vendor'}
-              </Text>
-              <Text variant="body-sm" tone="brand" weight="semibold">✦</Text>
-            </Stack>
-            <Text variant="body-md" tone="secondary" align="center">
-              {snapshot.dealTitle}
+            <Text
+              variant="display-md"
+              tone="primary"
+              weight="medium"
+              align="center"
+              numberOfLines={1}
+              style={{ letterSpacing: 0.2 }}
+            >
+              {snapshot.vendorName ?? 'Vendor'}
             </Text>
-            <Text variant="body-sm" tone="tertiary" align="center">
-              {snapshot.variantLabel}
+            <Text variant="body-sm" tone="secondary" align="center" numberOfLines={1}>
+              {snapshot.dealTitle}
+              {snapshot.variantLabel ? ` · ${snapshot.variantLabel}` : ''}
             </Text>
           </Stack>
 
-          {/* The ticket card — QR + code + price, all in one. THE hero. */}
+          {/* The ticket card — QR + code + price, all in one. THE hero.
+              Sized so the card + Apple Wallet button fit above the fold on
+              an iPhone SE; a 192pt QR scans reliably from ~6+ inches. */}
           <View
             style={{
               backgroundColor: palette.surface.elevated,
               borderRadius: radius['2xl'],
-              padding: space[6],
+              padding: space[5],
               alignItems: 'center',
               ...shadow.md,
               opacity: isActive ? 1 : 0.55,
@@ -109,7 +133,7 @@ export default function MyDealScreen() {
             {isActive ? (
               <QRCode
                 value={claim.qrPayload}
-                size={232}
+                size={192}
                 color={palette.text.primary}
                 backgroundColor={palette.surface.elevated}
                 quietZone={8}
@@ -121,7 +145,7 @@ export default function MyDealScreen() {
             )}
 
             {/* Human-readable code, big & spaced — for when QR scans fail */}
-            <Stack gap={1} align="center" style={{ marginTop: space[5] }}>
+            <Stack gap={1} align="center" style={{ marginTop: space[3] }}>
               <Text variant="caption" tone="tertiary" weight="semibold" style={{ letterSpacing: 1.5 }}>
                 {isActive ? 'CODE' : 'WAS'}
               </Text>
@@ -142,7 +166,7 @@ export default function MyDealScreen() {
                 height: 1,
                 width: '100%',
                 backgroundColor: palette.border.subtle,
-                marginVertical: space[5],
+                marginVertical: space[4],
               }}
             />
 
@@ -179,7 +203,25 @@ export default function MyDealScreen() {
             ) : null}
           </View>
 
-          {/* State-specific body content */}
+          {/* In-the-moment actions, in order of urgency at the spa counter:
+              quick contact (Call/Directions) → save-for-later (Wallet). All
+              three sit right under the QR card so the user never has to scroll
+              past the instructions to get to them. */}
+          <QuickActionsRow
+            phone={liveVendor?.phone ?? null}
+            address={liveVendor?.address ?? null}
+            lat={liveVendor?.lat ?? null}
+            lng={liveVendor?.lng ?? null}
+            vendorName={snapshot.vendorName ?? 'the vendor'}
+          />
+
+          {/* "Add to Apple Wallet" — lock-screen access to the voucher, plus
+              auto-surface when near the vendor (set server-side via the pass's
+              relevant location). Active vouchers only. */}
+          {isActive ? <AddToWalletButton claimId={claim.id} /> : null}
+
+          {/* State-specific body content (Expires-in + How-to-use steps for
+              active; thank-you for redeemed; quiet message for expired). */}
           {isActive ? (
             <ActiveBody expiresInMs={expiresInMs} />
           ) : isRedeemed ? (
@@ -188,19 +230,10 @@ export default function MyDealScreen() {
             <ExpiredBody expiresAt={claim.expiresAt} />
           )}
 
-          {/* Dev-only: simulate redemption (until vendor scanner is in vendors' hands) */}
-          {isActive ? (
-            <Button
-              label="Simulate redemption"
-              variant="secondary"
-              size="md"
-              fullWidth
-              onPress={() => {
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                markRedeemed(claim.id);
-              }}
-            />
-          ) : null}
+          {/* Redemption is vendor-only: the vendor scans the QR (or enters the
+              code) in their scanner to mark this voucher redeemed. The customer
+              cannot self-redeem — that would let a payout fire without anyone
+              showing up. The screen only *displays* the QR + code above. */}
 
           {/* Post-redemption review CTA. Only shows after they've used the
               voucher — you can't review a service you didn't get. The sheet
@@ -243,11 +276,186 @@ export default function MyDealScreen() {
         vendorName={snapshot.vendorName ?? 'the vendor'}
         onClose={() => setReviewOpen(false)}
       />
+      <StatusBarBackdrop />
     </View>
   );
 }
 
 /* ─────────────── sub-components ─────────────── */
+
+/**
+ * Call + Directions buttons under the QR card. Disabled (greyed) when the
+ * live vendor info hasn't loaded yet. Tapping Call opens the system dialer;
+ * tapping Directions opens Apple Maps with a destination set (coords if we
+ * have them, otherwise a free-text address search).
+ */
+function QuickActionsRow({
+  phone,
+  address,
+  lat,
+  lng,
+  vendorName,
+}: {
+  phone: string | null;
+  address: string | null;
+  lat: number | null;
+  lng: number | null;
+  vendorName: string;
+}) {
+  const { color: palette } = useTheme();
+  const canCall = !!phone;
+  const canNavigate = (lat != null && lng != null) || !!address;
+
+  const onCall = async () => {
+    if (!phone) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // tel: scheme — iOS shows the call-confirmation sheet automatically.
+    const cleaned = phone.replace(/[^\d+]/g, '');
+    await Linking.openURL(`tel:${cleaned}`);
+  };
+
+  const onDirections = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Prefer Apple Maps deep link with coords (most precise). Fall back to
+    // address search if coords are missing.
+    const label = encodeURIComponent(vendorName);
+    let url: string;
+    if (lat != null && lng != null) {
+      url = Platform.select({
+        ios: `maps://?daddr=${lat},${lng}&q=${label}`,
+        android: `geo:${lat},${lng}?q=${lat},${lng}(${label})`,
+      }) ?? `https://maps.apple.com/?daddr=${lat},${lng}&q=${label}`;
+    } else if (address) {
+      const q = encodeURIComponent(address);
+      url = Platform.select({
+        ios: `maps://?daddr=${q}`,
+        android: `geo:0,0?q=${q}`,
+      }) ?? `https://maps.apple.com/?daddr=${q}`;
+    } else {
+      return;
+    }
+    await Linking.openURL(url);
+  };
+
+  return (
+    <Stack direction="row" gap={3}>
+      <QuickActionCard
+        icon="phone"
+        label="Call"
+        onPress={onCall}
+        disabled={!canCall}
+        palette={palette}
+      />
+      <QuickActionCard
+        icon="map-pin"
+        label="Directions"
+        onPress={onDirections}
+        disabled={!canNavigate}
+        palette={palette}
+      />
+    </Stack>
+  );
+}
+
+function QuickActionCard({
+  icon,
+  label,
+  onPress,
+  disabled,
+  palette,
+}: {
+  icon: 'phone' | 'map-pin';
+  label: string;
+  onPress: () => void;
+  disabled: boolean;
+  palette: ReturnType<typeof useTheme>['color'];
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      style={{
+        flex: 1,
+        backgroundColor: palette.surface.elevated,
+        borderRadius: radius.lg,
+        paddingVertical: space[4],
+        alignItems: 'center',
+        gap: space[1],
+        opacity: disabled ? 0.45 : 1,
+      }}
+    >
+      <Icon name={icon} size={22} color={palette.brand[500]} strokeWidth={1.75} />
+      <Text variant="body-sm" tone="primary" weight="semibold">
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+/**
+ * Add-to-Wallet button using Apple's native PKAddPassButton + PKAddPassesViewController.
+ * On tap: fetch the .pkpass bytes from our API (Bearer auth), base64-encode,
+ * hand to PassKit. iOS shows the system "Add to Apple Wallet" sheet in-app —
+ * no Safari detour. The button itself is the actual Apple UIKit system view,
+ * so its rendering tracks iOS version/locale/dynamic-type automatically.
+ */
+function AddToWalletButton({ claimId }: { claimId: string }) {
+  const [busy, setBusy] = useState(false);
+  const { getToken } = useClerkAuth();
+  const toast = useToast();
+
+  const onPress = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setBusy(true);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error('Not signed in');
+      const res = await fetch(`${getApiUrl()}/pass/${claimId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        throw new Error(`Pass download failed (${res.status}): ${body.slice(0, 120)}`);
+      }
+      // iOS PassKit takes a base64 string of the .pkpass bytes and shows the
+      // system add-pass sheet. RN doesn't have a built-in Buffer; assemble
+      // base64 ourselves from the ArrayBuffer.
+      const buf = await res.arrayBuffer();
+      const base64 = arrayBufferToBase64(buf);
+      await PassKit.addPass(base64);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      // PassKit.addPass resolves when the user dismisses the sheet either way
+      // (Add or Cancel). We can't distinguish — show a friendly success that
+      // also offers a one-tap jump to the Wallet app. If they cancelled they'll
+      // know; the toast is subtle enough not to be annoying.
+      toast.show({
+        kind: 'success',
+        message: 'Added to Apple Wallet',
+        action: {
+          label: 'Open Wallet',
+          onPress: () => {
+            void Linking.openURL('shoebox://');
+          },
+        },
+      });
+    } catch (e) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert(
+        'Couldn’t add to Apple Wallet',
+        e instanceof Error ? e.message : 'Please try again.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <View style={{ alignItems: 'center' }}>
+      <AddToWalletBadge onPress={onPress} disabled={busy} />
+    </View>
+  );
+}
+
 
 function StatusPill({ label, kind }: { label: string; kind: 'success' | 'error' | 'neutral' }) {
   const { color: palette } = useTheme();
@@ -389,7 +597,22 @@ function Step({ n, text }: { n: number; text: string }) {
   );
 }
 
-/* ─────────────── formatting helpers ─────────────── */
+/* ─────────────── helpers ─────────────── */
+
+/**
+ * Convert raw bytes to base64 — needed because RN doesn't ship a global Buffer
+ * and PassKit.addPass expects a base64 string. Iterates in 32KB chunks so
+ * String.fromCharCode.apply doesn't blow the call-stack on large pass files.
+ */
+function arrayBufferToBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunkSize)));
+  }
+  return global.btoa(binary);
+}
 
 function formatRelative(ms: number): string {
   if (ms <= 0) return 'now';
