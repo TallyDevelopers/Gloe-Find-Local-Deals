@@ -3,6 +3,7 @@ import { categoriesRouter } from './categories.router';
 import { checkoutRouter } from './checkout.router';
 import { claimsRouter } from './claims.router';
 import { dealsRouter } from './deals.router';
+import { devicesRouter } from './devices.router';
 import { geocodeRouter } from './geocode.router';
 import { mapsRouter } from './maps.router';
 import { meRouter } from './me.router';
@@ -11,6 +12,7 @@ import { savedRouter } from './saved.router';
 import { router } from './trpc';
 import { vendorRouter } from './vendor.router';
 import { vendorsRouter } from './vendors.router';
+import { waitlistRouter } from './waitlist.router';
 
 export const appRouter = router({
   admin: adminRouter,
@@ -25,6 +27,8 @@ export const appRouter = router({
   geocode: geocodeRouter,
   maps: mapsRouter,
   categories: categoriesRouter,
+  devices: devicesRouter,
+  waitlist: waitlistRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -248,7 +248,13 @@ export async function listDeals(sql: Sql, params: ListParams = {}): Promise<Deal
     WHERE d.status = 'active'
       AND v.status = 'active'
       AND d.expires_at > now()
-      ${category ? sql`AND c.slug = ${category}` : sql``}
+      ${category ? sql`AND (
+        c.slug = ${category}
+        OR EXISTS (
+          SELECT 1 FROM public.service_categories c2
+           WHERE c2.id = d.secondary_category_id AND c2.slug = ${category}
+        )
+      )` : sql``}
       ${
         hasUserLocation
           ? sql`AND ST_DWithin(
@@ -608,4 +614,26 @@ interface ProviderRow {
   title: string;
   bio: string | null;
   photo_url: string | null;
+}
+
+/**
+ * Distinct cities that currently have at least one live deal, busiest first.
+ * Powers the consumer "coming soon" screen's dynamic "Now live in …" copy —
+ * always accurate, auto-updates the moment a new city's first deal goes live.
+ * The same predicate as the deals feed (active deal + active vendor + unexpired).
+ */
+export async function listLiveCities(sql: Sql): Promise<{ city: string; dealCount: number }[]> {
+  const rows = await sql<{ city: string; deal_count: number }[]>`
+    SELECT v.city AS city, count(*)::int AS deal_count
+    FROM public.deals d
+    JOIN public.vendors v ON v.id = d.vendor_id
+    WHERE d.status = 'active'
+      AND v.status = 'active'
+      AND d.expires_at > now()
+      AND v.city IS NOT NULL
+      AND v.city <> ''
+    GROUP BY v.city
+    ORDER BY deal_count DESC, v.city ASC
+  `;
+  return rows.map((r) => ({ city: r.city, dealCount: r.deal_count }));
 }

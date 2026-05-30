@@ -8,11 +8,13 @@ import { ActivityIndicator, Pressable, RefreshControl, ScrollView, View } from '
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useRequireAuth } from '../../../features/auth-gate/useRequireAuth';
+import { StatusBarBackdrop } from '../../../features/layout/StatusBarBackdrop';
 import { useAnonSeed } from '../../../features/discover/anonSeed';
 import { CategoryRail } from '../../../features/discover/CategoryRail';
+import { ComingSoon } from '../../../features/discover/ComingSoon';
 import { DealCardLarge } from '../../../features/discover/DealCardLarge';
 import { FeaturedCarousel } from '../../../features/discover/FeaturedCarousel';
-import { CATEGORY_OPTIONS, FilterPills } from '../../../features/discover-header/FilterPills';
+import { FilterPills, useCategoryOptions } from '../../../features/discover-header/FilterPills';
 import { FilterSheet, type DiscoverFilters } from '../../../features/discover-header/FilterSheet';
 import { LocationPill } from '../../../features/discover-header/LocationPill';
 import { SearchBar } from '../../../features/discover-header/SearchBar';
@@ -25,13 +27,14 @@ export default function DiscoverScreen() {
   const { status } = useAuth();
   const requireAuth = useRequireAuth();
   const { savedIds, toggle } = useSavedDeals();
-  const { location } = useSelectedLocation();
+  const { location, gpsResolved } = useSelectedLocation();
   const { color: palette } = useTheme();
   const anonSeed = useAnonSeed();
 
   const [categorySlug, setCategorySlug] = useState<string | null>(null);
   const [filters, setFilters] = useState<DiscoverFilters>({});
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  const categoryOptions = useCategoryOptions();
 
   // Count of non-default filter sections, for the "Filters · 2" affordance.
   const activeFilterCount =
@@ -57,6 +60,22 @@ export default function DiscoverScreen() {
   const allDeals = dealsQuery.data?.deals ?? [];
   const featured = allDeals.filter((d) => d.isSponsored);
   const rest = allDeals;
+
+  // Out-of-area: the feed loaded successfully with ZERO deals near a real,
+  // resolved location AND the user hasn't chosen to browse SoCal anyway. We
+  // require gpsResolved so we don't flash this during the initial GPS read
+  // (the app starts on the San Diego fallback, which does have deals). When
+  // the user picks a far city in the picker, location.fromGPS is false but
+  // it's still a deliberate location with no deals → also show coming-soon.
+  const [browseAnyway, setBrowseAnyway] = useState(false);
+  const outOfArea =
+    !dealsQuery.isLoading &&
+    !dealsQuery.isError &&
+    gpsResolved &&
+    allDeals.length === 0 &&
+    categorySlug === null &&
+    activeFilterCount === 0 &&
+    !browseAnyway;
 
   const toggleSave = requireAuth('save', (dealId: string) => toggle(dealId));
 
@@ -137,6 +156,13 @@ export default function DiscoverScreen() {
                 Couldn't load deals. Pull to refresh.
               </Text>
             </View>
+          ) : outOfArea ? (
+            <ComingSoon
+              cityLabel={location.label}
+              lat={location.latitude}
+              lng={location.longitude}
+              onBrowseAnyway={() => setBrowseAnyway(true)}
+            />
           ) : categorySlug === null ? (
             /* "All" view — Featured carousel + a horizontal rail per category. */
             <Stack gap={8} style={{ marginTop: space[2] }}>
@@ -146,7 +172,7 @@ export default function DiscoverScreen() {
                 </View>
               ) : null}
 
-              {CATEGORY_OPTIONS.filter((c) => c.slug !== null).map((c) => (
+              {categoryOptions.filter((c) => c.slug !== null).map((c) => (
                 <CategoryRail
                   key={c.slug}
                   categorySlug={c.slug as string}
@@ -192,6 +218,7 @@ export default function DiscoverScreen() {
         onClose={() => setFilterSheetOpen(false)}
         onApply={setFilters}
       />
+      <StatusBarBackdrop />
     </View>
   );
 }
