@@ -42,6 +42,8 @@ function resolveApiUrl(): string {
     const host = hostUri.split(':')[0];
     return `http://${host}:4000`;
   }
+  // hostUri is often undefined in this dev build → we fall back to .env.
+  // For the simulator that MUST be http://localhost:4000 (see apps/mobile/.env).
   if (!envUrl) throw new Error('Missing EXPO_PUBLIC_API_URL. Set it in apps/mobile/.env');
   return envUrl;
 }

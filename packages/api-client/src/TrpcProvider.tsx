@@ -33,9 +33,26 @@ export function TrpcProvider({ apiUrl, getToken, children }: TrpcProviderProps) 
     trpc.createClient({
       links: [
         loggerLink({
+          // Log in dev, plus any real errors regardless of env.
           enabled: (op) =>
             (typeof __DEV__ !== 'undefined' && __DEV__) ||
             (op.direction === 'down' && op.result instanceof Error),
+          // Drop the browser-only `%c` CSS that RN's console can't render
+          // (the "background-color: #3fb0d8..." noise).
+          colorMode: 'none',
+          // Custom logger: route routine request/response logs through
+          // console.log so React Native's LogBox doesn't promote them to a
+          // red "Console Error" overlay. Only genuine errors use console.error.
+          logger: (opts) => {
+            const isError = opts.direction === 'down' && opts.result instanceof Error;
+            const tag = opts.direction === 'up' ? '→ trpc' : '← trpc';
+            const line = `${tag} ${opts.type} ${opts.path}`;
+            if (isError) {
+              console.error(line, opts.result);
+            } else {
+              console.log(line);
+            }
+          },
         }),
         httpBatchLink({
           url: `${apiUrl}/trpc`,

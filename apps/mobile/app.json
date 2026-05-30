@@ -13,7 +13,7 @@
       "backgroundColor": "#FAF5F2"
     },
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "com.gloe.app",
       "icon": "./assets/icon.png",
       "infoPlist": {
@@ -57,6 +57,13 @@
         {
           "photosPermission": "Gloe needs access to your photos so you can attach pictures to reviews.",
           "cameraPermission": "Gloe needs camera access so you can take a photo for your review."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#1A130F"
         }
       ]
     ],
