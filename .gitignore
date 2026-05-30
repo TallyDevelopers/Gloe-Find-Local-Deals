@@ -20,6 +20,10 @@ android/app/build/
 .env.local
 .env.*.local
 
+# Secrets — Apple Wallet signing certs, etc. Never commit.
+secrets/
+*.p12
+
 # OS
 .DS_Store
 Thumbs.db
@@ -44,3 +48,15 @@ coverage/
 
 # Misc
 *.tsbuildinfo
+
+# Local-only doc viewer + personal scratch (not shared)
+gloe-doc.html
+gloe-doc.command
+gloe-serve.py
+gloe-wordmark.svg
+ryans-concerns.md
+Outfit-SemiBold.ttf
+
+# macOS / iCloud sync duplicates
+* 2.*
+*\ 2.*

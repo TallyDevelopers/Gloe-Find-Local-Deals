@@ -54,7 +54,11 @@
       "Bash(RAILWAY_CALLER=\"skill:use-railway@1.2.1\" RAILWAY_AGENT_SESSION=\"railway-skill-gloe-deploy-$\\(date +%s\\)\" railway service link api)",
       "Bash(RAILWAY_CALLER=\"skill:use-railway@1.2.1\" RAILWAY_AGENT_SESSION=\"railway-skill-gloe-deploy-$\\(date +%s\\)\" railway environment config --json)",
       "Bash(python3 -c \"import sys, json; c = json.load\\(sys.stdin\\); api = c['services']['b7182a1d-3e9d-46bd-82a5-7bf15a7570d1']; print\\(json.dumps\\(api, indent=2\\)\\)\")",
-      "Bash(git reset *)"
+      "Bash(git reset *)",
+      "Bash(RAILWAY_CALLER=\"skill:use-railway@1.2.1\" RAILWAY_AGENT_SESSION=\"railway-skill-gloe-deploy-$\\(date +%s\\)\" railway up --service api --detach -m \"Initial deploy\")",
+      "Bash(RAILWAY_CALLER=\"skill:use-railway@1.2.1\" RAILWAY_AGENT_SESSION=\"railway-skill-gloe-deploy-$\\(date +%s\\)\" railway variable list --service api --json)",
+      "Bash(python3 -c \"import sys,json; v=json.load\\(sys.stdin\\); print\\('RAILWAY_PRIVATE_DOMAIN:', v.get\\('RAILWAY_PRIVATE_DOMAIN', 'MISSING'\\)\\)\")",
+      "Bash(python3 -c \"import sys,json; s=json.load\\(sys.stdin\\); [print\\(f\\\\\"{x['name']}: status={x.get\\('status'\\)}, url={x.get\\('url'\\)}\\\\\"\\) for x in s]\")"
     ],
     "additionalDirectories": [
       "/Users/admin/Desktop/GlowApp/apps/*"
