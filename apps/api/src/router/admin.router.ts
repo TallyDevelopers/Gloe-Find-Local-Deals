@@ -520,8 +520,11 @@ export const adminRouter = router({
     .input(
       z.object({
         vendorId: z.string().uuid(),
-        categoryId: z.string().uuid(),
-        subtypeId: z.string().uuid().nullable().optional(),
+        categoryIds: z
+          .array(z.string().uuid())
+          .min(1, 'Pick a category.')
+          .max(2, 'You can select up to 2 categories per listing.')
+          .refine((ids) => new Set(ids).size === ids.length, 'Categories must be distinct.'),
         title: z.string().min(3).max(140),
         description: z.string().min(10).max(2000),
         whatsIncluded: z.array(z.string().max(200)).max(12).default([]),
@@ -554,10 +557,12 @@ export const adminRouter = router({
           throw new TRPCError({ code: 'BAD_REQUEST', message: `"${v.label}": deal price must be below original.` });
         }
       }
+      // Zod min(1) guarantees the primary is present; assert for TS under noUncheckedIndexedAccess.
+      const [primaryCategoryId, secondaryCategoryId] = input.categoryIds as [string, string?];
       const created = await createDeal(ctx.sql, {
         vendorId: input.vendorId,
-        categoryId: input.categoryId,
-        subtypeId: input.subtypeId ?? null,
+        categoryId: primaryCategoryId,
+        secondaryCategoryId: secondaryCategoryId ?? null,
         title: input.title,
         description: input.description,
         whatsIncluded: input.whatsIncluded,

@@ -18,7 +18,11 @@ export interface DealVideoInput {
 
 export interface CreateDealInput {
   vendorId: string;
+  /** Primary category — drives the deal's home rail and main filter pill. */
   categoryId: string;
+  /** Optional second category (1–2 categories per listing). */
+  secondaryCategoryId?: string | null;
+  /** Legacy: a subtype under the primary category. New form doesn't set this. */
   subtypeId?: string | null;
   title: string;
   description: string;
@@ -48,13 +52,13 @@ export async function createDeal(sql: Sql, input: CreateDealInput): Promise<{ id
     const status = input.asDraft ? 'draft' : 'pending_review';
     const dealRows = await tx<{ id: string }[]>`
       INSERT INTO public.deals (
-        vendor_id, category_id, subtype_id,
+        vendor_id, category_id, secondary_category_id, subtype_id,
         title, description, whats_included,
         status, starts_at, expires_at, per_customer_limit, code_validity_days,
         restrictions, fine_print,
         redemption_address, redemption_lat, redemption_lng
       ) VALUES (
-        ${input.vendorId}, ${input.categoryId}, ${input.subtypeId ?? null},
+        ${input.vendorId}, ${input.categoryId}, ${input.secondaryCategoryId ?? null}, ${input.subtypeId ?? null},
         ${input.title}, ${input.description}, ${tx.json(input.whatsIncluded)},
         ${status}, ${input.startsAt ?? tx`now()`}, ${input.expiresAt}, ${input.perCustomerLimit}, ${input.codeValidityDays},
         ${tx.json(input.restrictions)}, ${input.finePrint ?? null},
@@ -153,6 +157,7 @@ export async function updateDeal(sql: Sql, input: UpdateDealInput): Promise<{ id
       await tx`
         UPDATE public.deals SET
           category_id = ${input.categoryId},
+          secondary_category_id = ${input.secondaryCategoryId ?? null},
           subtype_id = ${input.subtypeId ?? null},
           title = ${input.title},
           description = ${input.description},
@@ -173,6 +178,7 @@ export async function updateDeal(sql: Sql, input: UpdateDealInput): Promise<{ id
       await tx`
         UPDATE public.deals SET
           category_id = ${input.categoryId},
+          secondary_category_id = ${input.secondaryCategoryId ?? null},
           subtype_id = ${input.subtypeId ?? null},
           title = ${input.title},
           description = ${input.description},
@@ -266,8 +272,10 @@ async function loadDealDetail(sql: Sql, dealId: string) {
   const dealRows = await sql<{
     id: string;
     category_id: string;
+    secondary_category_id: string | null;
     subtype_id: string | null;
     category_name: string;
+    secondary_category_name: string | null;
     subtype_name: string | null;
     vendor_name: string;
     vendor_amenities: string[] | null;
@@ -287,8 +295,10 @@ async function loadDealDetail(sql: Sql, dealId: string) {
     per_customer_limit: number;
     code_validity_days: number;
   }[]>`
-    SELECT d.id, d.category_id, d.subtype_id,
-           c.display_name AS category_name, s.display_name AS subtype_name,
+    SELECT d.id, d.category_id, d.secondary_category_id, d.subtype_id,
+           c.display_name AS category_name,
+           c2.display_name AS secondary_category_name,
+           s.display_name AS subtype_name,
            v.business_name AS vendor_name, v.amenities AS vendor_amenities,
            ST_Y(v.location::geometry) AS vendor_lat, ST_X(v.location::geometry) AS vendor_lng,
            d.title, d.description, d.whats_included,
@@ -298,6 +308,7 @@ async function loadDealDetail(sql: Sql, dealId: string) {
     FROM public.deals d
     JOIN public.vendors v ON v.id = d.vendor_id
     JOIN public.service_categories c ON c.id = d.category_id
+    LEFT JOIN public.service_categories c2 ON c2.id = d.secondary_category_id
     LEFT JOIN public.service_subtypes s ON s.id = d.subtype_id
     WHERE d.id = ${dealId} LIMIT 1
   `;
@@ -332,8 +343,14 @@ async function loadDealDetail(sql: Sql, dealId: string) {
   return {
     id: deal.id,
     categoryId: deal.category_id,
+    secondaryCategoryId: deal.secondary_category_id,
+    /** Ordered [primary, secondary?] — what the form binds to. */
+    categoryIds: deal.secondary_category_id
+      ? [deal.category_id, deal.secondary_category_id]
+      : [deal.category_id],
     subtypeId: deal.subtype_id,
     categoryName: deal.category_name,
+    secondaryCategoryName: deal.secondary_category_name,
     subtypeName: deal.subtype_name,
     vendorName: deal.vendor_name,
     vendorAmenities: deal.vendor_amenities ?? [],

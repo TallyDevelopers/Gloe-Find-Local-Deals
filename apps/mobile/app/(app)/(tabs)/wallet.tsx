@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useClaimedDeals } from '../../../features/claimed/ClaimedDealsProvider';
 import { formatPrice } from '../../../features/discover/format';
 import { Icon } from '../../../features/icon/Icon';
+import { StatusBarBackdrop } from '../../../features/layout/StatusBarBackdrop';
 import type { ClaimedDeal } from '../../../features/claimed/types';
 
 /**
@@ -144,6 +145,7 @@ export default function WalletScreen() {
           )}
         </Stack>
       </ScrollView>
+      <StatusBarBackdrop />
     </View>
   );
 }

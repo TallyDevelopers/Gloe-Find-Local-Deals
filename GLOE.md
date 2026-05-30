@@ -479,6 +479,12 @@ Means we need a **dev-client build** (not Expo Go). Rebuild via `npx expo run:io
 
 ### Pending / stubs / known gaps
 
+- **Robust search (DoorDash-style)** — `search.tsx` is a stub; no `deals.search` endpoint exists. Customers can only browse by category pill today, which is the biggest discovery gap. Goal: a real search that behaves like DoorDash — you type a treatment and get relevant, nearby results even if you misspell it or use a brand/slang name. Scope:
+  - **Typo / fuzzy tolerance** — "botx", "filer", "microneedeling" still resolve. Use Postgres `pg_trgm` trigram similarity (already on Supabase/Postgres, no new infra) over deal titles, vendor names, category + subtype names. Add a migration enabling the extension + GIN indexes — first real use of the migration tracking we still owe (see "Supabase migrations in repo" gap).
+  - **Synonyms / "similar items"** — "tox" → Botox / Dysport / Jeuveau; "lip flip" near "lip filler". Needs a synonym/alias table (none exists today) OR trigram matching across `service_subtypes` names. Schema already has `service_subtypes` + `secondary_category_id` to build on.
+  - **Location-aware ranking** — reuse the existing `listDeals` PostGIS distance filter + blended distance/rating/recency/sponsored score (`deals.ts`). Search = that same ranking with a text-relevance term added, NOT a separate code path.
+  - **UX** — recent queries, trending/suggested terms, instant (debounced) results, sponsored results allowed at top. Empty/zero-result state should suggest nearest similar treatments rather than dead-end.
+- **Deeper filtering** — FilterSheet ships distance + price range + min-discount %, all wired end-to-end. Missing: **subtype/treatment-type filter** (`service_subtypes` is returned per deal but there's no UI filter and `listDeals` can't filter by subtype), a **sort control** (price / distance / rating — ranking is fixed today), rating-floor, and "open now" filters. Pairs with the search work above.
 - **Apple Pay** — code-complete in Stripe PaymentSheet; needs Merchant ID + Stripe cert + native device rebuild. Tonight session.
 - **Apple Wallet live updates** — pass generation ships, but status flips (e.g. "Redeemed") need APNs Pass Web Service spec wiring. Schema for `pass_registrations` is there. Not a launch blocker.
 - **Delete account in-app** — Apple guideline 5.1.1(v); auto-rejection if missing. Build before submission.
@@ -775,6 +781,8 @@ All 4 green = ready to sign first real spa.
 
 ### v1.1 — Polish
 
+- **Robust DoorDash-style search** — fuzzy/typo-tolerant, synonym-aware ("similar items"), location-ranked. Replaces the current `search.tsx` stub. See §10 for full scope.
+- **Deeper filtering** — subtype/treatment-type filter + sort control (price / distance / rating) on top of the existing distance/price/discount filters.
 - Map tab in consumer app (deals plotted by location).
 - Reviews (write side; read is shipped).
 - Apple Wallet live status updates (Pass Web Service + APNs trigger).

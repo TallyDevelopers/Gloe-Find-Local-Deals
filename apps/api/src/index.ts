@@ -126,6 +126,17 @@ app.post('/webhooks/stripe', async (c) => {
           payerName: session.customer_details?.name ?? null,
           stripeCheckoutSessionId: session.id,
         });
+
+        // Someone paid the gift link → push the gifter so they know their
+        // friend booked. Fire-and-forget; never block the webhook on push.
+        const { sendApnsPushToUser } = await import('./domain/apns');
+        const payerName = session.customer_details?.name?.split(' ')[0] ?? 'Someone';
+        void sendApnsPushToUser(sql, m.userId, {
+          title: `${payerName} booked your gift `,
+          body: 'Their voucher is on the way. Tap to view the booking.',
+          threadId: 'gift-bookings',
+          data: { type: 'gift_booked', dealId: m.dealId },
+        });
       } catch (e) {
         console.error('Failed to fulfill gift purchase:', (e as Error).message);
       }
@@ -180,6 +191,47 @@ app.post('/webhooks/stripe', async (c) => {
   }
 
   return c.json({ received: true });
+});
+
+/**
+ * Apple Wallet pass download — `.pkpass` is a binary zip with a specific MIME
+ * type that iOS recognizes and auto-prompts "Add to Wallet." Must be served
+ * over HTTPS in production (Apple refuses HTTP). Auth'd via Clerk Bearer
+ * token so a user can only download passes for their own claims.
+ */
+/**
+ * Apple Wallet pass download — `.pkpass` is a binary zip with a specific MIME
+ * type. The mobile app fetches the bytes via this endpoint (Bearer auth) and
+ * hands them to iOS's native PKAddPassesViewController, which presents the
+ * "Add to Apple Wallet" sheet in-app. HTTPS required in production.
+ */
+app.get('/pass/:claimId', async (c) => {
+  const claimId = c.req.param('claimId');
+  const authHeader = c.req.header('authorization') ?? '';
+  const bearer = authHeader.startsWith('Bearer ')
+    ? authHeader.slice('Bearer '.length)
+    : undefined;
+  const { verifyAndResolveUser } = await import('./context/auth');
+  const auth = await verifyAndResolveUser(bearer);
+  if (!auth) return c.json({ error: 'unauthorized' }, 401);
+
+  try {
+    const { buildVoucherPass } = await import('./domain/walletPass');
+    const buffer = await buildVoucherPass(sql, auth.userId, claimId);
+    return new Response(new Uint8Array(buffer), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/vnd.apple.pkpass',
+        'Content-Disposition': `attachment; filename="gloe-voucher-${claimId}.pkpass"`,
+        'Content-Length': String(buffer.length),
+      },
+    });
+  } catch (e) {
+    const message = (e as Error).message;
+    if (message === 'Claim not found') return c.json({ error: message }, 404);
+    console.error('Failed to build wallet pass:', message);
+    return c.json({ error: 'pass-build-failed' }, 500);
+  }
 });
 
 app.use(

@@ -1,6 +1,8 @@
 import { Text, radius, space, useTheme } from '@gloe/ui';
 import { Pressable, ScrollView, View } from 'react-native';
 
+import { trpc } from '@gloe/api-client';
+
 import { Icon } from '../icon/Icon';
 
 export interface CategoryOption {
@@ -9,8 +11,8 @@ export interface CategoryOption {
 }
 
 /**
- * v0 category list. Matches the seed taxonomy in the DB. Eventually fetched
- * from `service_categories` table via a `categories.list` tRPC procedure.
+ * Fallback used until the categories.list query resolves on cold open. Mirrors
+ * the active rows in `service_categories` so the UI doesn't flash empty.
  */
 export const CATEGORY_OPTIONS: CategoryOption[] = [
   { slug: null, label: 'All' },
@@ -21,6 +23,17 @@ export const CATEGORY_OPTIONS: CategoryOption[] = [
   { slug: 'wellness', label: 'Wellness' },
   { slug: 'other', label: 'Other' },
 ];
+
+/**
+ * Live category list for the discover header — derived from the DB so adding a
+ * category (e.g. flipping Beauty active) shows up on the home page without a
+ * client release. Always prefixes an "All" pill at the front.
+ */
+export function useCategoryOptions(): CategoryOption[] {
+  const q = trpc.categories.list.useQuery(undefined, { staleTime: 5 * 60_000 });
+  if (!q.data || q.data.length === 0) return CATEGORY_OPTIONS;
+  return [{ slug: null, label: 'All' }, ...q.data.map((c) => ({ slug: c.slug, label: c.displayName }))];
+}
 
 interface FilterPillsProps {
   selectedSlug: string | null;
@@ -36,6 +49,7 @@ interface FilterPillsProps {
  */
 export function FilterPills({ selectedSlug, onSelect, onOpenFilters, activeFilterCount = 0 }: FilterPillsProps) {
   const { color: palette } = useTheme();
+  const options = useCategoryOptions();
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center' }}>
       <ScrollView
@@ -47,7 +61,7 @@ export function FilterPills({ selectedSlug, onSelect, onOpenFilters, activeFilte
         }}
         style={{ flex: 1 }}
       >
-        {CATEGORY_OPTIONS.map((option) => {
+        {options.map((option) => {
           const isActive = option.slug === selectedSlug;
           return (
             <Pressable

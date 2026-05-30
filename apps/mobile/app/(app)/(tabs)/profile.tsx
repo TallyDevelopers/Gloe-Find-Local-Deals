@@ -5,6 +5,7 @@ import { Image, Linking, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useClaimedDeals } from '../../../features/claimed/ClaimedDealsProvider';
+import { StatusBarBackdrop } from '../../../features/layout/StatusBarBackdrop';
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
@@ -92,6 +93,7 @@ export default function ProfileScreen() {
           <SettingsList onAppearance={() => router.push('/(app)/settings/appearance')} />
         </Stack>
       </ScrollView>
+      <StatusBarBackdrop />
     </View>
   );
 }

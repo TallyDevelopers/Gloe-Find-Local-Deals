@@ -12,6 +12,7 @@ export type {
   DealProvider,
   Vendor,
   Claim,
+  ClaimDetail,
   Review,
   Me,
 } from './types';

@@ -77,8 +77,12 @@ const videoInput = z.object({
 });
 
 export const dealInput = z.object({
-  categoryId: z.string().uuid(),
-  subtypeId: z.string().uuid().nullable().optional(),
+  // 1-2 categories per listing. First = primary, second = secondary.
+  categoryIds: z
+    .array(z.string().uuid())
+    .min(1, 'Pick a category.')
+    .max(2, 'You can select up to 2 categories per listing.')
+    .refine((ids) => new Set(ids).size === ids.length, 'Categories must be distinct.'),
   title: z.string().min(3).max(140),
   description: z.string().min(10).max(2000),
   whatsIncluded: z.array(z.string().max(200)).max(12).default([]),
@@ -103,9 +107,11 @@ type DealInput = z.infer<typeof dealInput>;
 
 /** Maps the validated input to the domain layer's field set. */
 export function dealFields(input: DealInput) {
+  // Zod min(1) guarantees the primary is present; assert for TS under noUncheckedIndexedAccess.
+  const [primaryCategoryId, secondaryCategoryId] = input.categoryIds as [string, string?];
   return {
-    categoryId: input.categoryId,
-    subtypeId: input.subtypeId ?? null,
+    categoryId: primaryCategoryId,
+    secondaryCategoryId: secondaryCategoryId ?? null,
     title: input.title,
     description: input.description,
     whatsIncluded: input.whatsIncluded,

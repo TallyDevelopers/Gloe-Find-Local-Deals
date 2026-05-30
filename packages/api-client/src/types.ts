@@ -15,5 +15,7 @@ export type DealVideo = DealDetail['videos'][number];
 export type DealProvider = DealDetail['providers'][number];
 export type Vendor = RouterOutputs['vendors']['byId'];
 export type Claim = RouterOutputs['claims']['list'][number];
+/** Single-claim shape — includes live vendor phone/address/coords for the voucher screen's Call + Directions actions. */
+export type ClaimDetail = RouterOutputs['claims']['byId'];
 export type Review = RouterOutputs['reviews']['listForVendor'][number];
 export type Me = RouterOutputs['me']['whoami'];

@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ClaimedDealRow } from '../../../features/claimed/ClaimedDealRow';
 import { useClaimedDeals } from '../../../features/claimed/ClaimedDealsProvider';
+import { StatusBarBackdrop } from '../../../features/layout/StatusBarBackdrop';
 import { DealCard } from '../../../features/discover/DealCard';
 import { Icon } from '../../../features/icon/Icon';
 import { SegmentedControl } from '../../../features/saved/SegmentedControl';
@@ -186,6 +187,7 @@ export default function SavedScreen() {
           )}
         </Stack>
       </ScrollView>
+      <StatusBarBackdrop />
     </View>
   );
 }

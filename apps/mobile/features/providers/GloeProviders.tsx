@@ -8,6 +8,8 @@ import { ApiBridge } from '../api/ApiBridge';
 import { AuthGateProvider } from '../auth-gate/AuthGateProvider';
 import { ClaimedDealsProvider } from '../claimed/ClaimedDealsProvider';
 import { SelectedLocationProvider } from '../discover-header/SelectedLocationProvider';
+import { ToastProvider } from '../feedback/Toast';
+import { PushRegistrationBridge } from '../notifications/PushRegistrationBridge';
 import { SavedDealsProvider } from '../saved/SavedDealsProvider';
 import { SavedVendorsProvider } from '../saved/SavedVendorsProvider';
 import { ThemePreferenceProvider } from '../theme/ThemePreferenceProvider';
@@ -49,7 +51,11 @@ export function GloeProviders({
                 <SelectedLocationProvider>
                   <SavedDealsProvider>
                     <SavedVendorsProvider>
-                      <ClaimedDealsProvider>{children}</ClaimedDealsProvider>
+                      <ClaimedDealsProvider>
+                        <ToastProvider>
+                          <PushRegistrationBridge>{children}</PushRegistrationBridge>
+                        </ToastProvider>
+                      </ClaimedDealsProvider>
                     </SavedVendorsProvider>
                   </SavedDealsProvider>
                 </SelectedLocationProvider>

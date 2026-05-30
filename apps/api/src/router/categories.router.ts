@@ -15,8 +15,9 @@ export const categoriesRouter = router({
       slug: string;
       display_name: string;
       unit_label: string | null;
+      helper_text: string | null;
     }[]>`
-      SELECT id, category_id, slug, display_name, unit_label
+      SELECT id, category_id, slug, display_name, unit_label, helper_text
       FROM public.service_subtypes
       WHERE active = true
       ORDER BY display_order, display_name
@@ -33,6 +34,7 @@ export const categoriesRouter = router({
           slug: s.slug,
           displayName: s.display_name,
           unitLabel: s.unit_label,
+          helperText: s.helper_text,
         })),
     }));
   }),

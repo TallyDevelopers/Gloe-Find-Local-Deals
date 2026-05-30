@@ -241,15 +241,17 @@ export type ColorPalette = {
  * the light theme — they're brand identity, not chrome. Only surfaces, text,
  * borders, neutrals, and semantic tones flip.
  *
- * Dark surface direction: warm near-black with a faint blush undertone (not
- * pure #000 and not cool slate). Rose gold needs to stay legible — we lift
- * the brand text/link to brand[300] on dark so contrast clears WCAG AA.
+ * Dark surface direction: cool ink-mauve — a feminine night mode for late,
+ * in-bed phone use, where the warm rose-gold brand glows against a cool bed
+ * instead of muddying into a brown one. No pure #000 for surfaces, no warm/
+ * brown undertone anywhere. Rose gold needs to stay legible — we lift the
+ * brand text/link to brand[300] on dark so contrast clears WCAG AA.
  */
 export const colorDark: ColorPalette = {
   surface: {
-    primary: '#15110F',
-    secondary: '#1E1916',
-    elevated: '#27201C',
+    primary: '#131217',
+    secondary: '#1C1A22',
+    elevated: '#26232E',
     overlay: 'rgba(0, 0, 0, 0.55)',
   },
 
@@ -261,13 +263,13 @@ export const colorDark: ColorPalette = {
   lavender: color.lavender,
 
   text: {
-    primary: '#F5EDE7',
-    secondary: '#C9BAB0',
-    tertiary: '#8C7F76',
+    primary: '#F0EDF1',
+    secondary: '#C2BCC4',
+    tertiary: '#857F89',
     inverse: '#2B2019',
     // Lift link to brand[300] so rose gold reads cleanly on dark surfaces
     link: '#DDAB9C',
-    disabled: '#5A4D45',
+    disabled: '#4A4651',
   },
 
   semantic: {
@@ -280,23 +282,23 @@ export const colorDark: ColorPalette = {
 
   neutral: {
     0: '#000000',
-    50: '#14100E',
-    100: '#1C1714',
-    200: '#241D19',
-    300: '#332B26',
-    400: '#564B45',
-    500: '#8A807A',
-    600: '#AEA59F',
-    700: '#C8BFBA',
-    800: '#E5DCD6',
-    900: '#F2EAE4',
+    50: '#131217',
+    100: '#1C1A22',
+    200: '#26232E',
+    300: '#34313F',
+    400: '#4E4A58',
+    500: '#837D8A',
+    600: '#A8A2AE',
+    700: '#C2BCC4',
+    800: '#E2DCE4',
+    900: '#F0EAF1',
     950: '#FFFFFF',
   },
 
   border: {
-    subtle: '#272019',
-    default: '#332B26',
-    strong: '#564B45',
+    subtle: '#211F28',
+    default: '#34313F',
+    strong: '#4E4A58',
   },
 };
 

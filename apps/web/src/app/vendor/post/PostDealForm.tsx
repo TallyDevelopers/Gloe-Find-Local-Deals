@@ -40,8 +40,8 @@ export function PostDealForm({ mode }: { mode: PostDealMode }) {
 
   const vendorName = isAdmin ? mode.vendorName : meQuery.data?.businessName ?? 'Your spa';
 
-  const [categoryId, setCategoryId] = useState('');
-  const [subtypeId, setSubtypeId] = useState('');
+  // 1-2 categories per listing. categoryIds[0] = primary, categoryIds[1] = secondary.
+  const [categoryIds, setCategoryIds] = useState<string[]>([]);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [whatsIncluded, setWhatsIncluded] = useState('');
@@ -71,8 +71,7 @@ export function PostDealForm({ mode }: { mode: PostDealMode }) {
   useEffect(() => {
     const d = editQuery.data;
     if (!d) return;
-    setCategoryId(d.categoryId);
-    setSubtypeId(d.subtypeId ?? '');
+    setCategoryIds(d.categoryIds ?? [d.categoryId]);
     setTitle(d.title);
     setDescription(d.description);
     setWhatsIncluded((d.whatsIncluded ?? []).join('\n'));
@@ -96,18 +95,43 @@ export function PostDealForm({ mode }: { mode: PostDealMode }) {
     );
   }, [editQuery.data]);
 
-  const selectedCategory = useMemo(
-    () => categories.find((c) => c.id === categoryId),
-    [categories, categoryId],
+  const primaryCategory = useMemo(
+    () => categories.find((c) => c.id === categoryIds[0]),
+    [categories, categoryIds],
   );
-  const selectedSubtype = useMemo(
-    () => selectedCategory?.subtypes.find((s) => s.id === subtypeId),
-    [selectedCategory, subtypeId],
+  const selectedCategories = useMemo(
+    () => categoryIds.map((id) => categories.find((c) => c.id === id)).filter(Boolean) as typeof categories,
+    [categories, categoryIds],
   );
 
+  // Helper-disclaimer text — shown for any selected category that hosts a subtype
+  // carrying helper_text (currently: Wellness → Medical Weight Mgmt Consult).
+  // We show the disclaimer whenever vendors might be tempted to list medication.
+  const categoryHelperTexts = useMemo(() => {
+    const texts: string[] = [];
+    for (const cat of selectedCategories) {
+      for (const sub of cat.subtypes) {
+        if (sub.helperText && !texts.includes(sub.helperText)) texts.push(sub.helperText);
+      }
+    }
+    return texts;
+  }, [selectedCategories]);
+
+  const toggleCategory = (id: string) => {
+    setError(null);
+    setCategoryIds((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
+      if (prev.length >= 2) {
+        setError('You can select up to 2 categories per listing.');
+        return prev;
+      }
+      return [...prev, id];
+    });
+  };
+
   const previewData = {
-    categoryLabel: selectedCategory?.displayName ?? 'Category',
-    subtypeLabel: selectedSubtype?.displayName ?? null,
+    categoryLabel: primaryCategory?.displayName ?? 'Category',
+    subtypeLabel: selectedCategories[1]?.displayName ?? null,
     title,
     description,
     whatsIncluded: splitLines(whatsIncluded),
@@ -142,19 +166,19 @@ export function PostDealForm({ mode }: { mode: PostDealMode }) {
       .map((v) => ({
         label: v.label,
         unitCount: v.unitCount ? Number(v.unitCount) : null,
-        unitLabel: selectedCategory?.isUnitBased ? unitLabelFor(selectedCategory, subtypeId) : null,
+        unitLabel: primaryCategory?.isUnitBased ? 'units' : null,
         originalPriceCents: Math.round(Number(v.originalPrice) * 100),
         dealPriceCents: Math.round(Number(v.dealPrice) * 100),
         spotsTotal: v.spotsTotal ? Number(v.spotsTotal) : null,
       }));
 
-    if (!categoryId) return setError('Pick a category.');
+    if (categoryIds.length === 0) return setError('Pick a category.');
+    if (categoryIds.length > 2) return setError('You can select up to 2 categories per listing.');
     if (cleanVariants.length === 0) return setError('Add at least one pricing option.');
     if (!expiresAt) return setError('Set when the deal expires.');
 
     const payload = {
-      categoryId,
-      subtypeId: subtypeId || null,
+      categoryIds,
       title,
       description,
       whatsIncluded: splitLines(whatsIncluded),
@@ -181,8 +205,7 @@ export function PostDealForm({ mode }: { mode: PostDealMode }) {
     if (isAdmin) {
       postOnBehalf.mutate({
         vendorId: mode.vendorId,
-        categoryId: payload.categoryId,
-        subtypeId: payload.subtypeId,
+        categoryIds: payload.categoryIds,
         title: payload.title,
         description: payload.description,
         whatsIncluded: payload.whatsIncluded,
@@ -241,35 +264,69 @@ export function PostDealForm({ mode }: { mode: PostDealMode }) {
 
         {/* What is it */}
         <Card>
-          <h2 style={{ fontSize: 20, marginBottom: 16 }}>What&apos;s the treatment?</h2>
+          <h2 style={{ fontSize: 20, marginBottom: 4 }}>What&apos;s the treatment?</h2>
+          <p style={{ color: 'var(--text-tertiary)', fontSize: 14, marginBottom: 16 }}>
+            Pick 1–2 categories. The first one is the primary category.
+          </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div className="address-row">
-              <Field label="Category">
-                <select
-                  value={categoryId}
-                  onChange={(e) => { setCategoryId(e.target.value); setSubtypeId(''); }}
-                  style={selectStyle}
-                >
-                  <option value="">Choose…</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>{c.displayName}</option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Type (optional)">
-                <select
-                  value={subtypeId}
-                  onChange={(e) => setSubtypeId(e.target.value)}
-                  disabled={!selectedCategory}
-                  style={selectStyle}
-                >
-                  <option value="">Any / general</option>
-                  {selectedCategory?.subtypes.map((s) => (
-                    <option key={s.id} value={s.id}>{s.displayName}</option>
-                  ))}
-                </select>
-              </Field>
-            </div>
+            <Field
+              label={`Categories${categoryIds.length > 0 ? ` (${categoryIds.length}/2)` : ''}`}
+              hint="Tap to add. First selection = primary."
+            >
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {categories.map((c) => {
+                  const idx = categoryIds.indexOf(c.id);
+                  const isPrimary = idx === 0;
+                  const isSecondary = idx === 1;
+                  const isSelected = idx >= 0;
+                  const disabled = !isSelected && categoryIds.length >= 2;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => toggleCategory(c.id)}
+                      disabled={disabled}
+                      style={{
+                        padding: '8px 14px',
+                        borderRadius: 999,
+                        border: `1px solid ${isSelected ? 'var(--brand-500)' : 'var(--border-default)'}`,
+                        background: isSelected ? 'var(--brand-500)' : 'var(--surface-elevated)',
+                        color: isSelected ? 'var(--text-inverse)' : 'var(--text-primary)',
+                        fontSize: 14,
+                        fontWeight: 600,
+                        cursor: disabled ? 'not-allowed' : 'pointer',
+                        opacity: disabled ? 0.45 : 1,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                      }}
+                    >
+                      {c.displayName}
+                      {isPrimary ? <span style={{ fontSize: 11, opacity: 0.85 }}>· primary</span> : null}
+                      {isSecondary ? <span style={{ fontSize: 11, opacity: 0.85 }}>· secondary</span> : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </Field>
+
+            {categoryHelperTexts.length > 0 ? (
+              <div
+                style={{
+                  background: 'var(--brand-50)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '10px 14px',
+                  fontSize: 13,
+                  color: 'var(--text-secondary)',
+                  lineHeight: 1.5,
+                }}
+              >
+                {categoryHelperTexts.map((t) => (
+                  <div key={t}>{t}</div>
+                ))}
+              </div>
+            ) : null}
 
             <Field label="Deal title">
               <TextInput value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Botox — first-timer special" />
@@ -296,7 +353,7 @@ export function PostDealForm({ mode }: { mode: PostDealMode }) {
           <VariantsEditor
             variants={variants}
             onChange={setVariants}
-            unitBased={selectedCategory?.isUnitBased ?? false}
+            unitBased={primaryCategory?.isUnitBased ?? false}
           />
         </Card>
 
@@ -522,9 +579,3 @@ function toLocalInput(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function unitLabelFor(
-  category: { subtypes: { id: string; unitLabel: string | null }[] },
-  subtypeId: string,
-): string | null {
-  return category.subtypes.find((s) => s.id === subtypeId)?.unitLabel ?? 'units';
-}
