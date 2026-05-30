@@ -8,11 +8,15 @@ PODS:
   - EXImageLoader (5.0.0):
     - ExpoModulesCore
     - React-Core
+  - EXNotifications (0.29.14):
+    - ExpoModulesCore
   - Expo (52.0.49):
     - ExpoModulesCore
   - ExpoAsset (11.0.5):
     - ExpoModulesCore
   - ExpoCrypto (14.0.2):
+    - ExpoModulesCore
+  - ExpoDevice (7.0.3):
     - ExpoModulesCore
   - ExpoFileSystem (18.0.12):
     - ExpoModulesCore
@@ -1350,6 +1354,8 @@ PODS:
     - Yoga
   - react-native-maps (1.18.0):
     - React-Core
+  - react-native-passkit-wallet (0.1.6):
+    - React
   - react-native-safe-area-context (4.12.0):
     - React-Core
   - React-nativeconfig (0.76.9)
@@ -1822,9 +1828,11 @@ DEPENDENCIES:
   - EXApplication (from `../../../node_modules/expo-application/ios`)
   - EXConstants (from `../../../node_modules/expo-constants/ios`)
   - EXImageLoader (from `../../../node_modules/expo-image-loader/ios`)
+  - EXNotifications (from `../node_modules/expo-notifications/ios`)
   - Expo (from `../../../node_modules/expo`)
   - ExpoAsset (from `../../../node_modules/expo-asset/ios`)
   - ExpoCrypto (from `../../../node_modules/expo-crypto/ios`)
+  - ExpoDevice (from `../node_modules/expo-device/ios`)
   - ExpoFileSystem (from `../../../node_modules/expo-file-system/ios`)
   - ExpoFont (from `../../../node_modules/expo-font/ios`)
   - ExpoHaptics (from `../../../node_modules/expo-haptics/ios`)
@@ -1876,6 +1884,7 @@ DEPENDENCIES:
   - React-Mapbuffer (from `../../../node_modules/react-native/ReactCommon`)
   - React-microtasksnativemodule (from `../../../node_modules/react-native/ReactCommon/react/nativemodule/microtasks`)
   - react-native-maps (from `../../../node_modules/react-native-maps`)
+  - react-native-passkit-wallet (from `../../../node_modules/react-native-passkit-wallet`)
   - react-native-safe-area-context (from `../../../node_modules/react-native-safe-area-context`)
   - React-nativeconfig (from `../../../node_modules/react-native/ReactCommon`)
   - React-NativeModulesApple (from `../../../node_modules/react-native/ReactCommon/react/nativemodule/core/platform/ios`)
@@ -1935,12 +1944,16 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/expo-constants/ios"
   EXImageLoader:
     :path: "../../../node_modules/expo-image-loader/ios"
+  EXNotifications:
+    :path: "../node_modules/expo-notifications/ios"
   Expo:
     :path: "../../../node_modules/expo"
   ExpoAsset:
     :path: "../../../node_modules/expo-asset/ios"
   ExpoCrypto:
     :path: "../../../node_modules/expo-crypto/ios"
+  ExpoDevice:
+    :path: "../node_modules/expo-device/ios"
   ExpoFileSystem:
     :path: "../../../node_modules/expo-file-system/ios"
   ExpoFont:
@@ -2040,6 +2053,8 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/react-native/ReactCommon/react/nativemodule/microtasks"
   react-native-maps:
     :path: "../../../node_modules/react-native-maps"
+  react-native-passkit-wallet:
+    :path: "../../../node_modules/react-native-passkit-wallet"
   react-native-safe-area-context:
     :path: "../../../node_modules/react-native-safe-area-context"
   React-nativeconfig:
@@ -2117,9 +2132,11 @@ SPEC CHECKSUMS:
   EXApplication: 4c72f6017a14a65e338c5e74fca418f35141e819
   EXConstants: fcfc75800824ac2d5c592b5bc74130bad17b146b
   EXImageLoader: e5da974e25b13585c196b658a440720c075482d5
+  EXNotifications: 9d3d17e52c95f377750d4a2ae553a716313dd4aa
   Expo: 4bb70893882e6382b41d1e910d7226c6a1b85f0a
   ExpoAsset: 48386d40d53a8c1738929b3ed509bcad595b5516
   ExpoCrypto: e97e864c8d7b9ce4a000bca45dddb93544a1b2b4
+  ExpoDevice: d36ab4186b6799a28fd449bb9a1c77455f23fd1a
   ExpoFileSystem: 42d363d3b96f9afab980dcef60d5657a4443c655
   ExpoFont: f354e926f8feae5e831ec8087f36652b44a0b188
   ExpoHaptics: 8d199b2f33245ea85289ff6c954c7ee7c00a5b5d
@@ -2169,6 +2186,7 @@ SPEC CHECKSUMS:
   React-Mapbuffer: 33546a3ebefbccb8770c33a1f8a5554fa96a54de
   React-microtasksnativemodule: 5c3d795318c22ab8df55100e50b151384a4a60b3
   react-native-maps: 3b0c8378ff774053bdd8954c820e987fdd7b4d72
+  react-native-passkit-wallet: c86648b0c21265b06505bab8c33aabef08cb4c41
   react-native-safe-area-context: 8b8404e70b0cbf2a56428a17017c14c1dcc16448
   React-nativeconfig: 8efdb1ef1e9158c77098a93085438f7e7b463678
   React-NativeModulesApple: cebca2e5320a3d66e123cade23bd90a167ffce5e
