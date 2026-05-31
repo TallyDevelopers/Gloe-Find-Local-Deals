@@ -4,10 +4,11 @@ import { Button, Stack, Text, radius, shadow, space, useTheme } from '@gloe/ui';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Image, Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ClaimedDealRow } from '../../../features/claimed/ClaimedDealRow';
+import { CachedImage } from '../../../features/image/CachedImage';
 import { useClaimedDeals } from '../../../features/claimed/ClaimedDealsProvider';
 import { StatusBarBackdrop } from '../../../features/layout/StatusBarBackdrop';
 import { DealCard } from '../../../features/discover/DealCard';
@@ -330,7 +331,7 @@ function SavedVendorCard({ vendor, onPress, onUnsave }: SavedVendorCardProps) {
         backgroundColor: palette.neutral[200],
       }}>
         {vendor.heroImageUrl ? (
-          <Image source={{ uri: vendor.heroImageUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+          <CachedImage uri={vendor.heroImageUrl} style={{ width: '100%', height: '100%' }} />
         ) : null}
       </View>
       <View style={{ flex: 1, minWidth: 0, justifyContent: 'space-between' }}>

@@ -1,12 +1,13 @@
 import { trpc } from '@gloe/api-client';
 import { Stack, Text, radius, shadow, space, useTheme } from '@gloe/ui';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { ActivityIndicator, Image, Linking, Pressable, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Linking, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useRequireAuth } from '../../../features/auth-gate/useRequireAuth';
 import { formatPrice } from '../../../features/discover/format';
 import { Icon, type IconName } from '../../../features/icon/Icon';
+import { CachedImage } from '../../../features/image/CachedImage';
 import { useSavedVendors } from '../../../features/saved/SavedVendorsProvider';
 
 /**
@@ -75,7 +76,7 @@ export default function VendorScreen() {
         {/* ───── Hero ───── */}
         <View style={{ width: '100%', aspectRatio: 16 / 10, backgroundColor: palette.neutral[200], position: 'relative' }}>
           {v.heroImageUrl ? (
-            <Image source={{ uri: v.heroImageUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+            <CachedImage uri={v.heroImageUrl} style={{ width: '100%', height: '100%' }} />
           ) : null}
           <Pressable
             onPress={() => router.back()}
@@ -227,7 +228,7 @@ export default function VendorScreen() {
                         }}
                       >
                         {p.photoUrl ? (
-                          <Image source={{ uri: p.photoUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                          <CachedImage uri={p.photoUrl} style={{ width: '100%', height: '100%' }} />
                         ) : null}
                       </View>
                       <Text variant="body-md" tone="primary" weight="semibold" numberOfLines={1} style={{ marginTop: space[2] }}>
@@ -261,7 +262,7 @@ export default function VendorScreen() {
                     >
                       <View style={{ width: 80, height: 80, borderRadius: radius.md, overflow: 'hidden', backgroundColor: palette.neutral[200] }}>
                         {deal.primaryPhotoUrl ? (
-                          <Image source={{ uri: deal.primaryPhotoUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                          <CachedImage uri={deal.primaryPhotoUrl} style={{ width: '100%', height: '100%' }} />
                         ) : null}
                       </View>
                       <View style={{ flex: 1, minWidth: 0 }}>
@@ -303,7 +304,7 @@ export default function VendorScreen() {
                       style={{ width: 140 }}
                     >
                       <View style={{ width: 140, height: 200, borderRadius: radius.md, overflow: 'hidden', backgroundColor: palette.neutral[200] }}>
-                        <Image source={{ uri: vid.thumbnailUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+                        <CachedImage uri={vid.thumbnailUrl} style={{ width: '100%', height: '100%' }} />
                         <View
                           style={{
                             position: 'absolute', top: 0, bottom: 0, left: 0, right: 0,
@@ -439,7 +440,7 @@ function ReviewCard({
     <Stack gap={2}>
       <Stack direction="row" gap={3} align="center">
         {photoUrl ? (
-          <Image source={{ uri: photoUrl }} style={{ width: 32, height: 32, borderRadius: 16 }} />
+          <CachedImage uri={photoUrl} style={{ width: 32, height: 32, borderRadius: 16 }} />
         ) : (
           <View style={{
             width: 32, height: 32, borderRadius: 16,
@@ -465,9 +466,9 @@ function ReviewCard({
       {photoUrls && photoUrls.length > 0 ? (
         <Stack direction="row" gap={2} style={{ marginTop: space[1], flexWrap: 'wrap' }}>
           {photoUrls.map((url) => (
-            <Image
+            <CachedImage
               key={url}
-              source={{ uri: url }}
+              uri={url}
               style={{
                 width: 72,
                 height: 72,

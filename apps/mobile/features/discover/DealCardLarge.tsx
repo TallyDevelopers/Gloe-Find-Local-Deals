@@ -1,8 +1,10 @@
 import type { DealSummary } from '@gloe/api-client';
 import { Stack, Text, radius, shadow, space, useTheme } from '@gloe/ui';
 import { useRouter } from 'expo-router';
-import { Dimensions, Image, Pressable, View } from 'react-native';
+import { Dimensions, Pressable, View } from 'react-native';
 
+import { CachedImage } from '../image/CachedImage';
+import { usePrefetch } from '../prefetch/usePrefetch';
 import { Icon } from '../icon/Icon';
 import { formatDistance, formatDriveTime, formatRating } from './cardMeta';
 import { formatPrice } from './format';
@@ -25,6 +27,7 @@ interface DealCardLargeProps {
 export function DealCardLarge({ deal, onSave, isSaved = false }: DealCardLargeProps) {
   const router = useRouter();
   const { color: palette } = useTheme();
+  const prefetch = usePrefetch();
   const variant = deal.headlineVariant;
   if (!variant) return null;
 
@@ -38,6 +41,7 @@ export function DealCardLarge({ deal, onSave, isSaved = false }: DealCardLargePr
 
   return (
     <Pressable
+      onPressIn={() => prefetch.deal(deal.id)}
       onPress={() => router.push(`/(app)/deal/${deal.id}`)}
       style={{
         backgroundColor: palette.surface.elevated,
@@ -48,7 +52,7 @@ export function DealCardLarge({ deal, onSave, isSaved = false }: DealCardLargePr
     >
       <View style={{ width: '100%', height: IMG_HEIGHT, position: 'relative' }}>
         {deal.primaryPhotoUrl ? (
-          <Image source={{ uri: deal.primaryPhotoUrl }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
+          <CachedImage uri={deal.primaryPhotoUrl} style={{ width: '100%', height: '100%' }} />
         ) : (
           <View style={{ width: '100%', height: '100%', backgroundColor: palette.neutral[200] }} />
         )}

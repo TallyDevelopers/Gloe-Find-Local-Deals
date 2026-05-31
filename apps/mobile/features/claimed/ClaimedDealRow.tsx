@@ -1,9 +1,10 @@
 import { Stack, Text, radius, shadow, space, useTheme } from '@gloe/ui';
 import { useRouter } from 'expo-router';
-import { Image, Pressable, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 
 import { trpc } from '@gloe/api-client';
 
+import { CachedImage } from '../image/CachedImage';
 import { formatPrice } from '../discover/format';
 import type { ClaimedDeal } from './types';
 
@@ -47,8 +48,8 @@ export function ClaimedDealRow({ claim }: ClaimedDealRowProps) {
       }}
     >
       {image ? (
-        <Image
-          source={{ uri: image }}
+        <CachedImage
+          uri={image}
           style={{
             width: 64,
             height: 64,

@@ -3,12 +3,13 @@ import { useState } from 'react';
 import {
   Dimensions,
   FlatList,
-  Image,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   Text,
   View,
 } from 'react-native';
+
+import { CachedImage } from '../image/CachedImage';
 
 interface HeroImageProps {
   images: string[];
@@ -37,10 +38,9 @@ export function HeroImage({ images }: HeroImageProps) {
         scrollEventThrottle={16}
         keyExtractor={(uri) => uri}
         renderItem={({ item }) => (
-          <Image
-            source={{ uri: item }}
+          <CachedImage
+            uri={item}
             style={{ width: screenWidth, height }}
-            resizeMode="cover"
           />
         )}
       />

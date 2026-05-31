@@ -4,10 +4,11 @@ import { useStripe } from '@stripe/stripe-react-native';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Image, Pressable, ScrollView, Share, View } from 'react-native';
+import { Pressable, ScrollView, Share, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { formatPrice } from '../../features/discover/format';
+import { CachedImage } from '../../features/image/CachedImage';
 
 /**
  * Checkout — a routed screen showing the deal summary + quantity, then Stripe's
@@ -194,8 +195,8 @@ export default function CheckoutScreen() {
           <View style={{ backgroundColor: palette.surface.elevated, borderRadius: radius.lg, padding: space[4], gap: space[4] }}>
             <Stack direction="row" gap={4}>
               {params.photoUrl ? (
-                <Image
-                  source={{ uri: params.photoUrl }}
+                <CachedImage
+                  uri={params.photoUrl}
                   style={{ width: 72, height: 72, borderRadius: radius.md, backgroundColor: palette.surface.secondary }}
                 />
               ) : null}

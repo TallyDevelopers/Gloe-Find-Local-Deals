@@ -1,8 +1,9 @@
 import { trpc, type RouterOutputs } from '@gloe/api-client';
 import { Stack, Text, radius, space, useTheme } from '@gloe/ui';
 import { useState } from 'react';
-import { ActivityIndicator, Image, Linking, Pressable, View } from 'react-native';
+import { ActivityIndicator, Linking, Pressable, View } from 'react-native';
 
+import { CachedImage } from '../image/CachedImage';
 import { Section } from './Section';
 
 interface InternalReview {
@@ -124,10 +125,10 @@ function GoogleReviews({ data, loading }: { data: GoogleReviewsData | undefined;
         onPress={() => data.attributionUrl && Linking.openURL(data.attributionUrl)}
       >
         <Stack direction="row" gap={2} align="center">
-          <Image
-            source={{ uri: 'https://www.gstatic.com/images/branding/googlelogo/2x/googlelogo_color_92x30dp.png' }}
+          <CachedImage
+            uri="https://www.gstatic.com/images/branding/googlelogo/2x/googlelogo_color_92x30dp.png"
             style={{ width: 60, height: 20 }}
-            resizeMode="contain"
+            contentFit="contain"
           />
           <Text variant="caption" tone="link">View on Google →</Text>
         </Stack>

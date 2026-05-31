@@ -2,8 +2,10 @@ import { trpc } from '@gloe/api-client';
 import { Stack, Text, radius, space, useTheme } from '@gloe/ui';
 import * as Location from 'expo-location';
 import { useState } from 'react';
-import { Image, Linking, Platform, Pressable, View } from 'react-native';
+import { Linking, Platform, Pressable, View } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from 'react-native-maps';
+
+import { CachedImage } from '../image/CachedImage';
 
 interface RedemptionMapProps {
   redemption: {
@@ -110,7 +112,7 @@ export function RedemptionMap({ redemption, vendorName }: RedemptionMapProps) {
             ) : null}
           </MapView>
         ) : redemption.mapUrl ? (
-          <Image source={{ uri: redemption.mapUrl }} style={{ flex: 1 }} resizeMode="cover" />
+          <CachedImage uri={redemption.mapUrl} style={{ flex: 1 }} />
         ) : (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
             <Text variant="body-sm" tone="tertiary">Map unavailable</Text>

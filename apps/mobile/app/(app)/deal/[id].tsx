@@ -4,10 +4,12 @@ import { Stack, Text, radius, space, useTheme } from '@gloe/ui';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Dimensions, Image, Pressable, Share, View } from 'react-native';
+import { ActivityIndicator, Dimensions, Pressable, Share, View } from 'react-native';
 import Animated, { useAnimatedScrollHandler, useSharedValue } from 'react-native-reanimated';
 
 import { useRequireAuth } from '../../../features/auth-gate/useRequireAuth';
+import { CachedImage } from '../../../features/image/CachedImage';
+import { usePrefetch } from '../../../features/prefetch/usePrefetch';
 import { CustomerVideos } from '../../../features/deal-detail/CustomerVideos';
 import { HeroImage } from '../../../features/deal-detail/HeroImage';
 import { RedemptionMap } from '../../../features/deal-detail/RedemptionMap';
@@ -25,6 +27,7 @@ export default function DealDetailScreen() {
   const { status } = useAuth();
   const { color: palette } = useTheme();
   const requireAuth = useRequireAuth();
+  const prefetch = usePrefetch();
   const { isSaved: getIsSaved, toggle: toggleSavedGlobal } = useSavedDeals();
 
   const dealQuery = trpc.deals.byId.useQuery({ id: id ?? '' }, { enabled: !!id });
@@ -177,6 +180,7 @@ export default function DealDetailScreen() {
               </Text>
 
               <Pressable
+                onPressIn={() => prefetch.vendor(deal.vendor.id)}
                 onPress={() => router.push(`/(app)/vendor/${deal.vendor.id}`)}
                 style={{ paddingVertical: space[1] }}
               >
@@ -274,8 +278,8 @@ export default function DealDetailScreen() {
               <Section title="Your provider">
                 <Stack direction="row" gap={4} align="flex-start">
                   {primaryProvider.photoUrl ? (
-                    <Image
-                      source={{ uri: primaryProvider.photoUrl }}
+                    <CachedImage
+                      uri={primaryProvider.photoUrl}
                       style={{
                         width: 72,
                         height: 72,

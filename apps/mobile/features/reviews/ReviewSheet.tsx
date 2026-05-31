@@ -3,8 +3,10 @@ import { Button, Stack, Text, radius, space, useTheme } from '@gloe/ui';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Image, Modal, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { ActivityIndicator, Modal, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { CachedImage } from '../image/CachedImage';
 
 interface ReviewSheetProps {
   open: boolean;
@@ -322,7 +324,7 @@ function PhotoGrid({
               borderColor: p.status === 'error' ? palette.semantic.error : palette.border.subtle,
             }}
           >
-            <Image source={{ uri: p.localUri }} style={{ width: '100%', height: '100%' }} />
+            <CachedImage uri={p.localUri} style={{ width: '100%', height: '100%' }} />
             {p.status === 'uploading' ? (
               <View style={{
                 position: 'absolute', top: 0, bottom: 0, left: 0, right: 0,

@@ -1,6 +1,7 @@
 import { Stack, Text, radius, shadow, space, useTheme } from '@gloe/ui';
-import { Dimensions, Image, Pressable, ScrollView, View } from 'react-native';
+import { Dimensions, Pressable, ScrollView, View } from 'react-native';
 
+import { CachedImage } from '../image/CachedImage';
 import { Section } from './Section';
 
 export interface InsideVendorVideo {
@@ -78,10 +79,9 @@ function VideoCard({ video, width, onPlay }: VideoCardProps) {
             ...shadow.sm,
           }}
         >
-          <Image
-            source={{ uri: video.thumbnailUrl }}
+          <CachedImage
+            uri={video.thumbnailUrl}
             style={{ width: '100%', height: '100%' }}
-            resizeMode="cover"
           />
           {/* Play affordance */}
           <View
