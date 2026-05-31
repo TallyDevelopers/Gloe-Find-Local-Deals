@@ -2,7 +2,7 @@
 
 > The first place a woman opens when she's thinking about getting Botox, filler, or any aesthetic treatment — to find the best deal near her, today.
 
-Last consolidated: 2026-05-29. Replaces the previous nine scattered .md files at repo root.
+Last consolidated: 2026-05-29. Last updated: 2026-05-31 (concierge support tickets + attachments, account deletion, image caching, prefetch/preload, region co-location). Replaces the previous nine scattered .md files at repo root.
 
 ---
 
@@ -289,7 +289,7 @@ All tables in Supabase Postgres. PostGIS extension on. RLS enabled (auth at DB l
 
 | Table | Purpose | Key columns |
 |---|---|---|
-| `users` | Consumer accounts (Clerk-backed) | clerk_user_id, email, phone, name |
+| `users` | Consumer accounts (Clerk-backed) | clerk_user_id, email, phone, name, deleted_at (soft-delete tombstone for account deletion) |
 | `vendors` | Practice accounts | id, owner_user_id, business_name, stripe_account_id, stripe_account_status, auto_release_on_redemption, suspended, percentage_fee_override |
 | `deals` | Listings | id, vendor_id, title, description, status (draft/pending_review/active/expired), category_id, secondary_category_id, redemption_address, redemption_lat/lng, fine_print, restrictions |
 | `deal_variants` | Per-deal options | deal_id, label, unit_count, unit_label, original_price_cents, deal_price_cents, spots_total, spots_claimed |
@@ -303,9 +303,23 @@ All tables in Supabase Postgres. PostGIS extension on. RLS enabled (auth at DB l
 | `pass_registrations` | Apple Wallet pass devices | device_library_identifier, pass_type_identifier, serial_number (=claim.id), push_token, authentication_token |
 | `audit_log` | Every mutation | action, actor_id, resource_ids (JSON), meta (JSON), created_at |
 | `reviews` | Deal reviews | id, deal_id, author_id, rating, comment, vendor_response |
+| `review_photos` | Review imagery | review_id, url, display_order |
 | `saved_deals` | Favorited deals | user_id, deal_id |
 | `saved_vendors` | Favorited vendors | user_id, vendor_id |
 | `categories` | Service taxonomy | slug, label, description, icon, parent_id |
+| `support_tickets` | Concierge cases (consumer ↔ Gloē) | id, user_id, subject, category, status (open/awaiting_us/awaiting_customer/resolved/closed), last_message_at, resolved_at |
+| `support_messages` | Ticket thread messages | id, ticket_id, sender_type (customer/agent/system), sender_user_id, body, read_at |
+| `support_message_attachments` | Photo/video on a message | id, message_id, kind (image/video), url, thumbnail_url, width, height, display_order |
+| `region_waitlist` | Out-of-area demand capture | email (unique), city_label, lat, lng |
+| `message_threads` / `messages` | **DEAD** — vendor↔consumer scaffolding, 0 rows, unused. Not the support tables. |
+
+### Storage buckets (Supabase Storage, public)
+
+`deal-photos`, `deal-videos`, `deal-maps`, `review-photos`, `support-attachments`, `org-assets`. Signed uploads via `createSignedUpload(ownerId, fileExt, kind)` in `db/storage.ts` — the `BUCKETS` map keys: photo/video/review/support. Public URLs stored on the row; paths are unguessable UUIDs.
+
+### Migration tracking
+
+The full schema history (38 migrations from the `drop_all_legacy_tables` reset forward) is tracked in `supabase/migrations/`. **Going forward, every schema change gets a file there in the same PR.** Note: the latest tables (`support_*`, `region_waitlist`, `users.deleted_at`) were applied directly via the Supabase MCP and are live, but a few of those migration files may still need backfilling into `supabase/migrations/` — verify before relying on a from-zero rebuild.
 
 ### Service taxonomy categories (14)
 
@@ -376,6 +390,25 @@ Hierarchical, editable in admin without code change.
 - Push-on-reply + a **permission-aware** caption above the composer: "You can close the app — we'll notify you the moment we reply" (granted) vs a "turn on notifications" prompt (denied). Notification tap deep-links to the thread via a listener in `usePushRegistration.ts`.
 - **v1 is in-app + push only.** No email (inbound or outbound) — deferred; it's a zero-rework bolt-on (`domain/email.ts` via Resend) once gloe.app DNS is set. Account deletion CASCADEs tickets+messages (PII).
 - Also fixed in this work: `device_tokens` RLS was DISABLED (a pre-existing hole) — now enabled with owner policies.
+
+**Concierge attachments (photos + videos):**
+- Customers attach images/videos to any support message — via **camera** or **library**, chosen from a branded bottom sheet (`AttachmentSheet.tsx`, not the dated `ActionSheetIOS`). `useSupportUpload.ts` handles pick/capture → signed upload → public URL.
+- Rendered inline in the mobile chat (`MessageAttachments.tsx`, images tappable to full-screen, videos with play) AND in god mode (`SupportView.tsx` renders consumer media; admin reply is text-only for v1).
+- Backend: `support_message_attachments` table + `support-attachments` bucket. `support.signAttachmentUpload` (consumer) + `admin.signSupportAttachmentUpload` (god mode). `create`/`reply` accept an `attachments[]`; a body-or-attachment refine lets a photo-only message through.
+- iOS: `NSPhotoLibraryUsageDescription` + `NSCameraUsageDescription` + `NSMicrophoneUsageDescription` in Info.plist (the missing photo key was hard-crashing the picker).
+- **Watch-out:** the batched attachment fetch uses `ANY(...)::uuid[]` — the `::uuid[]` cast is required (postgres.js `sql.array()` yields `text[]`; without the cast the query throws and the router masked it as a bogus NOT_FOUND/"couldn't open conversation"). The getCase catch now surfaces non-NOT_FOUND errors as 500 instead of hiding them.
+
+### Account deletion (Apple 5.1.1(v)) — SHIPPED
+
+`me.deleteAccount` (`domain/account.ts`). **Anonymize-and-deactivate, not hard delete** — `transactions.user_id` is FK-RESTRICT, so financial/tax records must survive. It: deletes the Clerk identity → scrubs PII → tombstones `clerk_user_id` (`deleted:<uuid>`) → sets `users.deleted_at`. CASCADE FKs (claims, saves, reviews, devices, support) drop automatically. UI is a tucked-away destructive link at the bottom of Profile (not a big button), double-confirmed.
+
+### Image caching (expo-image) — SHIPPED
+
+Every **remote** photo across the app renders through `CachedImage` (`features/image/CachedImage.tsx`, wraps `expo-image` with `memory-disk` cache + 200ms fade). Replaced raw RN `<Image>` in ~15 files (deal cards, hero, vendor storefront, vouchers, reviews, checkout, profile avatar). `prefetchImages()` warms photos before they scroll into view. Local `require()` assets (e.g. the Apple Wallet badge) stay on raw `<Image>`. Native dep → needs a rebuild to activate.
+
+### Prefetch / preload layer — SHIPPED
+
+`usePrefetch()` warms a screen's data on `onPressIn` (fires ~80–150ms before nav, lands inside the 30s staleTime window → cache hit, no spinner): deal detail on card press, vendor on the vendor row, support thread on the active-case card. `BootWarmup` warms categories at launch; `ClaimedDealsProvider` warms active vouchers' data + images. Discipline: press-in only, never on scroll (don't spam 50 requests browsing the feed).
 
 ### Native modules in use
 
@@ -466,7 +499,7 @@ Means we need a **dev-client build** (not Expo Go). Rebuild via `npx expo run:io
 
 ## 10. What's shipped, what's pending
 
-**Audited against code on 2026-05-29.** Use this as the live status board — update as features land.
+**Audited against code on 2026-05-31.** Use this as the live status board — update as features land.
 
 ### Shipped (works end-to-end)
 
@@ -480,10 +513,15 @@ Means we need a **dev-client build** (not Expo Go). Rebuild via `npx expo run:io
 - Apple Wallet pass generation (signed .pkpass).
 - APNs push notification stack (ES256 JWT, device token registration, 410 cleanup).
 - Admin: vendors, deals, payouts, fees (incl. per-vendor), audit, transactions, customers.
+- **Concierge support tickets** (consumer↔Gloē) — chat, photo/video attachments (camera + library), god-mode reply + push-on-reply. §6.
+- **Account deletion** in-app (Apple 5.1.1(v)) — anonymize-and-deactivate. §6.
+- **Out-of-area waitlist gate** — ComingSoon screen + demand capture + admin Waitlist tab. §6.
+- **Image caching** (expo-image) across all remote photos + a press-in prefetch/preload layer. §6.
+- **Vendor-only redemption** — consumer self-redeem removed (was a payout footgun). §6.
 - Reconciliation query (manual trigger).
 - Railway deploy (api + web). `.env.example` for contributors.
 - Web SEO: favicon, OG card, PWA manifest, robots, sitemap.
-- iOS app icon (gold G on dark brand) wired into Expo + Xcode.
+- iOS app icon (gold G on dark brand) wired into Expo + Xcode. iPhone-only for v1 (iPad device-family off; iPad is a v2 roadmap item).
 
 ### Pending / stubs / known gaps
 
@@ -495,7 +533,7 @@ Means we need a **dev-client build** (not Expo Go). Rebuild via `npx expo run:io
 - **Deeper filtering** — FilterSheet ships distance + price range + min-discount %, all wired end-to-end. Missing: **subtype/treatment-type filter** (`service_subtypes` is returned per deal but there's no UI filter and `listDeals` can't filter by subtype), a **sort control** (price / distance / rating — ranking is fixed today), rating-floor, and "open now" filters. Pairs with the search work above.
 - **Apple Pay** — code-complete in Stripe PaymentSheet; needs Merchant ID + Stripe cert + native device rebuild. Tonight session.
 - **Apple Wallet live updates** — pass generation ships, but status flips (e.g. "Redeemed") need APNs Pass Web Service spec wiring. Schema for `pass_registrations` is there. Not a launch blocker.
-- **Delete account in-app** — Apple guideline 5.1.1(v); auto-rejection if missing. Build before submission.
+- ~~**Delete account in-app**~~ — **DONE** (`me.deleteAccount`, anonymize-and-deactivate; see §6).
 - **ATT prompt** — required per Apple 5.1.2 if any cross-app analytics. Add `expo-tracking-transparency`.
 - **Map tab** — not in nav. Future v1.1.
 - **Credit & loyalty system** — stubbed at $0.
@@ -846,6 +884,10 @@ All 4 green = ready to sign first real spa.
 ---
 
 ## 16. Infrastructure & costs
+
+### 🚨 Region co-location (the #1 prod-perf rule)
+
+Supabase is in **`aws-1-us-east-1`** (Virginia). **Railway MUST deploy in the same region (us-east).** A SoCal dev laptop → us-east DB pays ~83ms per query round-trip (measured), which makes things feel slow in dev — but that's a dev artifact: co-located in prod, each query is ~1–3ms. **Pick the Supabase region first, pin Railway to match — never split coasts.** The DB pool (`db/client.ts`) keeps connections warm 5 min (`idle_timeout: 300`) + a boot `SELECT 1`, so a paused tap doesn't re-pay the ~1s TLS handshake. For local dev speed, run a local Postgres (`supabase start`) to avoid the cross-country hop entirely. Stay on the transaction pooler (`:6543`, `prepare:false`).
 
 ### Year 1 (San Diego pilot)
 
