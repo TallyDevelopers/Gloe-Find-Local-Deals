@@ -1,3 +1,4 @@
+import { deleteAccount } from '../domain/account';
 import { protectedProcedure, router } from './trpc';
 
 export const meRouter = router({
@@ -29,4 +30,12 @@ export const meRouter = router({
       monthlyRedemptionsUsed: u.monthly_redemptions_used,
     };
   }),
+
+  /**
+   * Delete the signed-in user's account (Apple 5.1.1(v) requirement).
+   * Anonymize-and-deactivate — see domain/account.ts for why we don't hard-delete.
+   */
+  deleteAccount: protectedProcedure.mutation(({ ctx }) =>
+    deleteAccount(ctx.sql, ctx.auth.userId, ctx.auth.clerkUserId),
+  ),
 });
