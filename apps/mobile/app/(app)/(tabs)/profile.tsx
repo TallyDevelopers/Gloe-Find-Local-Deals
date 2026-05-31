@@ -1,11 +1,20 @@
+import { trpc } from '@gloe/api-client';
 import { useAuth } from '@gloe/auth';
 import { Button, Stack, Text, radius, space, useTheme } from '@gloe/ui';
+import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
-import { Image, Linking, Pressable, ScrollView, View } from 'react-native';
+import { Alert, Image, Linking, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useClaimedDeals } from '../../../features/claimed/ClaimedDealsProvider';
 import { StatusBarBackdrop } from '../../../features/layout/StatusBarBackdrop';
+import { useSupport, type SupportTicketSummary } from '../../../features/support/SupportProvider';
+
+// App version for the About row. Read from the bundled manifest (no native dep).
+const APP_VERSION = Constants.expoConfig?.version ?? '0.0.1';
+// Replace with the real App Store ID once the app is live; until then the row
+// still opens the App Store search gracefully.
+const APP_STORE_REVIEW_URL = 'https://apps.apple.com/app/idYOUR_APP_ID?action=write-review';
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
@@ -13,8 +22,44 @@ export default function ProfileScreen() {
   const { status, user, signOut } = useAuth();
   const { color: palette } = useTheme();
   const { activeClaims } = useClaimedDeals();
+  const { tickets } = useSupport();
 
   const isSignedIn = status === 'signed-in';
+
+  // Surface the most-recent OPEN ticket as a live card so support feels like an
+  // ongoing conversation, not a buried menu item. tickets is newest-first.
+  const activeTicket = tickets.find((t) => t.status !== 'resolved' && t.status !== 'closed');
+
+  // Account deletion (Apple 5.1.1(v)). Double-confirm because it's permanent,
+  // then sign out locally once the server has anonymized + killed the Clerk user.
+  const deleteMutation = trpc.me.deleteAccount.useMutation();
+  const onDeleteAccount = () => {
+    Alert.alert(
+      'Delete account?',
+      'This permanently deletes your Gloē account and personal info. Active vouchers and saved deals will be removed. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            deleteMutation.mutate(undefined, {
+              onSuccess: async () => {
+                await signOut();
+                router.replace('/(auth)/login');
+              },
+              onError: () => {
+                Alert.alert(
+                  "Couldn't delete account",
+                  'Something went wrong. Please try again or email support@gloe.app.',
+                );
+              },
+            });
+          },
+        },
+      ],
+    );
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: palette.surface.primary }}>
@@ -31,12 +76,21 @@ export default function ProfileScreen() {
             Profile
           </Text>
 
-          {isSignedIn ? <SignedInBody user={user} onSignOut={signOut} /> : (
+          {isSignedIn ? (
+            <SignedInBody user={user} />
+          ) : (
             <AnonymousBody
               onSignIn={() => router.push('/(auth)/login')}
               onSignUp={() => router.push('/(auth)/signup')}
             />
           )}
+
+          {isSignedIn && activeTicket ? (
+            <ActiveCaseCard
+              ticket={activeTicket}
+              onPress={() => router.push(`/(app)/support/${activeTicket.id}`)}
+            />
+          ) : null}
 
           {isSignedIn ? (
             <Stack gap={2}>
@@ -90,7 +144,19 @@ export default function ProfileScreen() {
             </Stack>
           ) : null}
 
-          <SettingsList onAppearance={() => router.push('/(app)/settings/appearance')} />
+          <SettingsList
+            onAppearance={() => router.push('/(app)/settings/appearance')}
+            onOpenWallet={() => router.push('/(app)/(tabs)/wallet')}
+            onOpenSupport={() => router.push('/(app)/support/cases')}
+          />
+
+          {isSignedIn ? (
+            <AccountActions
+              onSignOut={signOut}
+              onDeleteAccount={onDeleteAccount}
+              deleting={deleteMutation.isPending}
+            />
+          ) : null}
         </Stack>
       </ScrollView>
       <StatusBarBackdrop />
@@ -98,12 +164,121 @@ export default function ProfileScreen() {
   );
 }
 
+const TICKET_STATUS_LABEL: Record<string, string> = {
+  open: 'Open',
+  awaiting_us: 'We’re on it',
+  awaiting_customer: 'Gloē replied',
+  resolved: 'Resolved',
+  closed: 'Closed',
+};
+
+/**
+ * Live card for the user's most-recent open concierge ticket. Surfaced on
+ * Profile so support feels like an ongoing conversation, not a buried row.
+ * Tapping opens the thread directly.
+ */
+function ActiveCaseCard({
+  ticket,
+  onPress,
+}: {
+  ticket: SupportTicketSummary;
+  onPress: () => void;
+}) {
+  const { color: palette } = useTheme();
+  const hasUnread = ticket.unreadCount > 0;
+  return (
+    <Pressable onPress={onPress}>
+      <View
+        style={{
+          backgroundColor: palette.surface.elevated,
+          borderRadius: radius.lg,
+          padding: space[5],
+          borderWidth: 1,
+          borderColor: hasUnread ? palette.brand[300] : palette.border.subtle,
+        }}
+      >
+        <Stack gap={3}>
+          <Stack direction="row" justify="space-between" align="center">
+            <Text variant="label" tone="brand" weight="semibold">
+              YOUR CONCIERGE
+            </Text>
+            <Stack direction="row" gap={2} align="center">
+              <Text variant="caption" tone="tertiary">
+                {TICKET_STATUS_LABEL[ticket.status] ?? ticket.status}
+              </Text>
+              {hasUnread ? (
+                <View
+                  style={{
+                    minWidth: 18,
+                    height: 18,
+                    paddingHorizontal: 5,
+                    borderRadius: 9,
+                    backgroundColor: palette.brand[500],
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Text variant="caption" tone="inverse" weight="bold">
+                    {ticket.unreadCount}
+                  </Text>
+                </View>
+              ) : null}
+            </Stack>
+          </Stack>
+          <Stack gap={1}>
+            <Text variant="body-md" tone="primary" weight="semibold" numberOfLines={1}>
+              {ticket.subject}
+            </Text>
+            {ticket.lastMessagePreview ? (
+              <Text variant="body-sm" tone="secondary" numberOfLines={2}>
+                {ticket.lastMessagePreview}
+              </Text>
+            ) : null}
+          </Stack>
+          <Text variant="caption" tone="brand" weight="semibold">
+            Open conversation ›
+          </Text>
+        </Stack>
+      </View>
+    </Pressable>
+  );
+}
+
+/**
+ * Account actions, deliberately tucked at the very bottom and low-key — sign
+ * out is a quiet text link, delete account is muted/destructive. We don't want
+ * these in people's faces; they're "leave" actions, not features.
+ */
+function AccountActions({
+  onSignOut,
+  onDeleteAccount,
+  deleting,
+}: {
+  onSignOut: () => void | Promise<void>;
+  onDeleteAccount: () => void;
+  deleting: boolean;
+}) {
+  const { color: palette } = useTheme();
+  return (
+    <Stack gap={4} align="center" style={{ paddingTop: space[4], paddingBottom: space[2] }}>
+      <Pressable onPress={onSignOut} hitSlop={12}>
+        <Text variant="body-md" tone="secondary" weight="semibold">
+          Sign out
+        </Text>
+      </Pressable>
+      <Pressable onPress={onDeleteAccount} hitSlop={12} disabled={deleting}>
+        <Text variant="body-sm" style={{ color: palette.semantic.error, opacity: deleting ? 0.5 : 0.7 }}>
+          {deleting ? 'Deleting…' : 'Delete account'}
+        </Text>
+      </Pressable>
+    </Stack>
+  );
+}
+
 function SignedInBody({
   user,
-  onSignOut,
 }: {
   user: ReturnType<typeof useAuth>['user'];
-  onSignOut: () => void | Promise<void>;
 }) {
   const { color: palette } = useTheme();
   const initials =
@@ -156,8 +331,6 @@ function SignedInBody({
         <StatRow label="Reviews left" value="0" />
         <StatRow label="Member since" value="Today" />
       </Stack>
-
-      <Button label="Sign out" variant="secondary" size="lg" fullWidth onPress={onSignOut} />
     </Stack>
   );
 }
@@ -222,18 +395,29 @@ function StatRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function SettingsList({ onAppearance }: { onAppearance: () => void }) {
+function SettingsList({
+  onAppearance,
+  onOpenWallet,
+  onOpenSupport,
+}: {
+  onAppearance: () => void;
+  onOpenWallet: () => void;
+  onOpenSupport: () => void;
+}) {
   const { color: palette } = useTheme();
   // Notifications / Location both deeplink to iOS Settings → Gloe — the only
   // place the user can actually toggle these permissions. Doing it in-app
   // would just be a fake control that calls openSettings() anyway.
-  const rows: { label: string; onPress: () => void; external?: boolean }[] = [
+  const rows: { label: string; value?: string; onPress: () => void; external?: boolean }[] = [
     { label: 'Appearance', onPress: onAppearance },
     { label: 'Notifications', onPress: () => Linking.openSettings(), external: true },
     { label: 'Location settings', onPress: () => Linking.openSettings(), external: true },
-    { label: 'Help & support', onPress: () => Linking.openURL('mailto:support@gloe.app?subject=Gloe%20support'), external: true },
+    { label: 'My receipts & vouchers', onPress: onOpenWallet },
+    { label: 'Contact info', onPress: () => Linking.openURL('mailto:support@gloe.app?subject=Update%20my%20contact%20info'), external: true },
+    { label: 'Rate Gloē', onPress: () => Linking.openURL(APP_STORE_REVIEW_URL), external: true },
+    { label: 'Concierge', onPress: onOpenSupport },
     { label: 'Terms & privacy', onPress: () => Linking.openURL('https://gloe.app/terms'), external: true },
-    { label: 'About Gloe', onPress: () => Linking.openURL('https://gloe.app/about'), external: true },
+    { label: 'About Gloē', value: `v${APP_VERSION}`, onPress: () => Linking.openURL('https://gloe.app/about'), external: true },
   ];
 
   return (
@@ -265,9 +449,16 @@ function SettingsList({ onAppearance }: { onAppearance: () => void }) {
             <Text variant="body-md" tone="primary">
               {row.label}
             </Text>
-            <Text variant="body-md" tone="tertiary">
-              {row.external ? '↗' : '›'}
-            </Text>
+            <Stack direction="row" gap={2} align="center">
+              {row.value ? (
+                <Text variant="body-sm" tone="tertiary">
+                  {row.value}
+                </Text>
+              ) : null}
+              <Text variant="body-md" tone="tertiary">
+                {row.external ? '↗' : '›'}
+              </Text>
+            </Stack>
           </Pressable>
         ))}
       </View>

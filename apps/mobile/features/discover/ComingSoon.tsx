@@ -63,28 +63,36 @@ export function ComingSoon({ cityLabel, lat, lng, onBrowseAnyway }: ComingSoonPr
           we&apos;re expanding fast.
         </Text>
 
-        {/* Dynamic "now live in" — always accurate, auto-updates as you launch cities */}
+        {/* Dynamic "now live in" — always accurate, auto-updates as you launch cities.
+            Warm champagne brand surface so it reads on-brand, not a cold white block. */}
         <View
           style={{
-            backgroundColor: palette.lavender[50],
+            backgroundColor: palette.brand[100],
+            borderColor: palette.brand[200],
+            borderWidth: 1,
             borderRadius: 16,
             paddingVertical: space[4],
             paddingHorizontal: space[5],
             width: '100%',
           }}
         >
-          <Text variant="label" tone="secondary" style={{ textAlign: 'center' }}>
+          <Text
+            variant="label"
+            style={{ textAlign: 'center', color: palette.brand[700], letterSpacing: 1 }}
+          >
             NOW LIVE IN
           </Text>
           <Text
             variant="body-md"
-            tone="primary"
             weight="semibold"
-            style={{ textAlign: 'center', marginTop: space[1] }}
+            style={{ textAlign: 'center', marginTop: space[1], color: palette.brand[800] }}
           >
             {liveCitiesText}
           </Text>
-          <Text variant="caption" tone="tertiary" style={{ textAlign: 'center', marginTop: space[1] }}>
+          <Text
+            variant="caption"
+            style={{ textAlign: 'center', marginTop: space[1], color: palette.brand[600] }}
+          >
             New cities every week.
           </Text>
         </View>

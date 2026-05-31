@@ -369,6 +369,14 @@ Hierarchical, editable in admin without code change.
 - The screen lists the cities that are **actually live** (`waitlist.liveCities` → distinct cities with active deals), so the "Now live in …" copy is never stale even with multiple cities open.
 - Email capture (`waitlist.join`, public) stores `{email, city_label, lat, lng}` in `region_waitlist` (upsert on email). No notification fires yet — this is demand collection. Admin god-mode **Waitlist** tab (`WaitlistView`) shows demand ranked by city = the expansion roadmap. "Browse SoCal deals" escape hatch lets out-of-area users into the SD-default feed anyway.
 
+**In-app support tickets (consumer ↔ Gloē):**
+- Profile → Help & support opens `support/cases.tsx` (list of cases + new request) → `support/[id].tsx` (chat thread). Customer opens a case, sees ongoing cases in chat format, replies inline.
+- Backend: `support_tickets` + `support_messages` tables (purpose-built — NOT the dead vendor-shaped `message_threads`). 5-state machine: `open → awaiting_us → awaiting_customer → resolved → closed`. `domain/supportTickets.ts` (consumer, all `userId`-scoped, IDOR-guarded) + `support.router.ts`.
+- God mode: **Support** tab (`SupportView.tsx`) lists tickets `awaiting_us`-first (triage queue) with a reply drawer. Agent reply is the ONLY place an APNs push fires (`createAgentReply` in `admin.ts` → `sendApnsPushToUser`, fire-and-forget, `data:{type:'support_reply',ticketId}` read flat on device).
+- Push-on-reply + a **permission-aware** caption above the composer: "You can close the app — we'll notify you the moment we reply" (granted) vs a "turn on notifications" prompt (denied). Notification tap deep-links to the thread via a listener in `usePushRegistration.ts`.
+- **v1 is in-app + push only.** No email (inbound or outbound) — deferred; it's a zero-rework bolt-on (`domain/email.ts` via Resend) once gloe.app DNS is set. Account deletion CASCADEs tickets+messages (PII).
+- Also fixed in this work: `device_tokens` RLS was DISABLED (a pre-existing hole) — now enabled with owner policies.
+
 ### Native modules in use
 
 `@stripe/stripe-react-native`, `react-native-maps`, `react-native-reanimated`, `react-native-gesture-handler`, `react-native-svg`, `react-native-passkit-wallet`, `react-native-qrcode-svg`.
