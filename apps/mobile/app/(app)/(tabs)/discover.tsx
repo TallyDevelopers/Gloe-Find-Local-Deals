@@ -1,14 +1,16 @@
 import { trpc } from '@gloe/api-client';
 import { useAuth } from '@gloe/auth';
 import { Stack, Text, space, useTheme } from '@gloe/ui';
+import { keepPreviousData } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import { Link, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useRequireAuth } from '../../../features/auth-gate/useRequireAuth';
 import { StatusBarBackdrop } from '../../../features/layout/StatusBarBackdrop';
+import { usePrefetch } from '../../../features/prefetch/usePrefetch';
 import { useAnonSeed } from '../../../features/discover/anonSeed';
 import { CategoryRail } from '../../../features/discover/CategoryRail';
 import { ComingSoon } from '../../../features/discover/ComingSoon';
@@ -44,22 +46,36 @@ export default function DiscoverScreen() {
 
   // Featured (sponsored) carousel + the filtered grid both read this query.
   // When "All" is selected the body shows category rails instead of the grid.
-  const dealsQuery = trpc.deals.list.useQuery({
-    userLat: location.latitude,
-    userLng: location.longitude,
-    maxDistanceMiles: filters.maxDistanceMiles ?? 50,
-    limit: 50,
-    ...(categorySlug ? { category: categorySlug } : {}),
-    ...(filters.minPriceCents !== undefined ? { minPriceCents: filters.minPriceCents } : {}),
-    ...(filters.maxPriceCents !== undefined ? { maxPriceCents: filters.maxPriceCents } : {}),
-    ...(filters.minDiscountPct !== undefined ? { minDiscountPct: filters.minDiscountPct } : {}),
-    ...(anonSeed ? { anonSeed } : {}),
-  });
+  const dealsQuery = trpc.deals.list.useQuery(
+    {
+      userLat: location.latitude,
+      userLng: location.longitude,
+      maxDistanceMiles: filters.maxDistanceMiles ?? 50,
+      limit: 50,
+      ...(categorySlug ? { category: categorySlug } : {}),
+      ...(filters.minPriceCents !== undefined ? { minPriceCents: filters.minPriceCents } : {}),
+      ...(filters.maxPriceCents !== undefined ? { maxPriceCents: filters.maxPriceCents } : {}),
+      ...(filters.minDiscountPct !== undefined ? { minDiscountPct: filters.minDiscountPct } : {}),
+      ...(anonSeed ? { anonSeed } : {}),
+    },
+    // Keep the previous location's deals on screen (dimmed) while the new ones
+    // load, instead of blanking the whole feed to a spinner on every location/
+    // filter change. isLoading is now only true on genuine cold start.
+    { placeholderData: keepPreviousData },
+  );
+  const isSwitching = dealsQuery.isPlaceholderData;
 
   const isSignedIn = status === 'signed-in';
   const allDeals = dealsQuery.data?.deals ?? [];
   const featured = allDeals.filter((d) => d.isSponsored);
   const rest = allDeals;
+
+  // Warm the deal photos into the image cache as soon as the feed data lands,
+  // so cards paint instantly instead of streaming in one by one as you scroll.
+  const prefetch = usePrefetch();
+  useEffect(() => {
+    if (allDeals.length) prefetch.images(allDeals.map((d) => d.primaryPhotoUrl));
+  }, [allDeals, prefetch]);
 
   // Out-of-area: the feed loaded successfully with ZERO deals near a real,
   // resolved location AND the user hasn't chosen to browse SoCal anyway. We
@@ -145,7 +161,24 @@ export default function DiscoverScreen() {
             />
           </View>
 
-          {/* Feed */}
+          {/* Thin "updating…" bar ONLY while swapping to new results with old
+              ones still on screen — cold start is owned by the big spinner below,
+              and we don't show it over the empty / out-of-area states. */}
+          {dealsQuery.isFetching && !dealsQuery.isLoading && !outOfArea ? (
+            <Stack direction="row" gap={2} align="center" justify="center" style={{ paddingVertical: space[2] }}>
+              <ActivityIndicator size="small" color={palette.brand[500]} />
+              <Text variant="caption" tone="secondary">
+                Finding deals near {location.label}…
+              </Text>
+            </Stack>
+          ) : null}
+
+          {/* Feed. While switching with cached data, the old results stay painted
+              (dimmed). With no cached data, show the spinner above + skeleton space. */}
+          <View
+            style={{ opacity: isSwitching ? 0.45 : 1 }}
+            pointerEvents={isSwitching ? 'none' : 'auto'}
+          >
           {dealsQuery.isLoading ? (
             <View style={{ paddingVertical: space[10], alignItems: 'center' }}>
               <ActivityIndicator color={palette.brand[500]} />
@@ -209,6 +242,7 @@ export default function DiscoverScreen() {
               )}
             </Stack>
           )}
+          </View>
         </Stack>
       </ScrollView>
 

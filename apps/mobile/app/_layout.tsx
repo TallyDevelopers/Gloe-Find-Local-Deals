@@ -38,14 +38,16 @@ function requireEnv(name: string): string {
 function resolveApiUrl(): string {
   const envUrl = process.env.EXPO_PUBLIC_API_URL;
   const hostUri = Constants.expoConfig?.hostUri;
+  // Prefer the EXPLICIT .env value — it's what we deliberately set per target
+  // (localhost for sim, LAN IP for device). Deriving from hostUri is unreliable
+  // (it can resolve to localhost even on a physical device, which the phone
+  // can't reach). Only fall back to hostUri-derived if .env is unset.
+  if (envUrl) return envUrl;
   if (hostUri) {
     const host = hostUri.split(':')[0];
     return `http://${host}:4000`;
   }
-  // hostUri is often undefined in this dev build → we fall back to .env.
-  // For the simulator that MUST be http://localhost:4000 (see apps/mobile/.env).
-  if (!envUrl) throw new Error('Missing EXPO_PUBLIC_API_URL. Set it in apps/mobile/.env');
-  return envUrl;
+  throw new Error('Missing EXPO_PUBLIC_API_URL. Set it in apps/mobile/.env');
 }
 
 export default function RootLayout() {

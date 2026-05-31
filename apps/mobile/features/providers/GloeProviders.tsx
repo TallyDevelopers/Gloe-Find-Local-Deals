@@ -10,6 +10,7 @@ import { ClaimedDealsProvider } from '../claimed/ClaimedDealsProvider';
 import { SelectedLocationProvider } from '../discover-header/SelectedLocationProvider';
 import { ToastProvider } from '../feedback/Toast';
 import { PushRegistrationBridge } from '../notifications/PushRegistrationBridge';
+import { BootWarmup } from '../prefetch/BootWarmup';
 import { SavedDealsProvider } from '../saved/SavedDealsProvider';
 import { SavedVendorsProvider } from '../saved/SavedVendorsProvider';
 import { SupportProvider } from '../support/SupportProvider';
@@ -55,6 +56,7 @@ export function GloeProviders({
                       <ClaimedDealsProvider>
                         <SupportProvider>
                           <ToastProvider>
+                            <BootWarmup />
                             <PushRegistrationBridge>{children}</PushRegistrationBridge>
                           </ToastProvider>
                         </SupportProvider>

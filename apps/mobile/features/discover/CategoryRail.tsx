@@ -1,5 +1,6 @@
 import { trpc, type DealSummary } from '@gloe/api-client';
 import { Stack, Text, space, useTheme } from '@gloe/ui';
+import { keepPreviousData } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Dimensions, FlatList, Pressable, View } from 'react-native';
 
@@ -56,25 +57,32 @@ export function CategoryRail({
   // When the filter set changes, reset paging — otherwise we'd append pages
   // from one filter onto pages from another (e.g. the user goes from 50 mi to
   // 5 mi and we'd still show the old 23-mi cards from the previous page 0).
-  const filterKey = `${maxDistanceMiles ?? 'd'}|${minPriceCents ?? 'p'}|${maxPriceCents ?? 'P'}|${minDiscountPct ?? 'g'}|${anonSeed ?? ''}`;
+  // Include the resolved location (4dp = ~11m, avoids GPS jitter thrash). Without
+  // it, switching cities did NOT reset paging — the rail kept old-city cards and
+  // merged the new city's page N onto the old city's pages, showing mixed-location
+  // results. This is a correctness bug at any latency.
+  const filterKey = `${userLat.toFixed(4)},${userLng.toFixed(4)}|${maxDistanceMiles ?? 'd'}|${minPriceCents ?? 'p'}|${maxPriceCents ?? 'P'}|${minDiscountPct ?? 'g'}|${anonSeed ?? ''}`;
   useEffect(() => {
     setPages({});
     setHasMore(true);
     setOffset(0);
   }, [filterKey]);
 
-  const query = trpc.deals.list.useQuery({
-    userLat,
-    userLng,
-    maxDistanceMiles: maxDistanceMiles ?? 50,
-    category: categorySlug,
-    limit: PAGE,
-    offset,
-    ...(minPriceCents !== undefined ? { minPriceCents } : {}),
-    ...(maxPriceCents !== undefined ? { maxPriceCents } : {}),
-    ...(minDiscountPct !== undefined ? { minDiscountPct } : {}),
-    ...(anonSeed ? { anonSeed } : {}),
-  });
+  const query = trpc.deals.list.useQuery(
+    {
+      userLat,
+      userLng,
+      maxDistanceMiles: maxDistanceMiles ?? 50,
+      category: categorySlug,
+      limit: PAGE,
+      offset,
+      ...(minPriceCents !== undefined ? { minPriceCents } : {}),
+      ...(maxPriceCents !== undefined ? { maxPriceCents } : {}),
+      ...(minDiscountPct !== undefined ? { minDiscountPct } : {}),
+      ...(anonSeed ? { anonSeed } : {}),
+    },
+    { placeholderData: keepPreviousData },
+  );
 
   // RQ v5 has no onSuccess — append whenever the current offset's data arrives.
   useEffect(() => {

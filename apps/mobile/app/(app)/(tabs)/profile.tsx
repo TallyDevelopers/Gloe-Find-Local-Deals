@@ -3,11 +3,13 @@ import { useAuth } from '@gloe/auth';
 import { Button, Stack, Text, radius, space, useTheme } from '@gloe/ui';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
-import { Alert, Image, Linking, Pressable, ScrollView, View } from 'react-native';
+import { Alert, Linking, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useClaimedDeals } from '../../../features/claimed/ClaimedDealsProvider';
+import { CachedImage } from '../../../features/image/CachedImage';
 import { StatusBarBackdrop } from '../../../features/layout/StatusBarBackdrop';
+import { usePrefetch } from '../../../features/prefetch/usePrefetch';
 import { useSupport, type SupportTicketSummary } from '../../../features/support/SupportProvider';
 
 // App version for the About row. Read from the bundled manifest (no native dep).
@@ -23,6 +25,7 @@ export default function ProfileScreen() {
   const { color: palette } = useTheme();
   const { activeClaims } = useClaimedDeals();
   const { tickets } = useSupport();
+  const prefetch = usePrefetch();
 
   const isSignedIn = status === 'signed-in';
 
@@ -88,6 +91,7 @@ export default function ProfileScreen() {
           {isSignedIn && activeTicket ? (
             <ActiveCaseCard
               ticket={activeTicket}
+              onPressIn={() => prefetch.supportCase(activeTicket.id)}
               onPress={() => router.push(`/(app)/support/${activeTicket.id}`)}
             />
           ) : null}
@@ -180,14 +184,16 @@ const TICKET_STATUS_LABEL: Record<string, string> = {
 function ActiveCaseCard({
   ticket,
   onPress,
+  onPressIn,
 }: {
   ticket: SupportTicketSummary;
   onPress: () => void;
+  onPressIn?: () => void;
 }) {
   const { color: palette } = useTheme();
   const hasUnread = ticket.unreadCount > 0;
   return (
-    <Pressable onPress={onPress}>
+    <Pressable onPress={onPress} onPressIn={onPressIn}>
       <View
         style={{
           backgroundColor: palette.surface.elevated,
@@ -295,8 +301,8 @@ function SignedInBody({
       >
         <Stack direction="row" gap={4} align="center">
           {user?.imageUrl ? (
-            <Image
-              source={{ uri: user.imageUrl }}
+            <CachedImage
+              uri={user.imageUrl}
               style={{ width: 64, height: 64, borderRadius: 32 }}
             />
           ) : (

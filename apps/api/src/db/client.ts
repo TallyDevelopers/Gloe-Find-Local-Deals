@@ -31,9 +31,18 @@ export const sql = postgres({
   ...config,
   prepare: false,
   max: 10,
-  idle_timeout: 20,
+  // Keep connections warm for 5 min so a paused tap doesn't re-pay the ~1s
+  // TCP+TLS+auth handshake to the DB (measured cold-start tax). Recycle after
+  // 30 min for hygiene. Harmless in co-located prod (handshake is cheap there).
+  idle_timeout: 300,
+  max_lifetime: 60 * 30,
+  connect_timeout: 15,
   ssl: 'require',
 });
+
+// Warm the pool on boot so the very first real request doesn't eat the cold
+// handshake. Fire-and-forget; a failure here just means the first query pays it.
+void sql`SELECT 1`.catch(() => {});
 
 export type Sql = typeof sql;
 /** The `tx` handle passed to sql.begin(...) callbacks. */

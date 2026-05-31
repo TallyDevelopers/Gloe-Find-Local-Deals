@@ -1,7 +1,8 @@
 import { useAuth } from '@gloe/auth';
 import { trpc, type Claim as ApiClaim } from '@gloe/api-client';
-import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, type ReactNode } from 'react';
 
+import { prefetchImages } from '../image/CachedImage';
 import type { ClaimedDeal } from './types';
 
 interface CreateClaimInput {
@@ -58,6 +59,22 @@ export function ClaimedDealsProvider({ children }: { children: ReactNode }) {
       { activeClaims: [], pastClaims: [] },
     );
   }, [claims]);
+
+  // Warm the voucher rows up front. The claim snapshot has no photo URL, so each
+  // row otherwise fires its own deals.byId just to learn the image URL — that's
+  // why "Your Deals" photos used to stream in one by one. Here we prefetch the
+  // deal data for active claims AND, as each resolves, warm its photo into the
+  // image cache, so the list paints with images instead of a waterfall. Bounded
+  // to the first ~8 active claims to avoid over-fetching history.
+  useEffect(() => {
+    if (!isSignedIn) return;
+    for (const claim of activeClaims.slice(0, 8)) {
+      utils.deals.byId
+        .fetch({ id: claim.dealId })
+        .then((deal) => prefetchImages([deal?.photos?.[0]?.url]))
+        .catch(() => {});
+    }
+  }, [isSignedIn, activeClaims, utils]);
 
   const getById = useCallback(
     (claimId: string) => claims.find((c) => c.id === claimId),
