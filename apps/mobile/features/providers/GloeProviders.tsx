@@ -12,6 +12,7 @@ import { ToastProvider } from '../feedback/Toast';
 import { PushRegistrationBridge } from '../notifications/PushRegistrationBridge';
 import { SavedDealsProvider } from '../saved/SavedDealsProvider';
 import { SavedVendorsProvider } from '../saved/SavedVendorsProvider';
+import { SupportProvider } from '../support/SupportProvider';
 import { ThemePreferenceProvider } from '../theme/ThemePreferenceProvider';
 
 interface GloeProvidersProps {
@@ -52,9 +53,11 @@ export function GloeProviders({
                   <SavedDealsProvider>
                     <SavedVendorsProvider>
                       <ClaimedDealsProvider>
-                        <ToastProvider>
-                          <PushRegistrationBridge>{children}</PushRegistrationBridge>
-                        </ToastProvider>
+                        <SupportProvider>
+                          <ToastProvider>
+                            <PushRegistrationBridge>{children}</PushRegistrationBridge>
+                          </ToastProvider>
+                        </SupportProvider>
                       </ClaimedDealsProvider>
                     </SavedVendorsProvider>
                   </SavedDealsProvider>

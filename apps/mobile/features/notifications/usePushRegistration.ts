@@ -2,6 +2,7 @@ import { trpc } from '@gloe/api-client';
 import { useAuth } from '@gloe/auth';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
+import { useRouter } from 'expo-router';
 import { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
 
@@ -23,8 +24,30 @@ import { Platform } from 'react-native';
  */
 export function usePushRegistration() {
   const { status } = useAuth();
+  const router = useRouter();
   const register = trpc.devices.register.useMutation();
   const lastRegisteredToken = useRef<string | null>(null);
+
+  // Notification-tap deep links. APNs payload `data` is spread FLAT alongside
+  // `aps`, so we read data.type / data.ticketId at the top level. Mounted once;
+  // handles both a tap while running and the cold-start tap (getLastResponse).
+  useEffect(() => {
+    function handle(data: Record<string, unknown> | undefined) {
+      if (!data) return;
+      if (data.type === 'support_reply' && typeof data.ticketId === 'string') {
+        router.push(`/(app)/support/${data.ticketId}`);
+      }
+    }
+    // Cold start: app launched by tapping a notification.
+    Notifications.getLastNotificationResponseAsync().then((response) => {
+      handle(response?.notification.request.content.data as Record<string, unknown> | undefined);
+    });
+    // Warm: tapped while the app was backgrounded/foregrounded.
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      handle(response.notification.request.content.data as Record<string, unknown> | undefined);
+    });
+    return () => sub.remove();
+  }, [router]);
 
   useEffect(() => {
     if (status !== 'signed-in') return;

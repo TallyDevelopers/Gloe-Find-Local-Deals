@@ -15,6 +15,10 @@ import {
   listAdminAuditLog,
   listAdminCustomers,
   listAdminPayouts,
+  listAdminSupportTickets,
+  getAdminSupportTicketDetail,
+  createAgentReply,
+  setSupportTicketStatus,
   listAdminTransactions,
   reviewDeal,
   searchEverything,
@@ -103,6 +107,64 @@ export const adminRouter = router({
   customerDetail: adminProcedure
     .input(z.object({ id: z.string().uuid() }))
     .query(({ ctx, input }) => getAdminCustomerDetail(ctx.sql, input.id)),
+
+  /* ── Support tickets ── */
+  listSupportTickets: adminProcedure
+    .input(
+      z.object({
+        query: z.string().optional(),
+        status: z.string().optional(),
+        limit: z.number().int().positive().max(200).optional(),
+      }),
+    )
+    .query(({ ctx, input }) => listAdminSupportTickets(ctx.sql, input)),
+
+  supportTicketDetail: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      try {
+        return await getAdminSupportTicketDetail(ctx.sql, input.id);
+      } catch (e) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: e instanceof Error ? e.message : 'Not found' });
+      }
+    }),
+
+  replySupportTicket: adminProcedure
+    .input(z.object({ ticketId: z.string().uuid(), body: z.string().min(1).max(5000) }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const result = await createAgentReply(ctx.sql, input.ticketId, input.body, ctx.auth.userId);
+        void writeAudit(ctx.sql, {
+          action: 'support.replied',
+          actorUserId: ctx.auth.userId,
+          meta: { ticketId: input.ticketId },
+        });
+        return result;
+      } catch (e) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: e instanceof Error ? e.message : 'Reply failed.' });
+      }
+    }),
+
+  setSupportTicketStatus: adminProcedure
+    .input(
+      z.object({
+        ticketId: z.string().uuid(),
+        status: z.enum(['awaiting_us', 'awaiting_customer', 'resolved', 'closed']),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const result = await setSupportTicketStatus(ctx.sql, input.ticketId, input.status, ctx.auth.userId);
+        void writeAudit(ctx.sql, {
+          action: 'support.status_set',
+          actorUserId: ctx.auth.userId,
+          meta: { ticketId: input.ticketId, status: input.status },
+        });
+        return result;
+      } catch (e) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: e instanceof Error ? e.message : 'Update failed.' });
+      }
+    }),
 
   /** Payouts explorer list. */
   listPayouts: adminProcedure

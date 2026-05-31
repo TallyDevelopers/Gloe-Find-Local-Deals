@@ -53,7 +53,10 @@ export type AuditAction =
   | 'refund.partial'   // partial refund (voucher stays alive)
   | 'refund.refused'   // request blocked by eligibility / Stripe error
   // Deal admin
-  | 'deal.admin_edited';  // god mode edited deal content (skips re-review)
+  | 'deal.admin_edited'  // god mode edited deal content (skips re-review)
+  // Support tickets
+  | 'support.replied'      // agent replied to a support ticket
+  | 'support.status_set';  // agent resolved / closed / reopened a ticket
 
 export interface AuditEntry {
   action: AuditAction;

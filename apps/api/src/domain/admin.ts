@@ -1093,3 +1093,195 @@ export async function getRecentActivity(sql: Sql, limit = 20) {
     paidAt: r.paid_at,
   }));
 }
+
+/* ============================================================
+ * Support tickets (god mode) — consumer ↔ Gloē. The consumer side
+ * lives in domain/supportTickets.ts; admin sees ALL tickets and is the
+ * only place an agent reply (and its push) is produced.
+ * ============================================================ */
+
+export async function listAdminSupportTickets(
+  sql: Sql,
+  filters: { query?: string; status?: string; limit?: number },
+) {
+  const queryLike =
+    filters.query && filters.query.trim().length >= 2 ? `%${filters.query.trim()}%` : null;
+  const status = filters.status ?? null;
+  const limit = Math.min(filters.limit ?? 200, 200);
+  const rows = await sql<{
+    id: string;
+    subject: string;
+    category: string | null;
+    status: string;
+    last_message_at: string;
+    created_at: string;
+    user_id: string;
+    customer_name: string | null;
+    customer_email: string | null;
+    message_count: number;
+    unread_from_customer: number;
+  }[]>`
+    SELECT
+      st.id, st.subject, st.category, st.status, st.last_message_at, st.created_at, st.user_id,
+      NULLIF(TRIM(COALESCE(u.first_name,'') || ' ' || COALESCE(u.last_name,'')), '') AS customer_name,
+      u.email AS customer_email,
+      (SELECT COUNT(*) FROM public.support_messages m WHERE m.ticket_id = st.id)::int AS message_count,
+      (SELECT COUNT(*) FROM public.support_messages m
+         WHERE m.ticket_id = st.id AND m.sender_type = 'customer')::int AS unread_from_customer
+    FROM public.support_tickets st
+    LEFT JOIN public.users u ON u.id = st.user_id
+    WHERE (${status}::text IS NULL OR st.status = ${status})
+      AND (${queryLike}::text IS NULL
+           OR st.subject ILIKE ${queryLike}
+           OR u.email ILIKE ${queryLike}
+           OR u.first_name ILIKE ${queryLike}
+           OR u.last_name ILIKE ${queryLike})
+    ORDER BY (st.status = 'awaiting_us') DESC, st.last_message_at DESC
+    LIMIT ${limit}
+  `;
+  return rows.map((r) => ({
+    id: r.id,
+    subject: r.subject,
+    category: r.category,
+    status: r.status,
+    lastMessageAt: r.last_message_at,
+    createdAt: r.created_at,
+    userId: r.user_id,
+    customerName: r.customer_name,
+    customerEmail: r.customer_email,
+    messageCount: r.message_count,
+    unreadFromCustomer: r.unread_from_customer,
+  }));
+}
+
+export async function getAdminSupportTicketDetail(sql: Sql, id: string) {
+  const ticketRows = await sql<{
+    id: string;
+    subject: string;
+    category: string | null;
+    status: string;
+    last_message_at: string;
+    created_at: string;
+    resolved_at: string | null;
+    user_id: string;
+    customer_name: string | null;
+    customer_email: string | null;
+  }[]>`
+    SELECT
+      st.id, st.subject, st.category, st.status, st.last_message_at, st.created_at, st.resolved_at, st.user_id,
+      NULLIF(TRIM(COALESCE(u.first_name,'') || ' ' || COALESCE(u.last_name,'')), '') AS customer_name,
+      u.email AS customer_email
+    FROM public.support_tickets st
+    LEFT JOIN public.users u ON u.id = st.user_id
+    WHERE st.id = ${id}
+    LIMIT 1
+  `;
+  const t = ticketRows[0];
+  if (!t) throw new Error('Support ticket not found');
+
+  const messages = await sql<{
+    id: string;
+    sender_type: string;
+    sender_user_id: string | null;
+    body: string;
+    read_at: string | null;
+    created_at: string;
+  }[]>`
+    SELECT id, sender_type, sender_user_id, body, read_at, created_at
+    FROM public.support_messages
+    WHERE ticket_id = ${id}
+    ORDER BY created_at ASC
+  `;
+
+  return {
+    ticket: {
+      id: t.id,
+      subject: t.subject,
+      category: t.category,
+      status: t.status,
+      lastMessageAt: t.last_message_at,
+      createdAt: t.created_at,
+      resolvedAt: t.resolved_at,
+      userId: t.user_id,
+      customerName: t.customer_name,
+      customerEmail: t.customer_email,
+    },
+    messages: messages.map((m) => ({
+      id: m.id,
+      senderType: m.sender_type,
+      senderUserId: m.sender_user_id,
+      body: m.body,
+      readAt: m.read_at,
+      createdAt: m.created_at,
+    })),
+  };
+}
+
+/**
+ * Agent reply. The ONLY place a push to the customer fires. Inserts the agent
+ * message, transitions the ticket to awaiting_customer, then fire-and-forgets
+ * an APNs push (never blocks the founder's reply latency on Apple).
+ */
+export async function createAgentReply(
+  sql: Sql,
+  ticketId: string,
+  body: string,
+  adminUserId: string,
+) {
+  const ticketRows = await sql<{ user_id: string; subject: string }[]>`
+    SELECT user_id, subject FROM public.support_tickets WHERE id = ${ticketId} LIMIT 1
+  `;
+  const ticket = ticketRows[0];
+  if (!ticket) throw new Error('Support ticket not found');
+
+  await sql`
+    INSERT INTO public.support_messages (ticket_id, sender_type, sender_user_id, body)
+    VALUES (${ticketId}, 'agent', ${adminUserId}, ${body})
+  `;
+  await sql`
+    UPDATE public.support_tickets
+    SET status = 'awaiting_customer', last_message_at = now(), updated_at = now()
+    WHERE id = ${ticketId}
+  `;
+
+  // Fire-and-forget push to the customer. No-ops gracefully if APNs unconfigured.
+  const { sendApnsPushToUser } = await import('./apns');
+  void sendApnsPushToUser(sql, ticket.user_id, {
+    title: 'Gloē Support',
+    body: body.slice(0, 120),
+    threadId: 'support-tickets',
+    data: { type: 'support_reply', ticketId },
+    sound: 'default',
+  });
+
+  return { ok: true as const };
+}
+
+/**
+ * Resolve / close / reopen a ticket. Writes a 'system' message documenting the
+ * transition (audit trail in-thread). Sets resolved_at on resolve.
+ */
+export async function setSupportTicketStatus(
+  sql: Sql,
+  ticketId: string,
+  status: 'awaiting_us' | 'awaiting_customer' | 'resolved' | 'closed',
+  adminUserId: string,
+) {
+  const ticketRows = await sql<{ id: string }[]>`
+    SELECT id FROM public.support_tickets WHERE id = ${ticketId} LIMIT 1
+  `;
+  if (!ticketRows[0]) throw new Error('Support ticket not found');
+
+  await sql`
+    UPDATE public.support_tickets
+    SET status = ${status},
+        resolved_at = ${status === 'resolved' ? sql`now()` : sql`NULL`},
+        updated_at = now()
+    WHERE id = ${ticketId}
+  `;
+  await sql`
+    INSERT INTO public.support_messages (ticket_id, sender_type, sender_user_id, body)
+    VALUES (${ticketId}, 'system', ${adminUserId}, ${`Ticket marked ${status.replace('_', ' ')}.`})
+  `;
+  return { ok: true as const };
+}

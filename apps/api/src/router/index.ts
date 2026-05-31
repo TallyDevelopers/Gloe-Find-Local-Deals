@@ -9,6 +9,7 @@ import { mapsRouter } from './maps.router';
 import { meRouter } from './me.router';
 import { reviewsRouter } from './reviews.router';
 import { savedRouter } from './saved.router';
+import { supportRouter } from './support.router';
 import { router } from './trpc';
 import { vendorRouter } from './vendor.router';
 import { vendorsRouter } from './vendors.router';
@@ -21,6 +22,7 @@ export const appRouter = router({
   vendors: vendorsRouter,    // public vendor browsing (consumer side)
   vendor: vendorRouter,      // vendor's own account (business side)
   saved: savedRouter,
+  support: supportRouter,
   claims: claimsRouter,
   reviews: reviewsRouter,
   me: meRouter,

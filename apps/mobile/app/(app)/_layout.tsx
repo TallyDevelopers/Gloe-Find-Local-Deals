@@ -36,6 +36,8 @@ export default function AppLayout() {
       <Stack.Screen name="checkout" options={SHEET} />
       <Stack.Screen name="search" options={{ presentation: 'modal', gestureEnabled: true }} />
       <Stack.Screen name="settings/appearance" options={SHEET} />
+      <Stack.Screen name="support/cases" options={SHEET} />
+      <Stack.Screen name="support/[id]" options={SHEET} />
     </Stack>
   );
 }

@@ -12,13 +12,14 @@ import { FeesView } from './FeesView';
 import { PayoutsView } from './PayoutsView';
 import { PulseView } from './PulseView';
 import { SettingsView } from './SettingsView';
+import { SupportView } from './SupportView';
 import { TransactionsView } from './TransactionsView';
 import { VendorsView } from './VendorsView';
 import { WaitlistView } from './WaitlistView';
 
 type WorkspaceView =
   | 'pulse' | 'transactions' | 'vendors' | 'customers'
-  | 'payouts' | 'fees' | 'waitlist' | 'audit' | 'settings';
+  | 'payouts' | 'fees' | 'support' | 'waitlist' | 'audit' | 'settings';
 
 const NAV: { key: WorkspaceView; label: string; icon: string; badgeFor?: 'failed_payouts' | 'pending_deals' }[] = [
   { key: 'pulse',        label: 'Pulse',        icon: '◐' },
@@ -27,6 +28,7 @@ const NAV: { key: WorkspaceView; label: string; icon: string; badgeFor?: 'failed
   { key: 'customers',    label: 'Customers',    icon: '☻' },
   { key: 'payouts',      label: 'Payouts',      icon: '↗', badgeFor: 'failed_payouts' },
   { key: 'fees',         label: 'Fees',         icon: '%' },
+  { key: 'support',      label: 'Support',      icon: '💬' },
   { key: 'waitlist',     label: 'Waitlist',     icon: '⋆' },
   { key: 'audit',        label: 'Audit',        icon: '☐' },
   { key: 'settings',     label: 'Settings',     icon: '⚙', badgeFor: 'pending_deals' },
@@ -148,6 +150,7 @@ export function AdminShell() {
           {view === 'customers'    ? <CustomersView preselectedId={preselectedCustomerId} onPreselectionConsumed={() => setPreselectedCustomerId(null)} /> : null}
           {view === 'payouts'      ? <PayoutsView /> : null}
           {view === 'fees'         ? <FeesView /> : null}
+          {view === 'support'      ? <SupportView /> : null}
           {view === 'waitlist'     ? <WaitlistView /> : null}
           {view === 'audit'        ? <AuditView /> : null}
           {view === 'settings'     ? <SettingsView /> : null}
