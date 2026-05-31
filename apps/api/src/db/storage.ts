@@ -14,6 +14,7 @@ const BUCKETS = {
   photo: 'deal-photos',
   video: 'deal-videos',
   review: 'review-photos',
+  support: 'support-attachments',
 } as const;
 
 export type UploadKind = keyof typeof BUCKETS;

@@ -26,6 +26,7 @@ import {
   setVendorSuspended,
 } from '../domain/admin';
 import { writeAudit } from '../domain/audit';
+import { createSignedUpload } from '../db/storage';
 import { createDeal, getDealForReview, updateDeal } from '../domain/dealCreate';
 import { cacheStaticMap } from '../domain/dealMap';
 import {
@@ -129,11 +130,44 @@ export const adminRouter = router({
       }
     }),
 
+  /**
+   * Sign a one-shot upload URL for a support attachment from god-mode. Mirrors
+   * support.signAttachmentUpload but is admin-gated.
+   */
+  signSupportAttachmentUpload: adminProcedure
+    .input(z.object({ fileExt: z.string().max(8) }))
+    .mutation(({ ctx, input }) =>
+      createSignedUpload(ctx.auth.userId, input.fileExt, 'support'),
+    ),
+
   replySupportTicket: adminProcedure
-    .input(z.object({ ticketId: z.string().uuid(), body: z.string().min(1).max(5000) }))
+    .input(
+      z.object({
+        ticketId: z.string().uuid(),
+        body: z.string().min(1).max(5000),
+        attachments: z
+          .array(
+            z.object({
+              kind: z.enum(['image', 'video']),
+              url: z.string().url(),
+              thumbnailUrl: z.string().url().optional(),
+              width: z.number().optional(),
+              height: z.number().optional(),
+            }),
+          )
+          .max(10)
+          .optional(),
+      }),
+    )
     .mutation(async ({ ctx, input }) => {
       try {
-        const result = await createAgentReply(ctx.sql, input.ticketId, input.body, ctx.auth.userId);
+        const result = await createAgentReply(
+          ctx.sql,
+          input.ticketId,
+          input.body,
+          ctx.auth.userId,
+          input.attachments,
+        );
         void writeAudit(ctx.sql, {
           action: 'support.replied',
           actorUserId: ctx.auth.userId,

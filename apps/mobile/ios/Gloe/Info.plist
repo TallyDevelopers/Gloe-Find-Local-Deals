@@ -55,6 +55,12 @@
     <string>Gloe uses your location to show aesthetic deals near you.</string>
     <key>NSLocalNetworkUsageDescription</key>
     <string>Gloe connects to a local development server on your network to load the latest app code during testing.</string>
+    <key>NSPhotoLibraryUsageDescription</key>
+    <string>Gloe needs access to your photos so you can attach pictures and videos to your support messages and reviews.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>Gloe needs camera access so you can take a photo to attach to a support message or review.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Gloe needs microphone access to record video with sound when you attach a video.</string>
     <key>NSUserActivityTypes</key>
     <array>
       <string>$(PRODUCT_BUNDLE_IDENTIFIER).expo.index_route</string>

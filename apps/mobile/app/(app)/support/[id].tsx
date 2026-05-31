@@ -15,6 +15,10 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { CachedImage } from '../../../features/image/CachedImage';
+import { AttachmentSheet } from '../../../features/support/AttachmentSheet';
+import { MessageAttachments } from '../../../features/support/MessageAttachments';
+import { useSupportUpload } from '../../../features/support/useSupportUpload';
 import { useSupport } from '../../../features/support/SupportProvider';
 
 /**
@@ -48,6 +52,8 @@ export default function SupportThreadScreen() {
   const scrollRef = useRef<ScrollView>(null);
 
   const [draft, setDraft] = useState('');
+  const [attachSheetOpen, setAttachSheetOpen] = useState(false);
+  const upload = useSupportUpload();
 
   const caseQuery = trpc.support.getCase.useQuery(
     { id: id ?? '' },
@@ -87,6 +93,7 @@ export default function SupportThreadScreen() {
         body,
         readAt: null,
         createdAt: new Date().toISOString(),
+        attachments: [],
       };
       utils.support.getCase.setData({ id }, (old) =>
         old
@@ -129,13 +136,31 @@ export default function SupportThreadScreen() {
   }, [messages.length]);
 
   const trimmed = draft.trim();
-  const canSend = trimmed.length > 0 && !reply.isPending && !!id && !isLocked;
+  const doneAttachments = upload.attachments.filter((a) => a.status === 'done');
+  // Can send with text OR attachments. Block while any upload is still in flight.
+  const canSend =
+    (trimmed.length > 0 || doneAttachments.length > 0) &&
+    !upload.isUploading &&
+    !reply.isPending &&
+    !!id &&
+    !isLocked;
 
   const onSend = () => {
     if (!canSend || !id) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    reply.mutate({ ticketId: id, body: trimmed });
+    reply.mutate({
+      ticketId: id,
+      body: trimmed,
+      attachments: doneAttachments.map((a) => ({
+        kind: a.kind,
+        url: a.url,
+        ...(a.thumbnailUrl ? { thumbnailUrl: a.thumbnailUrl } : {}),
+        width: a.width,
+        height: a.height,
+      })),
+    });
     setDraft('');
+    upload.clear();
   };
 
   if (!id) {
@@ -256,7 +281,51 @@ export default function SupportThreadScreen() {
             borderTopColor: palette.border.subtle,
           }}
         >
+          {/* Pending-attachment preview strip (thumbnails + progress + remove) */}
+          {upload.attachments.length > 0 ? (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[2], marginBottom: space[2] }}>
+              {upload.attachments.map((a) => (
+                <View key={a.localUri} style={{ position: 'relative' }}>
+                  <CachedImage
+                    uri={a.thumbnailUrl ?? a.localUri}
+                    style={{ width: 56, height: 56, borderRadius: radius.md, backgroundColor: palette.neutral[200] }}
+                  />
+                  {a.status !== 'done' ? (
+                    <View
+                      style={{
+                        position: 'absolute', inset: 0, borderRadius: radius.md,
+                        backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center',
+                      }}
+                    >
+                      <ActivityIndicator size="small" color="#fff" />
+                    </View>
+                  ) : null}
+                  <Pressable
+                    onPress={() => upload.removeAttachment(a.localUri)}
+                    hitSlop={8}
+                    style={{
+                      position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: 10,
+                      backgroundColor: palette.text.primary, alignItems: 'center', justifyContent: 'center',
+                    }}
+                  >
+                    <Text variant="caption" tone="inverse" weight="bold">×</Text>
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
           <Stack direction="row" align="flex-end" gap={2}>
+            <Pressable
+              onPress={() => setAttachSheetOpen(true)}
+              disabled={reply.isPending}
+              hitSlop={6}
+              style={{
+                width: 40, height: 48, alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <Text variant="display-sm" tone="secondary">＋</Text>
+            </Pressable>
             <View style={{ flex: 1 }}>
               <Input
                 value={draft}
@@ -305,6 +374,13 @@ export default function SupportThreadScreen() {
           </Stack>
         </View>
       )}
+
+      <AttachmentSheet
+        open={attachSheetOpen}
+        onClose={() => setAttachSheetOpen(false)}
+        onTakePhoto={() => void upload.takePhoto()}
+        onChooseLibrary={() => void upload.pickAndUpload()}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -375,9 +451,14 @@ function MessageRow({ message, palette }: { message: ThreadMessage; palette: Pal
             Gloe team
           </Text>
         ) : null}
-        <Text variant="body-md" tone="primary">
-          {message.body}
-        </Text>
+        {message.body ? (
+          <Text variant="body-md" tone="primary">
+            {message.body}
+          </Text>
+        ) : null}
+        {message.attachments && message.attachments.length > 0 ? (
+          <MessageAttachments attachments={message.attachments} />
+        ) : null}
         <Text
           variant="caption"
           tone="tertiary"

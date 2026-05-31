@@ -1,4 +1,10 @@
 import type { Sql } from '../db/client';
+import {
+  insertAttachments,
+  attachmentsForMessages,
+  type AttachmentInput,
+  type Attachment,
+} from './supportAttachments';
 
 /**
  * Consumer-side support tickets.
@@ -87,6 +93,7 @@ export interface SupportMessage {
   body: string;
   readAt: string | null;
   createdAt: string;
+  attachments: Attachment[];
 }
 
 function mapTicket(r: {
@@ -130,6 +137,7 @@ function mapMessage(r: {
     body: r.body,
     readAt: r.read_at,
     createdAt: r.created_at,
+    attachments: [],
   };
 }
 
@@ -139,6 +147,7 @@ export interface CreateTicketInput {
   subject: string;
   category?: TicketCategory | null;
   body: string;
+  attachments?: AttachmentInput[];
 }
 
 /**
@@ -155,19 +164,29 @@ export async function createTicket(
   const body = input.body.trim();
   const category = input.category ?? null;
 
-  const ticketRows = await sql<{ id: string }[]>`
-    INSERT INTO public.support_tickets (user_id, subject, category, status, last_message_at)
-    VALUES (${userId}, ${subject}, ${category}, 'awaiting_us', now())
-    RETURNING id
+  // Both inserts in ONE round-trip via a CTE — the ticket insert feeds the
+  // message insert. Halves the DB latency on this hot path (every saved second
+  // matters when the DB is a round-trip away). We RETURN the first message id
+  // too so any attachments can be hung off it without re-querying.
+  const rows = await sql<{ id: string; message_id: string }[]>`
+    WITH new_ticket AS (
+      INSERT INTO public.support_tickets (user_id, subject, category, status, last_message_at)
+      VALUES (${userId}, ${subject}, ${category}, 'awaiting_us', now())
+      RETURNING id
+    ),
+    first_message AS (
+      INSERT INTO public.support_messages (ticket_id, sender_type, sender_user_id, body)
+      SELECT id, 'customer', ${userId}, ${body} FROM new_ticket
+      RETURNING id, ticket_id
+    )
+    SELECT new_ticket.id, first_message.id AS message_id
+    FROM new_ticket, first_message
   `;
-  const ticketId = ticketRows[0]!.id;
 
-  await sql`
-    INSERT INTO public.support_messages (ticket_id, sender_type, sender_user_id, body)
-    VALUES (${ticketId}, 'customer', ${userId}, ${body})
-  `;
+  // Persist any attachments against the first message (no-op when empty).
+  await insertAttachments(sql, rows[0]!.message_id, input.attachments ?? []);
 
-  return { id: ticketId };
+  return { id: rows[0]!.id };
 }
 
 /* ─────────────── list ─────────────── */
@@ -267,9 +286,13 @@ export async function getTicketWithMessages(
     ORDER BY created_at ASC
   `;
 
+  const byMessage = await attachmentsForMessages(sql, messageRows.map((m) => m.id));
   return {
     ticket: mapTicket(ticketRows[0]!),
-    messages: messageRows.map(mapMessage),
+    messages: messageRows.map((m) => ({
+      ...mapMessage(m),
+      attachments: byMessage.get(m.id) ?? [],
+    })),
   };
 }
 
@@ -286,6 +309,7 @@ export async function addCustomerMessage(
   userId: string,
   ticketId: string,
   body: string,
+  attachments?: AttachmentInput[],
 ): Promise<SupportMessage> {
   const ownerRows = await sql<{ status: TicketStatus }[]>`
     SELECT status FROM public.support_tickets
@@ -310,6 +334,9 @@ export async function addCustomerMessage(
     RETURNING id, ticket_id, sender_type, sender_user_id, body, read_at, created_at
   `;
 
+  // Persist any attachments against the just-inserted message (no-op if none).
+  await insertAttachments(sql, inserted[0]!.id, attachments ?? []);
+
   await sql`
     UPDATE public.support_tickets
     SET status = ${next},
@@ -319,7 +346,10 @@ export async function addCustomerMessage(
     WHERE id = ${ticketId} AND user_id = ${userId}
   `;
 
-  return mapMessage(inserted[0]!);
+  // Re-read so the returned attachments carry their DB-generated ids (clients
+  // key on attachment.id). Mirrors review_photos round-tripping the saved rows.
+  const byMessage = await attachmentsForMessages(sql, [inserted[0]!.id]);
+  return { ...mapMessage(inserted[0]!), attachments: byMessage.get(inserted[0]!.id) ?? [] };
 }
 
 /* ─────────────── read receipts ─────────────── */

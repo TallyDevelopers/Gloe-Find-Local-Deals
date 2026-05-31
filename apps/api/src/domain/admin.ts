@@ -1,4 +1,9 @@
 import type { Sql } from '../db/client';
+import {
+  insertAttachments,
+  attachmentsForMessages,
+  type AttachmentInput,
+} from './supportAttachments';
 
 /* ============================================================
  * Global search — powers the ⌘K palette in god mode.
@@ -1193,6 +1198,8 @@ export async function getAdminSupportTicketDetail(sql: Sql, id: string) {
     ORDER BY created_at ASC
   `;
 
+  const byMessage = await attachmentsForMessages(sql, messages.map((m) => m.id));
+
   return {
     ticket: {
       id: t.id,
@@ -1213,6 +1220,7 @@ export async function getAdminSupportTicketDetail(sql: Sql, id: string) {
       body: m.body,
       readAt: m.read_at,
       createdAt: m.created_at,
+      attachments: byMessage.get(m.id) ?? [],
     })),
   };
 }
@@ -1227,6 +1235,7 @@ export async function createAgentReply(
   ticketId: string,
   body: string,
   adminUserId: string,
+  attachments?: AttachmentInput[],
 ) {
   const ticketRows = await sql<{ user_id: string; subject: string }[]>`
     SELECT user_id, subject FROM public.support_tickets WHERE id = ${ticketId} LIMIT 1
@@ -1234,10 +1243,13 @@ export async function createAgentReply(
   const ticket = ticketRows[0];
   if (!ticket) throw new Error('Support ticket not found');
 
-  await sql`
+  const insertedAgent = await sql<{ id: string }[]>`
     INSERT INTO public.support_messages (ticket_id, sender_type, sender_user_id, body)
     VALUES (${ticketId}, 'agent', ${adminUserId}, ${body})
+    RETURNING id
   `;
+  await insertAttachments(sql, insertedAgent[0]!.id, attachments ?? []);
+
   await sql`
     UPDATE public.support_tickets
     SET status = 'awaiting_customer', last_message_at = now(), updated_at = now()

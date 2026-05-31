@@ -6,6 +6,7 @@ import {
   Clock,
   Globe,
   Heart,
+  Image as ImageIcon,
   Instagram,
   type LucideProps,
   MapPin,
@@ -40,6 +41,7 @@ const ICONS = {
   heart: Heart,
   share: Share,
   camera: Camera,
+  image: ImageIcon,
 
   // Contact / vendor storefront
   phone: Phone,

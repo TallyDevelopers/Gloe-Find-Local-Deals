@@ -408,6 +408,29 @@ function Bubble({ m }: { m: Message }) {
       >
         {m.body}
       </div>
+      {m.attachments && m.attachments.length > 0 ? (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6, justifyContent: isAgent ? 'flex-end' : 'flex-start' }}>
+          {m.attachments.map((a) =>
+            a.kind === 'video' ? (
+              <video
+                key={a.id}
+                src={a.url}
+                controls
+                style={{ width: 200, borderRadius: 'var(--radius-md)', background: '#000' }}
+              />
+            ) : (
+              <a key={a.id} href={a.url} target="_blank" rel="noreferrer">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={a.thumbnailUrl ?? a.url}
+                  alt="attachment"
+                  style={{ width: 120, height: 120, objectFit: 'cover', borderRadius: 'var(--radius-md)', display: 'block' }}
+                />
+              </a>
+            ),
+          )}
+        </div>
+      ) : null}
       <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 3, textAlign: isAgent ? 'right' : 'left' }}>
         {m.senderType === 'agent' ? 'You · Gloē' : m.senderType === 'system' ? 'System' : 'Customer'} · {relativeTime(m.createdAt)}
       </div>
