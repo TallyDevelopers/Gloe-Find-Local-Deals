@@ -158,3 +158,120 @@ export function expandQuery(raw: string): ExpandedQuery {
 
   return { normalized, terms: [...terms], matchedGroups };
 }
+
+/* ============================================================
+ * Title → treatment detection (the reverse of expandQuery).
+ *
+ * Given a deal title a vendor typed ("Botox — first-timer special"), figure
+ * out which treatment subtype it is ("Botox") so we can auto-tag the deal with
+ * near-zero vendor effort. Powers the "Treatment: Botox · change" chip in the
+ * post-deal form and the one-time backfill of existing deals.
+ * ============================================================ */
+
+/** Aliases keyed by lowercased subtype display name → phrases that imply it. */
+const SUBTYPE_ALIASES: Record<string, string[]> = {
+  'botox': ['botox'],
+  'daxxify': ['daxxify', 'daxi'],
+  'dermal filler': ['dermal filler', 'filler', 'fillers', 'lip filler', 'cheek filler', 'jawline filler', 'chin filler', 'lip flip'],
+  'dysport': ['dysport'],
+  'jeuveau': ['jeuveau', 'newtox'],
+  'juvederm volbella': ['volbella', 'juvederm volbella'],
+  'juvederm voluma': ['voluma', 'juvederm voluma'],
+  'restylane kysse': ['kysse', 'restylane kysse'],
+  'restylane lyft': ['lyft', 'restylane lyft'],
+  'rha 3': ['rha', 'rha 3'],
+  'sculptra': ['sculptra'],
+  'xeomin': ['xeomin'],
+  'chemical peel': ['chemical peel', 'vi peel', 'peel'],
+  'facials / hydrafacial': ['hydrafacial', 'facial', 'facials', 'dermaplaning'],
+  'hydrafacial': ['hydrafacial'],
+  'microneedling': ['microneedling', 'micro needling', 'collagen induction'],
+  'microneedling + prp': ['microneedling prp', 'microneedling + prp', 'vampire facial', 'prp facial'],
+  'morpheus8 rf': ['morpheus8', 'morpheus 8', 'morpheus'],
+  'rf microneedling / skin tightening': ['rf microneedling', 'skin tightening', 'radiofrequency microneedling'],
+  'bbl / ipl': ['bbl', 'ipl', 'photofacial', 'photo facial'],
+  'halo': ['halo'],
+  'ipl / laser skin treatments': ['ipl', 'laser skin'],
+  'moxi': ['moxi'],
+  'laser hair removal': ['laser hair removal', 'laser hair', 'lhr'],
+  'body contouring': ['body contouring', 'body contour', 'body sculpting'],
+  'coolsculpting': ['coolsculpting', 'coolsculpt', 'fat freeze', 'fat freezing'],
+  'b12 / wellness shots': ['b12', 'b-12', 'vitamin shot', 'wellness shot'],
+  'hormone therapy': ['hormone therapy', 'hormone', 'hrt', 'bhrt', 'testosterone', 'trt'],
+  'iv hydration': ['iv hydration', 'iv drip', 'iv therapy', 'iv'],
+  'medical weight management consultation': ['weight management', 'weight loss consultation', 'weight loss consult'],
+  'myers cocktail iv': ['myers cocktail', 'myers'],
+  'nad+ iv': ['nad+', 'nad'],
+  'semaglutide': ['semaglutide', 'ozempic', 'wegovy', 'skinny shot'],
+  'weight loss (tirzepatide)': ['tirzepatide', 'mounjaro', 'zepbound'],
+  'brow services': ['brow', 'brows', 'eyebrow', 'microblading', 'brow lamination'],
+  'lash services': ['lash', 'lashes', 'lash lift', 'lash extensions'],
+  'spray tans': ['spray tan', 'spray tanning', 'airbrush tan'],
+  'teeth whitening': ['teeth whitening', 'whitening'],
+  'waxing / sugaring': ['waxing', 'wax', 'sugaring', 'brazilian wax'],
+  'latisse (lashes)': ['latisse'],
+  'upneeq (eyelid lift)': ['upneeq', 'eyelid lift'],
+};
+
+/** Brand/product aliases — a match on one of these is high-confidence (auto-select). */
+const BRAND_ALIASES = new Set([
+  'botox', 'daxxify', 'daxi', 'dysport', 'jeuveau', 'newtox', 'volbella', 'voluma',
+  'kysse', 'lyft', 'rha', 'sculptra', 'xeomin', 'morpheus8', 'morpheus', 'hydrafacial',
+  'coolsculpting', 'coolsculpt', 'semaglutide', 'ozempic', 'wegovy', 'tirzepatide',
+  'mounjaro', 'zepbound', 'latisse', 'upneeq', 'halo', 'moxi', 'bbl', 'nad', 'nad+',
+]);
+
+export interface SubtypeRef {
+  slug: string;
+  displayName: string;
+  /** Used to disambiguate (e.g. "Laser Hair Removal" lives under both Body and Laser). */
+  categorySlug?: string | null;
+}
+
+export interface DetectedTreatment {
+  subtypeSlug: string;
+  displayName: string;
+  /** 'high' ⇒ a brand/product name was found (safe to auto-select). 'medium' ⇒ a
+   *  generic term ("filler", "facial") matched — suggest, but let the vendor confirm. */
+  confidence: 'high' | 'medium';
+}
+
+/**
+ * Detect the treatment subtype implied by a piece of text (usually the deal
+ * title). When `categorySlug` is given, only subtypes in that category are
+ * considered — which resolves the handful of names that exist under two
+ * categories. Returns the most specific match, or null if nothing lands.
+ */
+export function detectTreatment(
+  text: string,
+  subtypes: SubtypeRef[],
+  categorySlug?: string | null,
+): DetectedTreatment | null {
+  const norm = ` ${normalizeQuery(text)} `;
+  if (norm.trim().length < 2) return null;
+
+  const pool = categorySlug
+    ? subtypes.filter((s) => !s.categorySlug || s.categorySlug === categorySlug)
+    : subtypes;
+
+  let best: { subtypeSlug: string; displayName: string; score: number; confident: boolean } | null = null;
+
+  for (const s of pool) {
+    const aliases = SUBTYPE_ALIASES[s.displayName.toLowerCase()] ?? [s.displayName.toLowerCase()];
+    for (const alias of aliases) {
+      // Whole-word match: normalizeQuery already turned punctuation into spaces,
+      // so space-padding gives a clean word boundary ("iv" won't hit "festive").
+      if (!norm.includes(` ${alias} `)) continue;
+      const confident = BRAND_ALIASES.has(alias);
+      const score = alias.length;
+      const beats =
+        !best ||
+        (confident && !best.confident) ||
+        (confident === best.confident && score > best.score);
+      if (beats) best = { subtypeSlug: s.slug, displayName: s.displayName, score, confident };
+    }
+  }
+
+  if (!best) return null;
+  return { subtypeSlug: best.subtypeSlug, displayName: best.displayName, confidence: best.confident ? 'high' : 'medium' };
+}

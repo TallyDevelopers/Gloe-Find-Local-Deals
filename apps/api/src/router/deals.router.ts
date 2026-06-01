@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { getDeal, getTrendingTreatments, listDeals, suggestSearchTerms } from '../domain/deals';
+import { detectSubtypeForText, getDeal, getTrendingTreatments, listDeals, suggestSearchTerms } from '../domain/deals';
 import { publicProcedure, router } from './trpc';
 
 const sortEnum = z.enum(['relevance', 'distance', 'price', 'rating', 'discount']);
@@ -80,6 +80,14 @@ export const dealsRouter = router({
       }),
     )
     .query(({ ctx, input }) => suggestSearchTerms(ctx.sql, input.q, input)),
+
+  /**
+   * Auto-detect the treatment subtype from a deal title (vendor post form).
+   * "Botox — first-timer special" → { subtypeSlug: 'botox', confidence: 'high' }.
+   */
+  detectSubtype: publicProcedure
+    .input(z.object({ title: z.string().max(200), categorySlug: z.string().optional() }))
+    .query(({ ctx, input }) => detectSubtypeForText(ctx.sql, input.title, input.categorySlug)),
 
   /** Popular treatments near the user — zero-state chips for the search screen. */
   trending: publicProcedure

@@ -1,4 +1,4 @@
-import { expandQuery } from './aestheticSynonyms';
+import { detectTreatment, expandQuery, type DetectedTreatment } from './aestheticSynonyms';
 import type { Sql } from '../db/client';
 
 /** Sort modes for the deal list / search. Default = relevance-blended ranking. */
@@ -517,6 +517,29 @@ export async function getTrendingTreatments(
     categorySlug: r.category_slug,
     dealCount: Number(r.deal_count),
   }));
+}
+
+/**
+ * Detect the treatment subtype implied by some text (the deal title) against
+ * the live taxonomy. Powers the post-deal form's auto-tag chip. Returns null if
+ * nothing confidently lands.
+ */
+export async function detectSubtypeForText(
+  sql: Sql,
+  text: string,
+  categorySlug?: string | null,
+): Promise<DetectedTreatment | null> {
+  if (!text || text.trim().length < 2) return null;
+  const subtypes = await sql<{ slug: string; display_name: string; category_slug: string }[]>`
+    SELECT s.slug, s.display_name, c.slug AS category_slug
+    FROM public.service_subtypes s
+    JOIN public.service_categories c ON c.id = s.category_id
+  `;
+  return detectTreatment(
+    text,
+    subtypes.map((s) => ({ slug: s.slug, displayName: s.display_name, categorySlug: s.category_slug })),
+    categorySlug,
+  );
 }
 
 export async function getDeal(sql: Sql, dealId: string): Promise<DealDetail | null> {
