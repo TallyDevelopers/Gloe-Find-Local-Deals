@@ -42,3 +42,17 @@ export function prefetchImages(uris: (string | null | undefined)[]) {
   const valid = uris.filter((u): u is string => !!u);
   if (valid.length) void Image.prefetch(valid, { cachePolicy: 'memory-disk' });
 }
+
+/**
+ * Rewrite a Supabase public-storage URL to its on-the-fly image transform so we
+ * fetch a resized version instead of the full multi-MB original. A 6MB phone
+ * photo → ~170KB at width 240. Falls back to the original if it's not a
+ * Supabase public-object URL (e.g. a local file:// or already-transformed URL).
+ */
+export function resizedUrl(url: string | null | undefined, width: number): string | undefined {
+  if (!url) return undefined;
+  if (!url.includes('/storage/v1/object/public/')) return url;
+  const transformed = url.replace('/storage/v1/object/public/', '/storage/v1/render/image/public/');
+  const sep = transformed.includes('?') ? '&' : '?';
+  return `${transformed}${sep}width=${width}&quality=75`;
+}

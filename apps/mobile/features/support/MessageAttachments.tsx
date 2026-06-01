@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Modal, Pressable, StatusBar, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { CachedImage } from '../image/CachedImage';
+import { CachedImage, resizedUrl } from '../image/CachedImage';
 
 /**
  * A single attachment on a support message. Shape is the camelCase projection
@@ -49,7 +49,8 @@ export function MessageAttachments({ attachments }: MessageAttachmentsProps) {
 
   function onPress(att: MessageAttachment) {
     if (att.kind === 'image') {
-      setViewerUri(att.url);
+      // Full-screen: a screen-sized resize (~1200px), not the raw multi-MB file.
+      setViewerUri(resizedUrl(att.url, 1200) ?? att.url);
     } else {
       // No bundled video player — hand off to the OS. See TODO above.
       void Linking.openURL(att.url);
@@ -67,7 +68,9 @@ export function MessageAttachments({ attachments }: MessageAttachmentsProps) {
         }}
       >
         {attachments.map((att) => {
-          const previewUri = att.thumbnailUrl ?? att.url;
+          // Load a small resized version for the in-chat thumbnail, not the
+          // full multi-MB original (6MB phone photo → ~170KB at width 300).
+          const previewUri = att.kind === 'image' ? resizedUrl(att.url, 300) : (att.thumbnailUrl ?? att.url);
           return (
             <Pressable
               key={att.id}

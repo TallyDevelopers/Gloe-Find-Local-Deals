@@ -140,7 +140,10 @@ export function useSupportUpload(): UseSupportUpload {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images', 'videos'],
       allowsMultipleSelection: true,
-      quality: 0.8,
+      // 0.5 keeps support photos legible while cutting upload size a lot (full-res
+      // phone JPEGs are 5–6MB at 0.8). Display thumbnails are resized server-side
+      // via Supabase image transforms regardless — this trims the source + storage.
+      quality: 0.5,
       videoMaxDuration: 60,
     });
     if (result.canceled) return;
@@ -157,7 +160,7 @@ export function useSupportUpload(): UseSupportUpload {
     }
     const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ['images', 'videos'],
-      quality: 0.8,
+      quality: 0.5,
       videoMaxDuration: 60,
     });
     if (result.canceled) return;
