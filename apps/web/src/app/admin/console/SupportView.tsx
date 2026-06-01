@@ -166,6 +166,166 @@ export function SupportView() {
   );
 }
 
+type Customer = RouterOutputs['admin']['supportTicketCustomer'];
+type Order = RouterOutputs['admin']['supportTicketOrders']['orders'][number];
+
+function relTime(iso: string | null): string {
+  if (!iso) return '—';
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+  if (days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 30) return `${days}d ago`;
+  if (days < 365) return `${Math.floor(days / 30)}mo ago`;
+  return `${Math.floor(days / 365)}y ago`;
+}
+
+/** Boss view — the customer at a glance: who, money, behavior. */
+function CustomerBossView({ customer: c, loading }: { customer: Customer | null; loading: boolean }) {
+  if (loading || !c) {
+    return <div style={{ padding: '14px 24px', fontSize: 12, color: 'var(--text-tertiary)', borderBottom: '1px solid var(--border-subtle)' }}>Loading customer…</div>;
+  }
+  const netCents = c.lifetimePaidCents - c.refundedCents;
+  // Quick "who is this" read: whale, refund-heavy, new, or normal.
+  const refundRate = c.lifetimePaidCents > 0 ? c.refundedCents / c.lifetimePaidCents : 0;
+  const tags: { label: string; bg: string; color: string }[] = [];
+  if (c.lifetimePaidCents >= 50000) tags.push({ label: '💎 High value', bg: 'var(--brand-50)', color: 'var(--brand-700)' });
+  if (refundRate >= 0.3) tags.push({ label: '⚠ Refund-heavy', bg: 'rgba(218,79,71,0.10)', color: 'var(--error)' });
+  if (c.purchaseCount <= 1) tags.push({ label: '🆕 New', bg: 'var(--surface-secondary)', color: 'var(--text-secondary)' });
+  if (c.ticketCount >= 4) tags.push({ label: '🔁 Frequent contact', bg: 'var(--surface-secondary)', color: 'var(--text-secondary)' });
+
+  const initials = (c.name?.[0] ?? c.email?.[0] ?? '?').toUpperCase();
+  const Stat = ({ label, value, accent }: { label: string; value: string; accent?: boolean }) => (
+    <div style={{ flex: 1, minWidth: 72, padding: '8px 10px', background: 'var(--surface-elevated)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-subtle)' }}>
+      <div style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</div>
+      <div style={{ fontSize: 16, fontWeight: 700, marginTop: 1, color: accent ? 'var(--brand-600)' : 'var(--text-primary)' }}>{value}</div>
+    </div>
+  );
+
+  return (
+    <div style={{ padding: '14px 24px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        {c.imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={c.imageUrl} alt="" style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover' }} />
+        ) : (
+          <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'var(--brand-100)', color: 'var(--brand-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 18 }}>{initials}</div>
+        )}
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)' }}>{c.name ?? c.email ?? 'Customer'}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {c.email ? <span>{c.email}</span> : null}
+            {c.phone ? <span>· {c.phone}</span> : null}
+            <span>· member {relTime(c.memberSince)}</span>
+            {c.city ? <span>· {c.city}</span> : null}
+          </div>
+        </div>
+      </div>
+
+      {tags.length ? (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {tags.map((t) => (
+            <span key={t.label} style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 999, background: t.bg, color: t.color }}>{t.label}</span>
+          ))}
+        </div>
+      ) : null}
+
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <Stat label="Net spend" value={money(netCents)} accent />
+        <Stat label="Orders" value={String(c.purchaseCount)} />
+        <Stat label="Redeemed" value={String(c.redemptionCount)} />
+        <Stat label="Refunded" value={c.refundedCents > 0 ? money(c.refundedCents) : '$0'} />
+        <Stat label="Tickets" value={`${c.ticketCount}${c.openTicketCount > 1 ? ` · ${c.openTicketCount} open` : ''}`} />
+      </div>
+    </div>
+  );
+}
+
+function money(cents: number): string {
+  return '$' + (cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function shortDate(iso: string | null): string {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+/**
+ * Rewrite a Supabase public-storage URL to its on-the-fly image transform
+ * (a resized thumbnail) so god-mode doesn't pull the full multi-MB original to
+ * render a tiny preview. A 6MB phone photo → ~280KB at width=240. Falls back to
+ * the original URL if it's not a Supabase public-object URL.
+ */
+function thumbUrl(url: string, width: number): string {
+  if (!url.includes('/storage/v1/object/public/')) return url;
+  const transformed = url.replace('/storage/v1/object/public/', '/storage/v1/render/image/public/');
+  const sep = transformed.includes('?') ? '&' : '?';
+  return `${transformed}${sep}width=${width}&quality=70`;
+}
+
+/** Customer order history shown in the support drawer. Collapsible + searchable;
+ * the linked order is flagged. Server caps to recent 50 (search to find older). */
+function OrdersPanel({ orders, linkedClaimId, loading, search, onSearch }: { orders: Order[]; linkedClaimId: string | null; loading: boolean; search: string; onSearch: (s: string) => void }) {
+  const [open, setOpen] = useState(true);
+  const claimStatusColor = (s: string) =>
+    s === 'redeemed' ? 'var(--brand-600)' : s === 'active' ? 'var(--accent-500)' : 'var(--text-tertiary)';
+
+  return (
+    <div style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--surface-secondary)' }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 24px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}
+      >
+        <span>Orders{orders.length ? ` · ${orders.length}${orders.length >= 50 ? '+' : ''}` : ''}</span>
+        <span>{open ? '▾' : '▸'}</span>
+      </button>
+      {open ? (
+        <div style={{ padding: '0 16px 12px' }}>
+          <input
+            value={search}
+            onChange={(e) => onSearch(e.target.value)}
+            placeholder="Search orders by deal or vendor…"
+            style={{ width: '100%', padding: '7px 10px', marginBottom: 8, borderRadius: 'var(--radius-md)', border: '1px solid var(--border-default)', background: 'var(--surface-elevated)', fontSize: 12, color: 'var(--text-primary)' }}
+          />
+          <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+          {loading ? (
+            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: '6px 0' }}>Loading…</div>
+          ) : orders.length === 0 ? (
+            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: '6px 0' }}>{search ? 'No orders match.' : 'No orders for this customer.'}</div>
+          ) : null}
+          {orders.map((o) => {
+            const linked = o.claimId === linkedClaimId;
+            const refunded = o.refundedCents > 0;
+            return (
+              <div
+                key={o.claimId}
+                style={{
+                  padding: '10px 12px', marginTop: 6, borderRadius: 'var(--radius-md)',
+                  background: linked ? 'var(--brand-50)' : 'var(--surface-elevated)',
+                  border: linked ? '1px solid var(--brand-300, var(--border-default))' : '1px solid var(--border-subtle)',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline' }}>
+                  <strong style={{ fontSize: 13, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {linked ? '📌 ' : ''}{o.dealTitle}
+                  </strong>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--brand-600)', whiteSpace: 'nowrap' }}>{money(o.consumerPaidCents)}</span>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 3, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span>{o.vendorName}</span>
+                  <span>· bought {shortDate(o.purchasedAt)}</span>
+                  <span style={{ color: claimStatusColor(o.claimStatus), fontWeight: 600, textTransform: 'capitalize' }}>· {o.claimStatus}</span>
+                  {o.redeemedAt ? <span>· redeemed {shortDate(o.redeemedAt)}</span> : <span>· expires {shortDate(o.expiresAt)}</span>}
+                  {refunded ? <span style={{ color: 'var(--error)', fontWeight: 600 }}>· refunded {money(o.refundedCents)}</span> : null}
+                </div>
+              </div>
+            );
+          })}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function StatusPill({ status }: { status: string }) {
   const meta = STATUS_META[status] ?? { label: status, color: 'var(--text-secondary)', bg: 'var(--surface-secondary)' };
   return (
@@ -200,6 +360,9 @@ function SupportTicketDrawer({
 }) {
   const q = trpc.admin.supportTicketDetail.useQuery({ id });
   const d = q.data;
+  const customerQ = trpc.admin.supportTicketCustomer.useQuery({ ticketId: id });
+  const [orderSearch, setOrderSearch] = useState('');
+  const ordersQ = trpc.admin.supportTicketOrders.useQuery({ ticketId: id, search: orderSearch || undefined });
 
   const [reply, setReply] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -277,6 +440,19 @@ function SupportTicketDrawer({
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, color: 'var(--text-tertiary)', cursor: 'pointer', lineHeight: 1 }}>×</button>
         </div>
+
+        {/* Boss view — who you're dealing with, at a glance. */}
+        <CustomerBossView customer={customerQ.data ?? null} loading={customerQ.isLoading} />
+
+        {/* Customer order history — the context for the ticket. The linked order
+            (if the customer tagged one) is flagged. */}
+        <OrdersPanel
+          orders={ordersQ.data?.orders ?? []}
+          linkedClaimId={ordersQ.data?.linkedClaimId ?? null}
+          loading={ordersQ.isLoading}
+          search={orderSearch}
+          onSearch={setOrderSearch}
+        />
 
         {!d ? (
           <div style={{ padding: 24, color: 'var(--text-tertiary)' }}>Loading…</div>
@@ -422,9 +598,10 @@ function Bubble({ m }: { m: Message }) {
               <a key={a.id} href={a.url} target="_blank" rel="noreferrer">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={a.thumbnailUrl ?? a.url}
+                  src={thumbUrl(a.thumbnailUrl ?? a.url, 240)}
                   alt="attachment"
-                  style={{ width: 120, height: 120, objectFit: 'cover', borderRadius: 'var(--radius-md)', display: 'block' }}
+                  loading="lazy"
+                  style={{ width: 120, height: 120, objectFit: 'cover', borderRadius: 'var(--radius-md)', display: 'block', background: 'var(--surface-secondary)' }}
                 />
               </a>
             ),

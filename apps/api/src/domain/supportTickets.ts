@@ -148,6 +148,8 @@ export interface CreateTicketInput {
   category?: TicketCategory | null;
   body: string;
   attachments?: AttachmentInput[];
+  /** Optional: the voucher/order this ticket is about, so god-mode knows. */
+  claimId?: string | null;
 }
 
 /**
@@ -163,15 +165,20 @@ export async function createTicket(
   const subject = input.subject.trim();
   const body = input.body.trim();
   const category = input.category ?? null;
+  const claimId = input.claimId ?? null;
 
   // Both inserts in ONE round-trip via a CTE — the ticket insert feeds the
   // message insert. Halves the DB latency on this hot path (every saved second
   // matters when the DB is a round-trip away). We RETURN the first message id
   // too so any attachments can be hung off it without re-querying.
+  // claim_id is only kept if it's actually the customer's claim (IDOR guard in SQL).
   const rows = await sql<{ id: string; message_id: string }[]>`
-    WITH new_ticket AS (
-      INSERT INTO public.support_tickets (user_id, subject, category, status, last_message_at)
-      VALUES (${userId}, ${subject}, ${category}, 'awaiting_us', now())
+    WITH owned_claim AS (
+      SELECT id FROM public.claims WHERE id = ${claimId} AND user_id = ${userId}
+    ),
+    new_ticket AS (
+      INSERT INTO public.support_tickets (user_id, subject, category, status, last_message_at, claim_id)
+      VALUES (${userId}, ${subject}, ${category}, 'awaiting_us', now(), (SELECT id FROM owned_claim))
       RETURNING id
     ),
     first_message AS (
@@ -424,4 +431,224 @@ export async function customerCloseTicket(
   `;
   if (rows.length === 0) throw new Error('NOT_FOUND');
   return mapTicket(rows[0]!);
+}
+
+/* ─────────────── orders (for ticket context) ─────────────── */
+
+export interface CustomerOrder {
+  claimId: string;
+  transactionId: string | null;
+  dealTitle: string;
+  vendorName: string;
+  consumerPaidCents: number;
+  refundedCents: number;
+  txnStatus: string | null;
+  claimStatus: string; // active / redeemed / expired / cancelled
+  purchasedAt: string | null;
+  redeemedAt: string | null;
+  expiresAt: string | null;
+}
+
+/**
+ * Map a claims+transactions row to a CustomerOrder. Shared by the consumer
+ * picker (their own orders) and the god-mode ticket drawer (the ticket owner's
+ * orders). Reads the frozen claim snapshot for title/vendor so it's accurate
+ * even if the deal later changes.
+ */
+// Bound the result set — even a power user's history stays renderable. Recency
+// + optional text search (deal title / vendor name in the frozen snapshot)
+// covers "find the order this ticket is about" without server pagination.
+const ORDERS_LIMIT = 50;
+
+function ordersQuery(sql: Sql, userId: string, search?: string) {
+  const like = search && search.trim().length >= 2 ? `%${search.trim()}%` : null;
+  return sql<{
+    claim_id: string;
+    transaction_id: string | null;
+    deal_title: string | null;
+    vendor_name: string | null;
+    consumer_paid_cents: number | null;
+    refunded_cents: number | null;
+    txn_status: string | null;
+    claim_status: string;
+    purchased_at: string | null;
+    redeemed_at: string | null;
+    expires_at: string | null;
+  }[]>`
+    SELECT
+      c.id AS claim_id,
+      c.transaction_id,
+      (c.snapshot ->> 'dealTitle') AS deal_title,
+      (c.snapshot ->> 'vendorName') AS vendor_name,
+      t.consumer_paid_cents,
+      t.refunded_cents,
+      t.status AS txn_status,
+      c.status AS claim_status,
+      COALESCE(t.paid_at, c.created_at) AS purchased_at,
+      c.redeemed_at,
+      c.expires_at
+    FROM public.claims c
+    LEFT JOIN public.transactions t ON t.id = c.transaction_id
+    WHERE c.user_id = ${userId}
+      AND (${like}::text IS NULL
+           OR (c.snapshot ->> 'dealTitle') ILIKE ${like}
+           OR (c.snapshot ->> 'vendorName') ILIKE ${like})
+    ORDER BY COALESCE(t.paid_at, c.created_at) DESC
+    LIMIT ${ORDERS_LIMIT}
+  `;
+}
+
+function mapOrder(r: {
+  claim_id: string;
+  transaction_id: string | null;
+  deal_title: string | null;
+  vendor_name: string | null;
+  consumer_paid_cents: number | null;
+  refunded_cents: number | null;
+  txn_status: string | null;
+  claim_status: string;
+  purchased_at: string | null;
+  redeemed_at: string | null;
+  expires_at: string | null;
+}): CustomerOrder {
+  return {
+    claimId: r.claim_id,
+    transactionId: r.transaction_id,
+    dealTitle: r.deal_title ?? 'Deal',
+    vendorName: r.vendor_name ?? '',
+    consumerPaidCents: r.consumer_paid_cents ?? 0,
+    refundedCents: r.refunded_cents ?? 0,
+    txnStatus: r.txn_status,
+    claimStatus: r.claim_status,
+    purchasedAt: r.purchased_at,
+    redeemedAt: r.redeemed_at,
+    expiresAt: r.expires_at,
+  };
+}
+
+/** Consumer: the signed-in user's own orders, for the "which order?" picker. */
+export async function listMyOrders(sql: Sql, userId: string, search?: string): Promise<CustomerOrder[]> {
+  const rows = await ordersQuery(sql, userId, search);
+  return rows.map(mapOrder);
+}
+
+/** Admin: a ticket's customer's orders (recency-capped, searchable). The
+ * tagged order is always returned even if outside the recent window/search. */
+export async function getCustomerOrdersForTicket(
+  sql: Sql,
+  ticketId: string,
+  search?: string,
+): Promise<{ orders: CustomerOrder[]; linkedClaimId: string | null }> {
+  const owner = await sql<{ user_id: string; claim_id: string | null }[]>`
+    SELECT user_id, claim_id FROM public.support_tickets WHERE id = ${ticketId} LIMIT 1
+  `;
+  if (owner.length === 0) throw new Error('NOT_FOUND');
+  const linkedClaimId = owner[0]!.claim_id;
+  const rows = await ordersQuery(sql, owner[0]!.user_id, search);
+  let orders = rows.map(mapOrder);
+
+  // Guarantee the tagged order is present even if it's older than the recent
+  // window or doesn't match the search — the agent must always see the order
+  // the customer flagged.
+  if (linkedClaimId && !orders.some((o) => o.claimId === linkedClaimId)) {
+    const tagged = (await ordersQuery(sql, owner[0]!.user_id)).map(mapOrder).find((o) => o.claimId === linkedClaimId);
+    if (tagged) orders = [tagged, ...orders];
+  }
+  return { orders, linkedClaimId };
+}
+
+/* ─────────────── customer boss-view (for the support drawer) ─────────────── */
+
+export interface SupportTicketCustomer {
+  userId: string;
+  displayId: string;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  imageUrl: string | null;
+  city: string | null;
+  memberSince: string;
+  // Money
+  lifetimePaidCents: number;
+  refundedCents: number;
+  purchaseCount: number;
+  redemptionCount: number;
+  // Activity
+  lastPurchaseAt: string | null;
+  ticketCount: number;        // total support tickets this customer has opened
+  openTicketCount: number;    // currently open (not resolved/closed)
+}
+
+/**
+ * Rich customer profile for the god-mode support drawer header. One query each
+ * for identity / money / activity so the agent sees who they're dealing with —
+ * whale vs refund-farmer vs first-timer — before they reply. Keyed off the
+ * ticket's owner.
+ */
+export async function getSupportTicketCustomer(
+  sql: Sql,
+  ticketId: string,
+): Promise<SupportTicketCustomer> {
+  const owner = await sql<{ user_id: string }[]>`
+    SELECT user_id FROM public.support_tickets WHERE id = ${ticketId} LIMIT 1
+  `;
+  if (owner.length === 0) throw new Error('NOT_FOUND');
+  const userId = owner[0]!.user_id;
+
+  const rows = await sql<{
+    display_id: string;
+    first_name: string | null;
+    last_name: string | null;
+    email: string | null;
+    phone: string | null;
+    image_url: string | null;
+    selected_city: string | null;
+    created_at: string;
+    lifetime_paid_cents: number;
+    refunded_cents: number;
+    purchase_count: number;
+    redemption_count: number;
+    last_purchase_at: string | null;
+    ticket_count: number;
+    open_ticket_count: number;
+  }[]>`
+    SELECT
+      u.display_id, u.first_name, u.last_name, u.email, u.phone, u.image_url, u.selected_city, u.created_at,
+      COALESCE((SELECT SUM(consumer_paid_cents) FROM public.transactions t
+                WHERE t.user_id = u.id AND t.status IN ('paid','released','partially_refunded')), 0)::int AS lifetime_paid_cents,
+      COALESCE((SELECT SUM(refunded_cents) FROM public.transactions t
+                WHERE t.user_id = u.id), 0)::int AS refunded_cents,
+      COALESCE((SELECT COUNT(*) FROM public.transactions t
+                WHERE t.user_id = u.id AND t.status IN ('paid','released','partially_refunded')), 0)::int AS purchase_count,
+      COALESCE((SELECT COUNT(*) FROM public.claims c
+                WHERE c.user_id = u.id AND c.status = 'redeemed'), 0)::int AS redemption_count,
+      (SELECT MAX(t.paid_at) FROM public.transactions t WHERE t.user_id = u.id) AS last_purchase_at,
+      COALESCE((SELECT COUNT(*) FROM public.support_tickets st WHERE st.user_id = u.id), 0)::int AS ticket_count,
+      COALESCE((SELECT COUNT(*) FROM public.support_tickets st
+                WHERE st.user_id = u.id AND st.status NOT IN ('resolved','closed')), 0)::int AS open_ticket_count
+    FROM public.users u
+    WHERE u.id = ${userId}
+    LIMIT 1
+  `;
+  const r = rows[0];
+  if (!r) throw new Error('NOT_FOUND');
+
+  const name = [r.first_name, r.last_name].filter(Boolean).join(' ') || null;
+  return {
+    userId,
+    displayId: r.display_id,
+    name,
+    email: r.email,
+    phone: r.phone,
+    imageUrl: r.image_url,
+    city: r.selected_city,
+    memberSince: r.created_at,
+    lifetimePaidCents: r.lifetime_paid_cents,
+    refundedCents: r.refunded_cents,
+    purchaseCount: r.purchase_count,
+    redemptionCount: r.redemption_count,
+    lastPurchaseAt: r.last_purchase_at,
+    ticketCount: r.ticket_count,
+    openTicketCount: r.open_ticket_count,
+  };
 }

@@ -129,9 +129,9 @@ export default function SupportCasesScreen() {
                   createMutation.reset();
                   setComposing(false);
                 }}
-                onSubmit={(subject, category, body) => {
+                onSubmit={(subject, category, body, claimId) => {
                   createMutation.mutate(
-                    { subject, category, body },
+                    { subject, category, body, ...(claimId ? { claimId } : {}) },
                     {
                       onSuccess: (created) => {
                         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -279,7 +279,7 @@ function ComposeForm({
   submitting: boolean;
   error: boolean;
   onCancel: () => void;
-  onSubmit: (subject: string, category: TicketCategory | undefined, body: string) => void;
+  onSubmit: (subject: string, category: TicketCategory | undefined, body: string, claimId: string | undefined) => void;
   onFocusBody: () => void;
 }) {
   const { color: palette } = useTheme();
@@ -287,6 +287,12 @@ function ComposeForm({
   const [subject, setSubject] = useState('');
   const [category, setCategory] = useState<TicketCategory | undefined>(undefined);
   const [body, setBody] = useState('');
+  const [claimId, setClaimId] = useState<string | undefined>(undefined);
+  const [orderSearch, setOrderSearch] = useState('');
+  const ordersQuery = trpc.support.myOrders.useQuery(
+    orderSearch.trim().length >= 2 ? { search: orderSearch.trim() } : undefined,
+  );
+  const orders = ordersQuery.data ?? [];
 
   const trimmedSubject = subject.trim();
   const trimmedBody = body.trim();
@@ -347,6 +353,55 @@ function ComposeForm({
         </View>
       </Stack>
 
+      {orders.length > 0 || orderSearch.length > 0 ? (
+        <Stack gap={2}>
+          <Text variant="label" tone="secondary">
+            Which order is this about? (optional)
+          </Text>
+          {/* Search appears once the list is long enough to need it. */}
+          {orders.length > 6 || orderSearch.length > 0 ? (
+            <Input
+              placeholder="Search your orders…"
+              value={orderSearch}
+              onChangeText={setOrderSearch}
+              autoCapitalize="none"
+            />
+          ) : null}
+          <Stack gap={2}>
+            {orders.map((o) => {
+              const selected = claimId === o.claimId;
+              return (
+                <Pressable
+                  key={o.claimId}
+                  onPress={() => setClaimId(selected ? undefined : o.claimId)}
+                  style={{
+                    paddingHorizontal: space[4],
+                    paddingVertical: space[3],
+                    borderRadius: radius.lg,
+                    borderWidth: 1,
+                    borderColor: selected ? palette.brand[500] : palette.border.default,
+                    backgroundColor: selected ? palette.brand[100] : palette.surface.elevated,
+                  }}
+                >
+                  <Text
+                    variant="body-md"
+                    weight={selected ? 'semibold' : 'regular'}
+                    numberOfLines={1}
+                    style={{ color: selected ? palette.brand[800] : palette.text.primary }}
+                  >
+                    {o.dealTitle}
+                  </Text>
+                  <Text variant="caption" tone="tertiary" numberOfLines={1}>
+                    {o.vendorName} · {o.claimStatus}
+                    {o.redeemedAt ? ' · redeemed' : ''}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </Stack>
+        </Stack>
+      ) : null}
+
       <Stack gap={2}>
         <Text variant="label" tone="secondary">
           How can we help?
@@ -386,7 +441,7 @@ function ComposeForm({
           fullWidth
           loading={submitting}
           disabled={!canSubmit}
-          onPress={() => onSubmit(trimmedSubject, category, trimmedBody)}
+          onPress={() => onSubmit(trimmedSubject, category, trimmedBody, claimId)}
         />
         <Button
           label="Cancel"

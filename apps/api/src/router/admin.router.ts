@@ -26,6 +26,7 @@ import {
   setVendorSuspended,
 } from '../domain/admin';
 import { writeAudit } from '../domain/audit';
+import { getCustomerOrdersForTicket, getSupportTicketCustomer } from '../domain/supportTickets';
 import { createSignedUpload } from '../db/storage';
 import { createDeal, getDealForReview, updateDeal } from '../domain/dealCreate';
 import { cacheStaticMap } from '../domain/dealMap';
@@ -125,6 +126,29 @@ export const adminRouter = router({
     .query(async ({ ctx, input }) => {
       try {
         return await getAdminSupportTicketDetail(ctx.sql, input.id);
+      } catch (e) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: e instanceof Error ? e.message : 'Not found' });
+      }
+    }),
+
+  /** Rich customer profile for the support drawer header (spend, orders, tickets). */
+  supportTicketCustomer: adminProcedure
+    .input(z.object({ ticketId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      try {
+        return await getSupportTicketCustomer(ctx.sql, input.ticketId);
+      } catch (e) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: e instanceof Error ? e.message : 'Not found' });
+      }
+    }),
+
+  /** Order history for a ticket's customer (shown in the support drawer).
+   * Recency-capped + searchable; the tagged order is always included. */
+  supportTicketOrders: adminProcedure
+    .input(z.object({ ticketId: z.string().uuid(), search: z.string().max(80).optional() }))
+    .query(async ({ ctx, input }) => {
+      try {
+        return await getCustomerOrdersForTicket(ctx.sql, input.ticketId, input.search);
       } catch (e) {
         throw new TRPCError({ code: 'NOT_FOUND', message: e instanceof Error ? e.message : 'Not found' });
       }

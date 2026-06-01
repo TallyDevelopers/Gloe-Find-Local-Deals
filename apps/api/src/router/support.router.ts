@@ -8,6 +8,7 @@ import {
   createTicket,
   customerCloseTicket,
   getTicketWithMessages,
+  listMyOrders,
   listTicketsForUser,
   markAgentMessagesRead,
 } from '../domain/supportTickets';
@@ -58,6 +59,12 @@ export const supportRouter = router({
       createSignedUpload(ctx.auth.userId, input.fileExt, 'support'),
     ),
 
+  /** The signed-in customer's own orders (vouchers), for the "which order?" picker.
+   * Recency-capped + searchable by deal/vendor name. */
+  myOrders: protectedProcedure
+    .input(z.object({ search: z.string().max(80).optional() }).optional())
+    .query(({ ctx, input }) => listMyOrders(ctx.sql, ctx.auth.userId, input?.search)),
+
   /** Open a new support case. */
   create: protectedProcedure
     .input(
@@ -68,6 +75,7 @@ export const supportRouter = router({
           .optional(),
         body: z.string().min(1).max(5000),
         attachments: z.array(attachmentInput).max(10).optional(),
+        claimId: z.string().uuid().optional(),
       }),
     )
     .mutation(({ ctx, input }) => createTicket(ctx.sql, ctx.auth.userId, input)),
