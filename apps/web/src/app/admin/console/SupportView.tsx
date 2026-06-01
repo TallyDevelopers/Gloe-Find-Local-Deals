@@ -262,8 +262,9 @@ function thumbUrl(url: string, width: number): string {
 }
 
 /** Customer order history shown in the support drawer. Collapsible + searchable;
- * the linked order is flagged. Server caps to recent 50 (search to find older). */
-function OrdersPanel({ orders, linkedClaimId, loading, search, onSearch }: { orders: Order[]; linkedClaimId: string | null; loading: boolean; search: string; onSearch: (s: string) => void }) {
+ * the linked order is flagged. Refund / partial-refund inline. Server caps to
+ * recent 50 (search to find older). */
+function OrdersPanel({ orders, linkedClaimId, loading, search, onSearch, onRefunded }: { orders: Order[]; linkedClaimId: string | null; loading: boolean; search: string; onSearch: (s: string) => void; onRefunded: () => void }) {
   const [open, setOpen] = useState(true);
   const claimStatusColor = (s: string) =>
     s === 'redeemed' ? 'var(--brand-600)' : s === 'active' ? 'var(--accent-500)' : 'var(--text-tertiary)';
@@ -291,37 +292,112 @@ function OrdersPanel({ orders, linkedClaimId, loading, search, onSearch }: { ord
           ) : orders.length === 0 ? (
             <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: '6px 0' }}>{search ? 'No orders match.' : 'No orders for this customer.'}</div>
           ) : null}
-          {orders.map((o) => {
-            const linked = o.claimId === linkedClaimId;
-            const refunded = o.refundedCents > 0;
-            return (
-              <div
-                key={o.claimId}
-                style={{
-                  padding: '10px 12px', marginTop: 6, borderRadius: 'var(--radius-md)',
-                  background: linked ? 'var(--brand-50)' : 'var(--surface-elevated)',
-                  border: linked ? '1px solid var(--brand-300, var(--border-default))' : '1px solid var(--border-subtle)',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline' }}>
-                  <strong style={{ fontSize: 13, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {linked ? '📌 ' : ''}{o.dealTitle}
-                  </strong>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--brand-600)', whiteSpace: 'nowrap' }}>{money(o.consumerPaidCents)}</span>
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 3, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <span>{o.vendorName}</span>
-                  <span>· bought {shortDate(o.purchasedAt)}</span>
-                  <span style={{ color: claimStatusColor(o.claimStatus), fontWeight: 600, textTransform: 'capitalize' }}>· {o.claimStatus}</span>
-                  {o.redeemedAt ? <span>· redeemed {shortDate(o.redeemedAt)}</span> : <span>· expires {shortDate(o.expiresAt)}</span>}
-                  {refunded ? <span style={{ color: 'var(--error)', fontWeight: 600 }}>· refunded {money(o.refundedCents)}</span> : null}
-                </div>
-              </div>
-            );
-          })}
+          {orders.map((o) => (
+            <OrderRow key={o.claimId} o={o} linked={o.claimId === linkedClaimId} onRefunded={onRefunded} statusColor={claimStatusColor} />
+          ))}
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/** One order row with inline refund / partial-refund. Reuses admin.refundTransaction. */
+function OrderRow({ o, linked, onRefunded, statusColor }: { o: Order; linked: boolean; onRefunded: () => void; statusColor: (s: string) => string }) {
+  const [refundOpen, setRefundOpen] = useState(false);
+  const refundedCents = o.refundedCents;
+  const fullyRefunded = refundedCents >= o.consumerPaidCents;
+  const remainingCents = Math.max(0, o.consumerPaidCents - refundedCents);
+  // Pre-redemption refunds only (mirrors the backend rule). Redeemed = blocked.
+  const canRefund = !!o.transactionId && o.claimStatus !== 'redeemed' && o.claimStatus !== 'cancelled' && remainingCents > 0;
+
+  const [amount, setAmount] = useState((remainingCents / 100).toFixed(2));
+  const [reason, setReason] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+  const refundMutation = trpc.admin.refundTransaction.useMutation();
+
+  const submitRefund = async (cents: number) => {
+    if (!o.transactionId) return;
+    setErr(null);
+    if (reason.trim().length < 3) { setErr('Add a reason (3+ chars).'); return; }
+    if (cents <= 0 || cents > remainingCents) { setErr(`Amount must be $0.01–${money(remainingCents)}.`); return; }
+    try {
+      await refundMutation.mutateAsync({ transactionId: o.transactionId, amountCents: cents, reason: reason.trim() });
+      setRefundOpen(false);
+      setReason('');
+      onRefunded();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Refund failed.');
+    }
+  };
+
+  return (
+    <div
+      style={{
+        padding: '10px 12px', marginTop: 6, borderRadius: 'var(--radius-md)',
+        background: linked ? 'var(--brand-50)' : 'var(--surface-elevated)',
+        border: linked ? '1px solid var(--brand-300, var(--border-default))' : '1px solid var(--border-subtle)',
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline' }}>
+        <strong style={{ fontSize: 13, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {linked ? '📌 ' : ''}{o.dealTitle}
+        </strong>
+        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--brand-600)', whiteSpace: 'nowrap' }}>{money(o.consumerPaidCents)}</span>
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 3, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <span>{o.vendorName}</span>
+        <span>· bought {shortDate(o.purchasedAt)}</span>
+        <span style={{ color: statusColor(o.claimStatus), fontWeight: 600, textTransform: 'capitalize' }}>· {o.claimStatus}</span>
+        {o.redeemedAt ? <span>· redeemed {shortDate(o.redeemedAt)}</span> : <span>· expires {shortDate(o.expiresAt)}</span>}
+        {refundedCents > 0 ? <span style={{ color: 'var(--error)', fontWeight: 600 }}>· refunded {money(refundedCents)}{fullyRefunded ? ' (full)' : ''}</span> : null}
+      </div>
+
+      {/* Refund actions */}
+      <div style={{ marginTop: 8 }}>
+        {!canRefund ? (
+          <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+            {o.claimStatus === 'redeemed' ? 'Redeemed — refund needs a transfer reversal (do it from Payouts).' : fullyRefunded ? 'Fully refunded.' : 'Not refundable.'}
+          </span>
+        ) : !refundOpen ? (
+          <button
+            onClick={() => { setAmount((remainingCents / 100).toFixed(2)); setRefundOpen(true); }}
+            style={{ fontSize: 12, fontWeight: 600, color: 'var(--error)', background: 'rgba(218,79,71,0.08)', border: '1px solid rgba(218,79,71,0.25)', borderRadius: 'var(--radius-md)', padding: '4px 10px', cursor: 'pointer' }}
+          >
+            Refund…
+          </button>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 8, background: 'var(--surface-secondary)', borderRadius: 'var(--radius-md)' }}>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>$</span>
+              <input
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                inputMode="decimal"
+                style={{ width: 80, padding: '4px 8px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-default)', background: 'var(--surface-elevated)', fontSize: 12 }}
+              />
+              <button onClick={() => setAmount((remainingCents / 100).toFixed(2))} style={{ fontSize: 11, color: 'var(--brand-600)', background: 'none', border: 'none', cursor: 'pointer' }}>Full ({money(remainingCents)})</button>
+            </div>
+            <input
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="Reason (required)…"
+              style={{ padding: '5px 8px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-default)', background: 'var(--surface-elevated)', fontSize: 12 }}
+            />
+            {err ? <span style={{ fontSize: 11, color: 'var(--error)' }}>{err}</span> : null}
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button
+                disabled={refundMutation.isPending}
+                onClick={() => submitRefund(Math.round(parseFloat(amount || '0') * 100))}
+                style={{ fontSize: 12, fontWeight: 700, color: '#fff', background: 'var(--error)', border: 'none', borderRadius: 'var(--radius-md)', padding: '5px 12px', cursor: 'pointer', opacity: refundMutation.isPending ? 0.6 : 1 }}
+              >
+                {refundMutation.isPending ? 'Refunding…' : 'Confirm refund'}
+              </button>
+              <button onClick={() => { setRefundOpen(false); setErr(null); }} style={{ fontSize: 12, color: 'var(--text-secondary)', background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -414,7 +490,7 @@ function SupportTicketDrawer({
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: 'min(560px, 100vw)',
+          width: 'min(760px, 100vw)',
           height: '100%',
           background: 'var(--surface-elevated)',
           borderLeft: '1px solid var(--border-default)',
@@ -452,6 +528,7 @@ function SupportTicketDrawer({
           loading={ordersQ.isLoading}
           search={orderSearch}
           onSearch={setOrderSearch}
+          onRefunded={() => { void ordersQ.refetch(); void customerQ.refetch(); }}
         />
 
         {!d ? (
