@@ -664,6 +664,195 @@ export async function listAdminAuditLog(sql: Sql, filters: {
   }));
 }
 
+/* ============================================================
+ * Refund ledger — the dedicated, forensic view of every refund.
+ *
+ * The audit_log is the source of truth (each refund writes a
+ * refund.issued / refund.partial row, blocked attempts write
+ * refund.refused). This denormalizes those rows against the order,
+ * customer, vendor, and transaction so god-mode gets a complete
+ * picture in one query: who refunded, when, for how much, against
+ * which order, whether the voucher was already redeemed, and why.
+ * ============================================================ */
+
+export interface AdminRefundRow {
+  /** audit_log.id — stable key + the target of cross-link highlighting. */
+  id: string;
+  action: 'refund.issued' | 'refund.partial' | 'refund.refused';
+  /** True for refund.issued/partial, false for a blocked attempt. */
+  succeeded: boolean;
+  /** True only for a full refund (voucher cancelled). */
+  isFullRefund: boolean;
+  /** When the refund happened. */
+  refundedAt: string;
+  /** Who clicked refund (god-mode operator). null ⇒ system. */
+  actorUserId: string | null;
+  actorName: string | null;
+  actorEmail: string | null;
+  /** The amount refunded on THIS action (cents). For refused rows, the attempted amount. */
+  amountCents: number;
+  /** Cumulative refunded on the transaction after this action (cents). */
+  cumulativeRefundedCents: number | null;
+  /** What the customer originally paid (cents). */
+  consumerPaidCents: number | null;
+  /** Operator-entered reason. */
+  reason: string | null;
+  /** Stripe refund id (re_…), null for refused/failed. */
+  stripeRefundId: string | null;
+  /** For a refused row: why it was blocked. */
+  refusedReason: string | null;
+  // ─── Order context ───
+  transactionId: string | null;
+  transactionDisplayId: string | null;
+  claimId: string | null;
+  claimDisplayId: string | null;
+  /** Order (claim) status right now: active / redeemed / expired / cancelled. */
+  claimStatus: string | null;
+  /** When the order was purchased. */
+  orderPlacedAt: string | null;
+  /** When (if) it was redeemed — the key "was it already used?" signal. */
+  redeemedAt: string | null;
+  /** Convenience flag mirrored from redeemedAt for the UI. */
+  wasRedeemedBeforeRefund: boolean;
+  dealTitle: string | null;
+  // ─── Customer ───
+  customerId: string | null;
+  customerName: string | null;
+  customerEmail: string | null;
+  // ─── Vendor ───
+  vendorId: string | null;
+  vendorName: string | null;
+}
+
+export async function listAdminRefunds(sql: Sql, filters: {
+  /** 'succeeded' (issued+partial), 'refused', or undefined for all. */
+  outcome?: 'succeeded' | 'refused';
+  vendorId?: string;
+  customerId?: string;
+  limit?: number;
+}): Promise<AdminRefundRow[]> {
+  const limit = Math.min(filters.limit ?? 100, 300);
+  const outcome = filters.outcome ?? null;
+  const vendorIdOrNull = filters.vendorId ?? null;
+  const customerIdOrNull = filters.customerId ?? null;
+
+  const rows = await sql<{
+    id: string;
+    action: string;
+    created_at: string;
+    actor_user_id: string | null;
+    actor_first: string | null;
+    actor_last: string | null;
+    actor_email: string | null;
+    meta: Record<string, unknown>;
+    transaction_id: string | null;
+    txn_display_id: string | null;
+    txn_consumer_paid_cents: number | null;
+    claim_id: string | null;
+    claim_display_id: string | null;
+    claim_status: string | null;
+    claim_created_at: string | null;
+    claim_redeemed_at: string | null;
+    deal_title: string | null;
+    customer_id: string | null;
+    customer_first: string | null;
+    customer_last: string | null;
+    customer_email: string | null;
+    vendor_id: string | null;
+    vendor_name: string | null;
+  }[]>`
+    SELECT
+      a.id,
+      a.action,
+      a.created_at,
+      a.actor_user_id,
+      actor.first_name AS actor_first,
+      actor.last_name  AS actor_last,
+      actor.email      AS actor_email,
+      a.meta,
+      a.transaction_id,
+      t.display_id            AS txn_display_id,
+      t.consumer_paid_cents   AS txn_consumer_paid_cents,
+      a.claim_id,
+      c.display_id   AS claim_display_id,
+      c.status       AS claim_status,
+      c.created_at   AS claim_created_at,
+      c.redeemed_at  AS claim_redeemed_at,
+      (c.snapshot->>'dealTitle') AS deal_title,
+      cust.id         AS customer_id,
+      cust.first_name AS customer_first,
+      cust.last_name  AS customer_last,
+      cust.email      AS customer_email,
+      a.vendor_id,
+      v.business_name AS vendor_name
+    FROM public.audit_log a
+    LEFT JOIN public.users        actor ON actor.id = a.actor_user_id
+    LEFT JOIN public.transactions t     ON t.id = a.transaction_id
+    LEFT JOIN public.claims       c     ON c.id = a.claim_id
+    LEFT JOIN public.users        cust  ON cust.id = c.user_id
+    LEFT JOIN public.vendors      v     ON v.id = a.vendor_id
+    WHERE a.action IN ('refund.issued', 'refund.partial', 'refund.refused')
+      AND (
+        ${outcome}::text IS NULL
+        OR (${outcome} = 'succeeded' AND a.action IN ('refund.issued', 'refund.partial'))
+        OR (${outcome} = 'refused'   AND a.action = 'refund.refused')
+      )
+      AND (${vendorIdOrNull}::uuid IS NULL OR a.vendor_id = ${vendorIdOrNull}::uuid)
+      AND (${customerIdOrNull}::uuid IS NULL OR c.user_id = ${customerIdOrNull}::uuid)
+    ORDER BY a.created_at DESC
+    LIMIT ${limit}
+  `;
+
+  return rows.map((r) => {
+    const meta = r.meta ?? {};
+    const succeeded = r.action !== 'refund.refused';
+    // Successful rows carry amountCents; refused rows carry attemptedAmountCents.
+    const amountCents = numFromMeta(meta.amountCents) ?? numFromMeta(meta.attemptedAmountCents) ?? 0;
+    const consumerPaidCents = numFromMeta(meta.consumerPaidCents) ?? r.txn_consumer_paid_cents;
+    return {
+      id: r.id,
+      action: r.action as AdminRefundRow['action'],
+      succeeded,
+      isFullRefund: r.action === 'refund.issued',
+      refundedAt: r.created_at,
+      actorUserId: r.actor_user_id,
+      actorName: joinName(r.actor_first, r.actor_last) ?? r.actor_email ?? null,
+      actorEmail: r.actor_email,
+      amountCents,
+      cumulativeRefundedCents: numFromMeta(meta.cumulativeRefundedCents),
+      consumerPaidCents,
+      reason: succeeded ? strFromMeta(meta.reason) : strFromMeta(meta.attemptedRefundReason),
+      stripeRefundId: strFromMeta(meta.stripeRefundId),
+      refusedReason: succeeded ? null : strFromMeta(meta.reason),
+      transactionId: r.transaction_id,
+      transactionDisplayId: r.txn_display_id,
+      claimId: r.claim_id,
+      claimDisplayId: r.claim_display_id,
+      claimStatus: r.claim_status,
+      orderPlacedAt: r.claim_created_at,
+      redeemedAt: r.claim_redeemed_at,
+      wasRedeemedBeforeRefund: r.claim_redeemed_at != null,
+      dealTitle: r.deal_title,
+      customerId: r.customer_id,
+      customerName: joinName(r.customer_first, r.customer_last) ?? r.customer_email ?? null,
+      customerEmail: r.customer_email,
+      vendorId: r.vendor_id,
+      vendorName: r.vendor_name,
+    };
+  });
+}
+
+function numFromMeta(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+function strFromMeta(v: unknown): string | null {
+  return typeof v === 'string' && v.length > 0 ? v : null;
+}
+function joinName(first: string | null, last: string | null): string | null {
+  const n = [first, last].filter(Boolean).join(' ').trim();
+  return n.length > 0 ? n : null;
+}
+
 /** Admin sets whether redemption auto-fires a Stripe Transfer for this vendor. See §6b. */
 export async function setVendorAutoReleaseOnRedemption(
   sql: Sql,

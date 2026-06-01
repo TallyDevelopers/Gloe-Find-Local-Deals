@@ -11,6 +11,7 @@ import { CustomersView } from './CustomersView';
 import { FeesView } from './FeesView';
 import { PayoutsView } from './PayoutsView';
 import { PulseView } from './PulseView';
+import { RefundsView } from './RefundsView';
 import { SettingsView } from './SettingsView';
 import { SupportView } from './SupportView';
 import { TransactionsView } from './TransactionsView';
@@ -19,7 +20,7 @@ import { WaitlistView } from './WaitlistView';
 
 type WorkspaceView =
   | 'pulse' | 'transactions' | 'vendors' | 'customers'
-  | 'payouts' | 'fees' | 'support' | 'waitlist' | 'audit' | 'settings';
+  | 'payouts' | 'refunds' | 'fees' | 'support' | 'waitlist' | 'audit' | 'settings';
 
 const NAV: { key: WorkspaceView; label: string; icon: string; badgeFor?: 'failed_payouts' | 'pending_deals' }[] = [
   { key: 'pulse',        label: 'Pulse',        icon: '◐' },
@@ -27,6 +28,7 @@ const NAV: { key: WorkspaceView; label: string; icon: string; badgeFor?: 'failed
   { key: 'vendors',      label: 'Vendors',      icon: '▣' },
   { key: 'customers',    label: 'Customers',    icon: '☻' },
   { key: 'payouts',      label: 'Payouts',      icon: '↗', badgeFor: 'failed_payouts' },
+  { key: 'refunds',      label: 'Refunds',      icon: '↩' },
   { key: 'fees',         label: 'Fees',         icon: '%' },
   { key: 'support',      label: 'Support',      icon: '💬' },
   { key: 'waitlist',     label: 'Waitlist',     icon: '⋆' },
@@ -41,10 +43,20 @@ export function AdminShell() {
   // When TransactionsView wants to jump to a specific customer, it sets this
   // and we switch tabs. CustomersView opens the drawer for the matching id.
   const [preselectedCustomerId, setPreselectedCustomerId] = useState<string | null>(null);
+  // When the support drawer / a customer record links to a specific refund, we
+  // jump to the Refunds tab and flash the matching row. Callers usually only
+  // know the transactionId (not the audit-row id), so we target by that.
+  const [preselectedRefundTxnId, setPreselectedRefundTxnId] = useState<string | null>(null);
 
   const jumpToCustomer = (customerId: string) => {
     setPreselectedCustomerId(customerId);
     setView('customers');
+    setMobileNavOpen(false);
+  };
+
+  const jumpToRefundByTxn = (transactionId: string) => {
+    setPreselectedRefundTxnId(transactionId);
+    setView('refunds');
     setMobileNavOpen(false);
   };
 
@@ -147,10 +159,11 @@ export function AdminShell() {
           {view === 'pulse'        ? <PulseView onNavigate={(v) => navigate(v)} /> : null}
           {view === 'transactions' ? <TransactionsView onJumpToCustomer={jumpToCustomer} /> : null}
           {view === 'vendors'      ? <VendorsView /> : null}
-          {view === 'customers'    ? <CustomersView preselectedId={preselectedCustomerId} onPreselectionConsumed={() => setPreselectedCustomerId(null)} /> : null}
+          {view === 'customers'    ? <CustomersView preselectedId={preselectedCustomerId} onPreselectionConsumed={() => setPreselectedCustomerId(null)} onJumpToRefundByTxn={jumpToRefundByTxn} /> : null}
           {view === 'payouts'      ? <PayoutsView /> : null}
+          {view === 'refunds'      ? <RefundsView highlightTransactionId={preselectedRefundTxnId} onHighlightConsumed={() => setPreselectedRefundTxnId(null)} onJumpToCustomer={jumpToCustomer} /> : null}
           {view === 'fees'         ? <FeesView /> : null}
-          {view === 'support'      ? <SupportView /> : null}
+          {view === 'support'      ? <SupportView onJumpToRefundByTxn={jumpToRefundByTxn} /> : null}
           {view === 'waitlist'     ? <WaitlistView /> : null}
           {view === 'audit'        ? <AuditView /> : null}
           {view === 'settings'     ? <SettingsView /> : null}

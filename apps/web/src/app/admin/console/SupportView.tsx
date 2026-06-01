@@ -40,7 +40,7 @@ function relativeTime(iso: string | null | undefined): string {
   return new Date(iso).toLocaleDateString();
 }
 
-export function SupportView() {
+export function SupportView({ onJumpToRefundByTxn }: { onJumpToRefundByTxn?: (transactionId: string) => void } = {}) {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState<StatusFilter>('all');
   const [selected, setSelected] = useState<string | null>(null);
@@ -160,6 +160,7 @@ export function SupportView() {
           id={selected}
           onClose={() => setSelected(null)}
           onChanged={() => list.refetch()}
+          onJumpToRefundByTxn={onJumpToRefundByTxn}
         />
       ) : null}
     </div>
@@ -264,7 +265,7 @@ function thumbUrl(url: string, width: number): string {
 /** Customer order history shown in the support drawer. Collapsible + searchable;
  * the linked order is flagged. Refund / partial-refund inline. Server caps to
  * recent 50 (search to find older). */
-function OrdersPanel({ orders, linkedClaimId, loading, search, onSearch, onRefunded }: { orders: Order[]; linkedClaimId: string | null; loading: boolean; search: string; onSearch: (s: string) => void; onRefunded: () => void }) {
+function OrdersPanel({ orders, linkedClaimId, loading, search, onSearch, onRefunded, onJumpToRefundByTxn }: { orders: Order[]; linkedClaimId: string | null; loading: boolean; search: string; onSearch: (s: string) => void; onRefunded: () => void; onJumpToRefundByTxn?: (transactionId: string) => void }) {
   const [open, setOpen] = useState(true);
   const claimStatusColor = (s: string) =>
     s === 'redeemed' ? 'var(--brand-600)' : s === 'active' ? 'var(--accent-500)' : 'var(--text-tertiary)';
@@ -293,7 +294,7 @@ function OrdersPanel({ orders, linkedClaimId, loading, search, onSearch, onRefun
             <div style={{ fontSize: 12, color: 'var(--text-tertiary)', padding: '6px 0' }}>{search ? 'No orders match.' : 'No orders for this customer.'}</div>
           ) : null}
           {orders.map((o) => (
-            <OrderRow key={o.claimId} o={o} linked={o.claimId === linkedClaimId} onRefunded={onRefunded} statusColor={claimStatusColor} />
+            <OrderRow key={o.claimId} o={o} linked={o.claimId === linkedClaimId} onRefunded={onRefunded} onJumpToRefundByTxn={onJumpToRefundByTxn} statusColor={claimStatusColor} />
           ))}
           </div>
         </div>
@@ -303,7 +304,7 @@ function OrdersPanel({ orders, linkedClaimId, loading, search, onSearch, onRefun
 }
 
 /** One order row with inline refund / partial-refund. Reuses admin.refundTransaction. */
-function OrderRow({ o, linked, onRefunded, statusColor }: { o: Order; linked: boolean; onRefunded: () => void; statusColor: (s: string) => string }) {
+function OrderRow({ o, linked, onRefunded, onJumpToRefundByTxn, statusColor }: { o: Order; linked: boolean; onRefunded: () => void; onJumpToRefundByTxn?: (transactionId: string) => void; statusColor: (s: string) => string }) {
   const [refundOpen, setRefundOpen] = useState(false);
   const refundedCents = o.refundedCents;
   const fullyRefunded = refundedCents >= o.consumerPaidCents;
@@ -350,7 +351,19 @@ function OrderRow({ o, linked, onRefunded, statusColor }: { o: Order; linked: bo
         <span>· bought {shortDate(o.purchasedAt)}</span>
         <span style={{ color: statusColor(o.claimStatus), fontWeight: 600, textTransform: 'capitalize' }}>· {o.claimStatus}</span>
         {o.redeemedAt ? <span>· redeemed {shortDate(o.redeemedAt)}</span> : <span>· expires {shortDate(o.expiresAt)}</span>}
-        {refundedCents > 0 ? <span style={{ color: 'var(--error)', fontWeight: 600 }}>· refunded {money(refundedCents)}{fullyRefunded ? ' (full)' : ''}</span> : null}
+        {refundedCents > 0 ? (
+          onJumpToRefundByTxn && o.transactionId ? (
+            <button
+              onClick={() => onJumpToRefundByTxn(o.transactionId!)}
+              title="View refund record"
+              style={{ color: 'var(--error)', fontWeight: 600, background: 'none', border: 'none', padding: 0, cursor: 'pointer', textDecoration: 'underline', textDecorationStyle: 'dotted', fontSize: 11 }}
+            >
+              · refunded {money(refundedCents)}{fullyRefunded ? ' (full)' : ''} ↗
+            </button>
+          ) : (
+            <span style={{ color: 'var(--error)', fontWeight: 600 }}>· refunded {money(refundedCents)}{fullyRefunded ? ' (full)' : ''}</span>
+          )
+        ) : null}
       </div>
 
       {/* Refund actions */}
@@ -429,10 +442,12 @@ function SupportTicketDrawer({
   id,
   onClose,
   onChanged,
+  onJumpToRefundByTxn,
 }: {
   id: string;
   onClose: () => void;
   onChanged: () => void;
+  onJumpToRefundByTxn?: (transactionId: string) => void;
 }) {
   const q = trpc.admin.supportTicketDetail.useQuery({ id });
   const d = q.data;
@@ -529,6 +544,7 @@ function SupportTicketDrawer({
           search={orderSearch}
           onSearch={setOrderSearch}
           onRefunded={() => { void ordersQ.refetch(); void customerQ.refetch(); }}
+          onJumpToRefundByTxn={onJumpToRefundByTxn}
         />
 
         {!d ? (

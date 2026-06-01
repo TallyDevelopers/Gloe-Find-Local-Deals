@@ -17,9 +17,11 @@ interface CustomersViewProps {
   /** When set, drawer opens for this customer on mount. Used by cross-tab links. */
   preselectedId?: string | null;
   onPreselectionConsumed?: () => void;
+  /** Click a refunded txn's badge → jump to the Refunds tab + flash that record. */
+  onJumpToRefundByTxn?: (transactionId: string) => void;
 }
 
-export function CustomersView({ preselectedId, onPreselectionConsumed }: CustomersViewProps = {}) {
+export function CustomersView({ preselectedId, onPreselectionConsumed, onJumpToRefundByTxn }: CustomersViewProps = {}) {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
   const list = trpc.admin.listCustomers.useQuery({ query: search || undefined });
@@ -98,12 +100,12 @@ export function CustomersView({ preselectedId, onPreselectionConsumed }: Custome
         )}
       </div>
 
-      {selected ? <CustomerDrawer id={selected} onClose={() => setSelected(null)} /> : null}
+      {selected ? <CustomerDrawer id={selected} onClose={() => setSelected(null)} onJumpToRefundByTxn={onJumpToRefundByTxn} /> : null}
     </div>
   );
 }
 
-function CustomerDrawer({ id, onClose }: { id: string; onClose: () => void }) {
+function CustomerDrawer({ id, onClose, onJumpToRefundByTxn }: { id: string; onClose: () => void; onJumpToRefundByTxn?: (transactionId: string) => void }) {
   const q = trpc.admin.customerDetail.useQuery({ id });
   const d = q.data;
   return (
@@ -153,7 +155,7 @@ function CustomerDrawer({ id, onClose }: { id: string; onClose: () => void }) {
               ) : (
                 <div>
                   {d.transactions.slice(0, 20).map((t) => (
-                    <TransactionRow key={t.id} t={t} onRefunded={() => q.refetch()} />
+                    <TransactionRow key={t.id} t={t} onRefunded={() => q.refetch()} onJumpToRefundByTxn={onJumpToRefundByTxn} />
                   ))}
                 </div>
               )}
@@ -275,7 +277,7 @@ type CustomerTxn = NonNullable<RouterOutputs['admin']['customerDetail']>['transa
  * redeemed). Eligibility-checking here is a UX shortcut — the server is still
  * the source of truth and will reject ineligible attempts.
  */
-function TransactionRow({ t, onRefunded }: { t: CustomerTxn; onRefunded: () => void }) {
+function TransactionRow({ t, onRefunded, onJumpToRefundByTxn }: { t: CustomerTxn; onRefunded: () => void; onJumpToRefundByTxn?: (transactionId: string) => void }) {
   const [modalOpen, setModalOpen] = useState(false);
   const remaining = t.consumerPaidCents - t.refundedCents;
   const isVoucherRedeemed = t.claimStatus === 'redeemed';
@@ -289,7 +291,19 @@ function TransactionRow({ t, onRefunded }: { t: CustomerTxn; onRefunded: () => v
           <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
             {t.vendorName} · {t.paidAt ? new Date(t.paidAt).toLocaleString() : 'pending'} · {t.status}
             {t.claimStatus ? <span> · voucher {t.claimStatus}</span> : null}
-            {t.refundedCents > 0 ? <span> · refunded {money(t.refundedCents)}</span> : null}
+            {t.refundedCents > 0 ? (
+              onJumpToRefundByTxn ? (
+                <button
+                  onClick={() => onJumpToRefundByTxn(t.id)}
+                  title="View refund record"
+                  style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'var(--error)', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline', textDecorationStyle: 'dotted' }}
+                >
+                  {' · refunded '}{money(t.refundedCents)} ↗
+                </button>
+              ) : (
+                <span> · refunded {money(t.refundedCents)}</span>
+              )
+            ) : null}
           </div>
         </div>
         <div style={{ fontSize: 13, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{money(t.consumerPaidCents)}</div>

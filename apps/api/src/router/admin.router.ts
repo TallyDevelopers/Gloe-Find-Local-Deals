@@ -13,6 +13,7 @@ import {
   getVendorRoster,
   isAdmin,
   listAdminAuditLog,
+  listAdminRefunds,
   listAdminCustomers,
   listAdminPayouts,
   listAdminSupportTickets,
@@ -246,6 +247,19 @@ export const adminRouter = router({
       }),
     )
     .query(({ ctx, input }) => listAdminAuditLog(ctx.sql, input)),
+
+  /** Dedicated refund ledger — every refund (and blocked attempt) with full order/customer/redemption context. */
+  listRefunds: adminProcedure
+    .input(
+      z.object({
+        outcome: z.enum(['succeeded', 'refused']).optional(),
+        vendorId: z.string().uuid().optional(),
+        customerId: z.string().uuid().optional(),
+        limit: z.number().int().positive().max(300).optional(),
+      }),
+    )
+    .query(({ ctx, input }) => listAdminRefunds(ctx.sql, input)),
+
   topVendors: adminProcedure.query(({ ctx }) => getTopVendors(ctx.sql)),
   vendorRoster: adminProcedure.query(({ ctx }) => getVendorRoster(ctx.sql)),
   recentActivity: adminProcedure.query(({ ctx }) => getRecentActivity(ctx.sql)),
