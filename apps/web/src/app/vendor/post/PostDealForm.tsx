@@ -59,6 +59,12 @@ export function PostDealForm({ mode }: { mode: PostDealMode }) {
   const [editStatus, setEditStatus] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The specific treatment (Botox/Dysport…). Auto-detected from the title; the
+  // vendor always sees it and can change/clear it. `touched` stops auto-detect
+  // from overriding a manual (or hydrated) choice.
+  const [subtypeId, setSubtypeId] = useState<string | null>(null);
+  const [subtypeTouched, setSubtypeTouched] = useState(false);
+  const [pickingSubtype, setPickingSubtype] = useState(false);
 
   // Default expiry to 14 days out for new deals.
   useEffect(() => {
@@ -72,6 +78,10 @@ export function PostDealForm({ mode }: { mode: PostDealMode }) {
     const d = editQuery.data;
     if (!d) return;
     setCategoryIds(d.categoryIds ?? [d.categoryId]);
+    // Preserve an existing treatment; if the deal had none, leave it open so
+    // detection can suggest one as they edit.
+    setSubtypeId(d.subtypeId ?? null);
+    setSubtypeTouched(d.subtypeId != null);
     setTitle(d.title);
     setDescription(d.description);
     setWhatsIncluded((d.whatsIncluded ?? []).join('\n'));
@@ -104,6 +114,47 @@ export function PostDealForm({ mode }: { mode: PostDealMode }) {
     [categories, categoryIds],
   );
 
+  // Treatments available under the primary category — the scoped picker list
+  // (so the vendor sees ~5-12 chips for their category, never all 42).
+  const subtypeOptions = primaryCategory?.subtypes ?? [];
+  const selectedSubtype = useMemo(
+    () => subtypeOptions.find((s) => s.id === subtypeId) ?? null,
+    [subtypeOptions, subtypeId],
+  );
+
+  // Debounce the title so the detector only fires when typing settles.
+  const [debouncedTitle, setDebouncedTitle] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedTitle(title.trim()), 350);
+    return () => clearTimeout(t);
+  }, [title]);
+
+  const detectQuery = trpc.deals.detectSubtype.useQuery(
+    { title: debouncedTitle, categorySlug: primaryCategory?.slug },
+    { enabled: debouncedTitle.length >= 3 && !!primaryCategory },
+  );
+  const detected = detectQuery.data ?? null;
+
+  // Auto-apply only a HIGH-confidence (brand-name) detection, and only when the
+  // vendor hasn't set the treatment themselves. They always see the resulting
+  // chip and can change or clear it — this is a head start, never a lock-in.
+  useEffect(() => {
+    if (subtypeTouched || subtypeId) return;
+    if (detected?.confidence === 'high') {
+      const match = subtypeOptions.find((s) => s.slug === detected.subtypeSlug);
+      if (match) setSubtypeId(match.id);
+    }
+  }, [detected, subtypeTouched, subtypeId, subtypeOptions]);
+
+  // If the primary category changes, a subtype from the old category no longer
+  // belongs — drop it so we don't post a mismatched treatment.
+  useEffect(() => {
+    if (subtypeOptions.length > 0 && subtypeId && !subtypeOptions.some((s) => s.id === subtypeId)) {
+      setSubtypeId(null);
+      setSubtypeTouched(false);
+    }
+  }, [subtypeOptions, subtypeId]);
+
   // Helper-disclaimer text — shown for any selected category that hosts a subtype
   // carrying helper_text (currently: Wellness → Medical Weight Mgmt Consult).
   // We show the disclaimer whenever vendors might be tempted to list medication.
@@ -131,7 +182,7 @@ export function PostDealForm({ mode }: { mode: PostDealMode }) {
 
   const previewData = {
     categoryLabel: primaryCategory?.displayName ?? 'Category',
-    subtypeLabel: selectedCategories[1]?.displayName ?? null,
+    subtypeLabel: selectedSubtype?.displayName ?? selectedCategories[1]?.displayName ?? null,
     title,
     description,
     whatsIncluded: splitLines(whatsIncluded),
@@ -179,6 +230,7 @@ export function PostDealForm({ mode }: { mode: PostDealMode }) {
 
     const payload = {
       categoryIds,
+      subtypeId,
       title,
       description,
       whatsIncluded: splitLines(whatsIncluded),
@@ -206,6 +258,7 @@ export function PostDealForm({ mode }: { mode: PostDealMode }) {
       postOnBehalf.mutate({
         vendorId: mode.vendorId,
         categoryIds: payload.categoryIds,
+        subtypeId: payload.subtypeId,
         title: payload.title,
         description: payload.description,
         whatsIncluded: payload.whatsIncluded,
@@ -331,6 +384,53 @@ export function PostDealForm({ mode }: { mode: PostDealMode }) {
             <Field label="Deal title">
               <TextInput value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Botox — first-timer special" />
             </Field>
+
+            {/* Treatment — auto-detected from the title, vendor-confirmable. Only
+                shows once a primary category is chosen; scoped to that category's
+                treatments so it's a short list, never the full taxonomy. */}
+            {primaryCategory && subtypeOptions.length > 0 ? (
+              <Field label="Treatment" hint="Auto-detected from your title. Optional — change or clear anytime.">
+                {selectedSubtype && !pickingSubtype ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 999, background: 'var(--brand-500)', color: 'var(--text-inverse)', fontSize: 14, fontWeight: 600 }}>
+                      ✓ {selectedSubtype.displayName}
+                    </span>
+                    <button type="button" onClick={() => setPickingSubtype(true)} style={{ background: 'none', border: 'none', color: 'var(--brand-600)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Change</button>
+                    <button type="button" onClick={() => { setSubtypeId(null); setSubtypeTouched(true); }} style={{ background: 'none', border: 'none', color: 'var(--text-tertiary)', fontSize: 13, cursor: 'pointer' }}>Clear</button>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {!selectedSubtype && detected?.confidence === 'medium' && subtypeOptions.some((s) => s.slug === detected.subtypeSlug) ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const m = subtypeOptions.find((s) => s.slug === detected.subtypeSlug);
+                          if (m) { setSubtypeId(m.id); setSubtypeTouched(true); setPickingSubtype(false); }
+                        }}
+                        style={{ textAlign: 'left', padding: '8px 12px', borderRadius: 'var(--radius-md)', background: 'var(--brand-50)', border: '1px solid var(--border-default)', color: 'var(--text-secondary)', fontSize: 13, cursor: 'pointer' }}
+                      >
+                        Looks like <strong>{detected.displayName}</strong> — tap to use it
+                      </button>
+                    ) : null}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {subtypeOptions.map((s) => {
+                        const sel = s.id === subtypeId;
+                        return (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => { setSubtypeId(s.id); setSubtypeTouched(true); setPickingSubtype(false); }}
+                            style={{ padding: '7px 13px', borderRadius: 999, border: `1px solid ${sel ? 'var(--brand-500)' : 'var(--border-default)'}`, background: sel ? 'var(--brand-500)' : 'var(--surface-elevated)', color: sel ? 'var(--text-inverse)' : 'var(--text-primary)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                          >
+                            {s.displayName}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </Field>
+            ) : null}
 
             <Field label="Description">
               <textarea

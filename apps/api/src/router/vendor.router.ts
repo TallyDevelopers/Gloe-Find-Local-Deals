@@ -83,6 +83,8 @@ export const dealInput = z.object({
     .min(1, 'Pick a category.')
     .max(2, 'You can select up to 2 categories per listing.')
     .refine((ids) => new Set(ids).size === ids.length, 'Categories must be distinct.'),
+  /** Specific treatment under the primary category (Botox, Dysport…). Auto-detected from the title, vendor-confirmable. */
+  subtypeId: z.string().uuid().nullable().optional(),
   title: z.string().min(3).max(140),
   description: z.string().min(10).max(2000),
   whatsIncluded: z.array(z.string().max(200)).max(12).default([]),
@@ -112,6 +114,7 @@ export function dealFields(input: DealInput) {
   return {
     categoryId: primaryCategoryId,
     secondaryCategoryId: secondaryCategoryId ?? null,
+    subtypeId: input.subtypeId ?? null,
     title: input.title,
     description: input.description,
     whatsIncluded: input.whatsIncluded,

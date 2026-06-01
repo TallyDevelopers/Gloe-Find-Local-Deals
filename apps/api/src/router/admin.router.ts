@@ -659,6 +659,7 @@ export const adminRouter = router({
           .min(1, 'Pick a category.')
           .max(2, 'You can select up to 2 categories per listing.')
           .refine((ids) => new Set(ids).size === ids.length, 'Categories must be distinct.'),
+        subtypeId: z.string().uuid().nullable().optional(),
         title: z.string().min(3).max(140),
         description: z.string().min(10).max(2000),
         whatsIncluded: z.array(z.string().max(200)).max(12).default([]),
@@ -697,6 +698,7 @@ export const adminRouter = router({
         vendorId: input.vendorId,
         categoryId: primaryCategoryId,
         secondaryCategoryId: secondaryCategoryId ?? null,
+        subtypeId: input.subtypeId ?? null,
         title: input.title,
         description: input.description,
         whatsIncluded: input.whatsIncluded,
