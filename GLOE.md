@@ -458,10 +458,14 @@ Means we need a **dev-client build** (not Expo Go). Rebuild via `npx expo run:io
 | Vendor detail | Full profile, Stripe account status, deal roster, audit trail. Suspend / unsuspend. |
 | Deals | Pending review queue. Approve / reject / comment. |
 | Money / Payouts | Payout list (filter pending/in-transit/paid/failed). Release transfer button. Retry failed payout. Reconcile. |
+| **Refunds** | Dedicated refund ledger over the audit log: who issued it, when, amount of total, which order, **was the voucher already redeemed (⚠ flag)**, full/partial/blocked attempt, reason, Stripe refund id. Summary strip + outcome filter (All / Refunded / Blocked). |
 | Fees | Global tier config (create, update, deactivate). Per-vendor override per row. |
 | Audit | Every mutation. Filter by action / vendor / user / date. |
 | Transactions | Browse + drill into individual transactions. |
-| Customers | Consumer roster + detail. Issue manual coupon = **stub**. |
+| Customers | Consumer roster + detail. Per-txn inline refund. Refunded-txn badge cross-links → Refunds tab. Issue manual coupon = **stub**. |
+| **Support** | Concierge tickets. Widened drawer with: chat (photo/video), **boss-view customer profile** (lifetime spend, refund %, auto-flags), **order-context history** (which order the ticket is about + all past orders), **inline refund/partial-refund per order**, and refund-badge cross-link → Refunds tab. Reply + push-on-reply, resolve/close. |
+
+**Cross-tab links:** the "refunded $X ↗" badge anywhere (support drawer, customer drawer) jumps to the Refunds tab and flashes the matching record (targeted by transactionId). Customer names in the Refunds ledger jump to that customer's drawer.
 
 ---
 
@@ -499,7 +503,7 @@ Means we need a **dev-client build** (not Expo Go). Rebuild via `npx expo run:io
 
 ## 10. What's shipped, what's pending
 
-**Audited against code on 2026-05-31.** Use this as the live status board — update as features land.
+**Audited against code on 2026-06-01.** Use this as the live status board — update as features land. See the 🚨 must-have table below for the launch-blocker shortlist.
 
 ### Shipped (works end-to-end)
 
@@ -513,6 +517,8 @@ Means we need a **dev-client build** (not Expo Go). Rebuild via `npx expo run:io
 - Apple Wallet pass generation (signed .pkpass).
 - APNs push notification stack (ES256 JWT, device token registration, 410 cleanup).
 - Admin: vendors, deals, payouts, fees (incl. per-vendor), audit, transactions, customers.
+- **Refunds tab** (god mode) — dedicated forensic ledger over the audit log: actor, amount, order, redeemed-before-refund flag, full/partial/blocked, reason, Stripe id. Cross-linked from support + customer drawers. §8.
+- **Support boss-view + order context + inline refunds** — support drawer shows a full customer profile (lifetime spend, refund %, auto-flags), the customer's order history (incl. which order the ticket is about), and refund/partial-refund actions per order without leaving the chat. §8.
 - **Concierge support tickets** (consumer↔Gloē) — chat, photo/video attachments (camera + library), god-mode reply + push-on-reply. §6.
 - **Account deletion** in-app (Apple 5.1.1(v)) — anonymize-and-deactivate. §6.
 - **Out-of-area waitlist gate** — ComingSoon screen + demand capture + admin Waitlist tab. §6.
@@ -522,6 +528,25 @@ Means we need a **dev-client build** (not Expo Go). Rebuild via `npx expo run:io
 - Railway deploy (api + web). `.env.example` for contributors.
 - Web SEO: favicon, OG card, PWA manifest, robots, sitemap.
 - iOS app icon (gold G on dark brand) wired into Expo + Xcode. iPhone-only for v1 (iPad device-family off; iPad is a v2 roadmap item).
+
+### 🚨 Launch must-haves NOT yet done (the real blocker list)
+
+Ranked. These are what stand between "today" and "your wife's friend can install and buy." Everything else in this section is post-launch polish — see §14. **Audited against code 2026-06-01.**
+
+| # | Blocker | Why it blocks launch | Effort | Status |
+|---|---|---|---|---|
+| 1 | **Sign in with Apple** | Hard App Store **rejection** (Guideline 4.8). We offer Google/Facebook/TikTok social login but NOT Apple — Apple requires an equivalent Apple option whenever third-party social login exists. `SocialAuthButtons.tsx` has no `apple` provider. | ~2h (Clerk supports it; add provider + button + entitlement) | ❌ Not built |
+| 2 | **Dispute / chargeback webhook** | Money-loss + integrity. `charge.dispute.created` is unhandled, so a pre-redemption dispute won't freeze the claim or block the transfer — a customer can dispute AND redeem. This is wall #12. | ~half day | ❌ Not built |
+| 3 | **Transactional receipts (Resend)** | Receipts are the #1 chargeback-preventer; a charge with no email receipt invites disputes. Nothing emails today. | ~half day (Resend + receipt on `payment_intent.succeeded`) | ❌ Not wired |
+| 4 | **Apple Pay finish** | Code-complete (`merchantIdentifier` set), but needs Stripe Apple Pay cert + live-domain registration + a native device rebuild to actually charge. | ~1h once certs in hand | 🟡 Code-done, config pending |
+| 5 | **ATT prompt** | Apple **rejection** (5.1.2) IF any cross-app analytics ship. `expo-tracking-transparency` not installed. If we launch with zero analytics SDKs we can defer; the moment Mixpanel/Sentry land, this is mandatory. | ~1h | ❌ Not installed (conditionally required) |
+| 6 | **Universal Links / AASA** | Gift + deal share links (`/deal/*`, `/gift/*`) won't deep-link into the app without the `.well-known/apple-app-site-association` file served by web + `associatedDomains` in `app.json`. Not strictly a rejection, but share/gift flows are broken without it. | ~1h + rebuild | ❌ Not served |
+| 7 | **ToS + Privacy Policy (hosted)** | App Store **requires** a Privacy Policy URL; "marketplace facilitator, not provider" clauses are legal protection for an aesthetic-services marketplace. No `/privacy` or `/terms` page exists. | ~half day (Termly) | ❌ Not hosted |
+| 8 | **Landing page + support email** | App Store needs a Support URL; `gloe.app` should not be a dead root. `page.tsx` exists (55 lines) — verify it's a real landing, not a stub. `hello@gloe.app` forwarding must work. | ~half day | 🟡 Verify |
+
+**Not blockers (explicitly OK to launch without):** robust search, deeper filters, credit/loyalty, Wallet live updates, OTA, map tab, OSRM, reconciliation cron. All parked in §14.
+
+The **infra switches** (Stripe live keys, live webhook, Railway env, EAS build, TestFlight, submission) are mechanical and fully scripted in §11 — they're "do the runbook," not "figure out what to build." The table above is the *build* work that must precede the runbook.
 
 ### Pending / stubs / known gaps
 
@@ -556,7 +581,7 @@ When you say "ready to ship," walk this top to bottom. Every box matters.
 ### Phase 1 — Apple App Store hygiene (rejection blockers)
 
 1. **Delete account** — add row in profile settings → Clerk `user.delete()` + tRPC mutation. Confirmation dialog. (Apple 5.1.1(v).)
-2. **Sign in with Apple parity** — same prominence as Google in `SocialAuthButtons.tsx`. (Apple 4.8.)
+2. **Sign in with Apple** — ⚠️ NOT BUILT. `SocialAuthButtons.tsx` offers Google/Facebook/TikTok but no Apple provider → guaranteed rejection (Apple 4.8). Enable `oauth_apple` in Clerk, add the Apple button at equal prominence, add the `com.apple.developer.applesignin` entitlement, rebuild. **Blocker #1 — do this first.**
 3. **ATT prompt** — `expo-tracking-transparency`, request on first launch after sign-in, persist answer to Clerk userMetadata. (Apple 5.1.2.)
 4. **Location asked in context** — move from cold launch to "Near me" filter tap. (Apple 5.1.1.)
 5. **OG meta tags on `gloe.app/deal/[id]`** — title, og:title, og:description, og:image (deal hero), twitter:card. Validate at opengraph.xyz.
