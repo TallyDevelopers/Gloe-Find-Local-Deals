@@ -14,6 +14,7 @@ Last consolidated: 2026-05-29. Last updated: 2026-05-31 (concierge support ticke
 4. [The money pipeline](#4-the-money-pipeline)
 5. [Database schema](#5-database-schema)
 6. [Consumer app](#6-consumer-app)
+6A. [Search & discovery engine](#6a-search--discovery-engine)
 7. [Vendor portal](#7-vendor-portal)
 8. [Admin (god mode)](#8-admin-god-mode)
 9. [Credit & loyalty system](#9-credit--loyalty-system)
@@ -373,9 +374,7 @@ Hierarchical, editable in admin without code change.
 - Share button (sends gift link via `createGiftLink`).
 - **Redemption is vendor-only.** The customer screen only *displays* the QR + code; the vendor scans/enters it in their scanner to redeem. There is no consumer self-redeem button or mutation — a "Simulate redemption" button + the `devMarkRedeemed` path were removed 2026-05-29 because they could fire a payout with no one showing up.
 
-**Search:**
-- `app/(app)/search.tsx` is currently a **stub** — search bar + static "try searching for" suggestions, no query execution. Footer literally says "Live search results coming in the next patch." There is **no `deals.search` endpoint** (only `deals.list` + `deals.byId`).
-- Target is **robust, DoorDash-style search** — see §10 "Robust search (DoorDash-style)" for the full spec (typo tolerance, synonyms/similar items, location-aware ranking). This is the single biggest discovery gap today.
+**Search:** ✅ **Built** — `app/(app)/search.tsx` is the live fuzzy/synonym-aware search; `deals.search` / `deals.suggest` / `deals.trending` / `deals.detectSubtype` / `deals.categoryTreatments` back it. Full breakdown in **§6A**.
 
 **Out-of-area ("coming soon") gate:**
 - We launch in LA / Orange County / San Diego. When a user's resolved location has **zero deals within 50mi** (GPS resolved, no category/filter active), Discover shows `ComingSoon` instead of an empty grid.
@@ -421,6 +420,79 @@ Means we need a **dev-client build** (not Expo Go). Rebuild via `npx expo run:io
 - `NSLocalNetworkUsageDescription` in Info.plist — required for physical-device LAN connections to the dev API (added 2026-05-23).
 - API URL auto-resolved at runtime from `Constants.expoConfig?.hostUri` so one bundle works for sim + device.
 - Stale Metro host on iPhone (white screen, no Metro fetches) = rebuild via `npx expo run:ios --device`. Don't diagnose.
+
+---
+
+## 6A. Search & discovery engine
+
+DoorDash/Groupon-grade search, built on Postgres — **no Elasticsearch, no Algolia, no new infra**. The whole thing is one ranked query plus a domain brain. Shipped 2026-06-01.
+
+### The one idea
+
+**Search and filters are the same query.** There is no separate search code path — `listDeals` (`apps/api/src/domain/deals.ts`) is the single ranked engine, and search is just that engine with a text-relevance term folded into the blended score. Discover, category filter, treatment drill-down, and the search box all call the same function with different args.
+
+### How a query becomes results
+
+```
+"botx"  ─┬─► expandQuery()  ──►  ["botx"]                    (typo: trigram saves it)
+"tox"   ─┼─► expandQuery()  ──►  ["tox","botox","dysport",   (slang: synonym layer)
+         │                        "jeuveau","xeomin","daxxify"]
+"ozempic"┴─► expandQuery()  ──►  ["ozempic","semaglutide",   (brand→generic)
+                                  "tirzepatide","weight loss"]
+                                         │
+                                         ▼
+              SQL: pg_trgm word_similarity + substring, across
+              deal title · vendor name · category · subtype
+                                         │
+                                         ▼
+        relevance folded into the blended ranking score:
+        text-match·5 + hard-match·3 + sponsored + rating − distance + recency
+```
+
+**Two layers do the magic:**
+
+1. **Fuzzy (pg_trgm).** `word_similarity` over title/vendor/category/subtype with GIN trigram indexes (migration `20260601120000_search_trigram_indexes`). Typos resolve: "botx"→botox (0.60), "filer"→filler, "microneedeling"→microneedling. Floor at `SEARCH_SIM_THRESHOLD = 0.4` — below that, only exact/substring ("hard") matches survive, so junk → empty.
+2. **Synonyms (`aestheticSynonyms.ts`).** Curated aesthetic slang/brand → treatment map a generic engine could never know: "tox"→every neuromodulator, "skinny shot"/"ozempic"→semaglutide, "fat freeze"→CoolSculpting, "vampire facial"→microneedling+PRP. Category catch-alls deliberately stripped so "tox" stays specific (neuromodulators), not all-injectables.
+
+Ranking lives in `listDeals`' blended score: a strong text match dominates, but distance/rating/recency still tie-break — a great match nearby beats an equally-great one across town. Sponsored boost is **halved during search** so paid placement can't bury a better match.
+
+### Endpoints (`deals.*`)
+
+| Endpoint | What it does |
+|---|---|
+| `deals.list` | The feed. Now also takes `subtypeSlug` (treatment drill-down). |
+| `deals.search` | `q` + all filters + `sort`. Fuzzy + synonym + ranked. |
+| `deals.suggest` | Type-ahead autocomplete — treatments matching the partial query, inventory-ranked. |
+| `deals.trending` | "Popular near you" — treatments with the most nearby deals (inventory-based; swap to real search/purchase counts once logged). |
+| `deals.categoryTreatments` | Treatments under a category with **≥2 nearby deals** — powers the inventory-gated drill-down pills. |
+| `deals.detectSubtype` | **Reverse** of the synonym engine: title → treatment, for vendor auto-tagging. |
+
+**Filters/sort** (all on the one engine): `subtypeSlug`, `minRating`, price range, min-discount, distance, and `sort` ∈ relevance / distance / price / rating / discount.
+
+### Treatment auto-tagging (vendor side)
+
+The taxonomy is **7 categories → 42 treatment subtypes** (Botox, Dysport, Juvederm, Sculptra, Semaglutide…). For search to know "this deal is Botox," the deal must carry `subtype_id`. The post-deal form captures it **without overwhelming the vendor**:
+
+- `detectTreatment(title, subtypes, categorySlug)` reads the title as they type and returns the implied treatment + confidence. **Brand names auto-fill** ("Botox — first-timer" → ✓ Botox); **generic words suggest** ("lip filler" → "Looks like Dermal Filler?"). Category-scoped so names under two categories (Laser Hair Removal) disambiguate.
+- Vendor sees **one chip**, not 12. "Change" reveals only that category's treatments. Fully optional; detection never overrides a manual/edit choice.
+
+### Customer drill-down (inventory-gated)
+
+Pills are the **7 categories** by default. Tap one → an optional second row of **treatment** sub-pills appears — but only treatments with **≥2 nearby deals** (`TreatmentPills` renders nothing below that). Cold-start safe: with thin inventory there's no drill row (no dead-ends "showing nothing but one"); as vendors are added and treatments cross the floor, the row lights up **on its own, same code**. Drilling is always opt-in — a leading "All" pill keeps the whole category.
+
+### Search screen (`apps/mobile/app/(app)/search.tsx`)
+
+Debounced (180ms) instant results · autocomplete suggestion chips while typing · idle state = recent searches (SecureStore) + "popular near you" · **zero results never dead-ends** (suggests popular nearby treatments) · compact result rows (resized thumbs, price/discount, vendor·rating·distance) with save + prefetch tap-through.
+
+### Why it scales (and won't hurt us later)
+
+Everything is **data-driven + adaptive + human-confirmed**, nothing cemented to "4 deals in San Diego":
+- Taxonomy = DB rows. Add "Kybella" = one INSERT → it shows in search, pills, and the detector instantly.
+- Drill-downs gate on **live counts** — embarrassing-at-4-deals (hides depth), great-at-4,000 (reveals it), zero code change.
+- Synonym/alias maps are additive and degrade gracefully (a missing alias just falls back to fuzzy).
+- Relevance is abstracted in the ranking → swapping pg_trgm for **Algolia / pgvector semantic / ML learning-to-rank** later is a layer swap, not a rewrite.
+
+**The one future-proofing TODO:** search/click logging (the data flywheel). Cheap now, it's what powers real "trending," learned synonyms, and ML ranking once there's traffic. Not yet wired — the deliberate "invest now, win later" piece.
 
 ---
 
@@ -518,6 +590,7 @@ Means we need a **dev-client build** (not Expo Go). Rebuild via `npx expo run:io
 - APNs push notification stack (ES256 JWT, device token registration, 410 cleanup).
 - Admin: vendors, deals, payouts, fees (incl. per-vendor), audit, transactions, customers.
 - **Refunds tab** (god mode) — dedicated forensic ledger over the audit log: actor, amount, order, redeemed-before-refund flag, full/partial/blocked, reason, Stripe id. Cross-linked from support + customer drawers. §8.
+- **Search & discovery engine** — fuzzy (pg_trgm) + aesthetic synonym/slang-aware search, location-ranked, with autocomplete, recent/trending, smart no-dead-end empty state; vendor treatment auto-tagging (title→subtype detector); inventory-gated treatment drill-down pills; sort + treatment/rating filters. Full breakdown in **§6A**.
 - **Support boss-view + order context + inline refunds** — support drawer shows a full customer profile (lifetime spend, refund %, auto-flags), the customer's order history (incl. which order the ticket is about), and refund/partial-refund actions per order without leaving the chat. §8.
 - **Concierge support tickets** (consumer↔Gloē) — chat, photo/video attachments (camera + library), god-mode reply + push-on-reply. §6.
 - **Account deletion** in-app (Apple 5.1.1(v)) — anonymize-and-deactivate. §6.
@@ -550,12 +623,10 @@ The **infra switches** (Stripe live keys, live webhook, Railway env, EAS build, 
 
 ### Pending / stubs / known gaps
 
-- **Robust search (DoorDash-style)** — `search.tsx` is a stub; no `deals.search` endpoint exists. Customers can only browse by category pill today, which is the biggest discovery gap. Goal: a real search that behaves like DoorDash — you type a treatment and get relevant, nearby results even if you misspell it or use a brand/slang name. Scope:
-  - **Typo / fuzzy tolerance** — "botx", "filer", "microneedeling" still resolve. Use Postgres `pg_trgm` trigram similarity (already on Supabase/Postgres, no new infra) over deal titles, vendor names, category + subtype names. Add a migration enabling the extension + GIN indexes — first real use of the migration tracking we still owe (see "Supabase migrations in repo" gap).
-  - **Synonyms / "similar items"** — "tox" → Botox / Dysport / Jeuveau; "lip flip" near "lip filler". Needs a synonym/alias table (none exists today) OR trigram matching across `service_subtypes` names. Schema already has `service_subtypes` + `secondary_category_id` to build on.
-  - **Location-aware ranking** — reuse the existing `listDeals` PostGIS distance filter + blended distance/rating/recency/sponsored score (`deals.ts`). Search = that same ranking with a text-relevance term added, NOT a separate code path.
-  - **UX** — recent queries, trending/suggested terms, instant (debounced) results, sponsored results allowed at top. Empty/zero-result state should suggest nearest similar treatments rather than dead-end.
-- **Deeper filtering** — FilterSheet ships distance + price range + min-discount %, all wired end-to-end. Missing: **subtype/treatment-type filter** (`service_subtypes` is returned per deal but there's no UI filter and `listDeals` can't filter by subtype), a **sort control** (price / distance / rating — ranking is fixed today), rating-floor, and "open now" filters. Pairs with the search work above.
+- ~~**Robust search (DoorDash-style)**~~ — **DONE** (2026-06-01). Fuzzy + synonym-aware search, location-ranked, autocomplete, recent/trending, smart empty state, treatment auto-tagging, inventory-gated drill-down. Full system in **§6A**. Remaining tail:
+  - **Search/click logging** — not wired. The data flywheel for real "trending" + learned synonyms + ML ranking later. Cheap to add; the deliberate "invest now, win later" piece.
+  - **`FilterSheet` sort/rating UI** — the engine accepts `sort` (relevance/distance/price/rating/discount) + `minRating`, but the mobile FilterSheet doesn't expose controls for them yet (search screen + treatment pills do the heavy lifting). Add the controls to surface them.
+  - **"Open now" filter** — deferred: `hours_summary` is freetext, not structured. Needs structured hours before it can be a filter that doesn't lie.
 - **Apple Pay** — code-complete in Stripe PaymentSheet; needs Merchant ID + Stripe cert + native device rebuild. Tonight session.
 - **Apple Wallet live updates** — pass generation ships, but status flips (e.g. "Redeemed") need APNs Pass Web Service spec wiring. Schema for `pass_registrations` is there. Not a launch blocker.
 - ~~**Delete account in-app**~~ — **DONE** (`me.deleteAccount`, anonymize-and-deactivate; see §6).
@@ -852,12 +923,11 @@ All 4 green = ready to sign first real spa.
 
 ### v1.1 — Polish
 
-- **Robust DoorDash-style search** — fuzzy/typo-tolerant, synonym-aware ("similar items"), location-ranked. Replaces the current `search.tsx` stub. See §10 for full scope.
-- **Deeper filtering** — subtype/treatment-type filter + sort control (price / distance / rating) on top of the existing distance/price/discount filters.
+- ~~**Robust DoorDash-style search**~~ — ✅ **shipped early** (2026-06-01). Fuzzy + synonym-aware, location-ranked, auto-tagging, inventory-gated drill-down. See §6A. Tail: search logging, FilterSheet sort/rating UI, "open now".
 - Map tab in consumer app (deals plotted by location).
 - Reviews (write side; read is shipped).
 - Apple Wallet live status updates (Pass Web Service + APNs trigger).
-- Delete account UI.
+- ~~Delete account UI~~ — ✅ shipped (§6).
 - ATT prompt + contextual location ask.
 - Sentry + Mixpanel.
 
