@@ -2,7 +2,53 @@
 
 > The first place a woman opens when she's thinking about getting Botox, filler, or any aesthetic treatment — to find the best deal near her, today.
 
-Last consolidated: 2026-05-29. Last updated: 2026-05-31 (concierge support tickets + attachments, account deletion, image caching, prefetch/preload, region co-location). Replaces the previous nine scattered .md files at repo root.
+Last consolidated: 2026-05-29. Last updated: 2026-06-01 (search & discovery engine; doc restructured with a Start-Here map + dual investor/builder lenses).
+
+---
+
+## 🧭 Start Here
+
+**Gloē in one line:** the first app a woman opens when she's thinking about Botox, filler, or any aesthetic treatment — to find and book the best deal near her, today. A two-sided marketplace: **consumers** find and buy deals; **vendors** post for free and pay only when a customer actually shows up and redeems.
+
+### This doc has two readers — every section is written for both
+
+> **📖 How to read any section:** look for the two parts.
+> **💼 The pitch** = plain English. What it does, why it matters, where the money is. No code. (For investors — and for *you* remembering why a thing exists.)
+> **🔧 Under the hood** = how it's actually built. Files, flow, schema. (For building on it.)
+
+- **💼 Investor / business path:** §1 What Gloē is → §2 Business model → the **Feature index** below → §16 Costs → §14 Roadmap.
+- **🔧 Builder path:** §3 Architecture → §4 Money pipeline → §5 Schema → the feature deep-dives (§6–§8) → §11 Runbook.
+
+### Feature index — everything Gloē does, at a glance
+
+| Feature | 💼 In plain English | 🔧 Where it's documented | Status |
+|---|---|---|---|
+| **Discover feed** | Browse the best aesthetic deals near you, ranked | §6 Consumer app | ✅ |
+| **Search** | Type a treatment — even misspelled or slang ("tox") — get nearby matches | §6A Search engine | ✅ |
+| **Claim & pay** | Buy a voucher in-app with Apple Pay or card | §6B Pay & share · §4 Money | ✅ |
+| **Share to pay** | Text a link so someone *else* pays for your treatment | §6B Pay & share | ✅ |
+| **Voucher & redeem** | QR voucher; the vendor scans it to mark it used | §4 Money · §6 | ✅ |
+| **Apple Wallet** | Add the voucher to Apple Wallet (`.pkpass`) | §6C Apple Wallet | ✅ (live "redeemed" update pending) |
+| **Push notifications** | Get pinged when something happens (reply, redemption) | §6D Notifications | ✅ |
+| **Saved** | Heart deals to come back to | §6 Consumer app | ✅ |
+| **Concierge support** | In-app chat with Gloē, photo/video, god-mode reply | §6 · §8 Admin | ✅ |
+| **Bottom navigation** | Discover · Saved · Wallet · Profile | §6E App shell | ✅ |
+| **Credit / loyalty** | Earned credit balance | §9 Credit | 🟡 stub |
+| **Vendor — post a deal** | Vendors list a treatment; we auto-tag it (Botox/Dysport) | §7 Vendor · §6A | ✅ |
+| **Vendor — scan & redeem** | Vendor scans the customer's QR to mark redeemed | §7 Vendor portal | ✅ |
+| **Vendor — get paid** | Stripe Connect payout when a deal is redeemed; instant payout option | §4 Money · §7 | ✅ |
+| **Admin god mode** | Run the whole business: vendors, payouts, fees, refunds, support | §8 Admin | ✅ |
+| **Refunds** | Full/partial refunds + a forensic refund ledger | §8 Admin | ✅ |
+
+### Status board (the honest state)
+
+- **✅ Shipped & working:** the full buy→redeem→get-paid loop, search & discovery, refunds, support, Apple Wallet passes, push.
+- **🟡 In progress / stub:** credit & loyalty (stub), Apple Wallet live status updates, search/click logging.
+- **❌ Launch blockers (do before App Store):** Sign in with Apple, dispute/chargeback webhook, transactional receipts. Full ranked list in **§10**.
+
+### Where everything lives (full nav)
+
+§1–2 the story & money model · §3–5 how it's built (architecture, money pipeline, database) · §6–6E the consumer app & its features · §7 vendor portal · §8 admin · §9 credit · **§10 what's done vs not** · §11 launch runbook · §12 test scripts · §13 day-to-day ops · §14 roadmap · §15 legal · §16 costs · §17 out of scope · §18 FAQ.
 
 ---
 
@@ -15,6 +61,10 @@ Last consolidated: 2026-05-29. Last updated: 2026-05-31 (concierge support ticke
 5. [Database schema](#5-database-schema)
 6. [Consumer app](#6-consumer-app)
 6A. [Search & discovery engine](#6a-search--discovery-engine)
+6B. [Claim, pay & "Share to pay"](#6b-claim-pay--share-to-pay)
+6C. [Apple Wallet passes](#6c-apple-wallet-passes)
+6D. [Push notifications](#6d-push-notifications)
+6E. [App shell & bottom navigation](#6e-app-shell--bottom-navigation)
 7. [Vendor portal](#7-vendor-portal)
 8. [Admin (god mode)](#8-admin-god-mode)
 9. [Credit & loyalty system](#9-credit--loyalty-system)
@@ -493,6 +543,60 @@ Everything is **data-driven + adaptive + human-confirmed**, nothing cemented to 
 - Relevance is abstracted in the ranking → swapping pg_trgm for **Algolia / pgvector semantic / ML learning-to-rank** later is a layer swap, not a rewrite.
 
 **The one future-proofing TODO:** search/click logging (the data flywheel). Cheap now, it's what powers real "trending," learned synonyms, and ML ranking once there's traffic. Not yet wired — the deliberate "invest now, win later" piece.
+
+---
+
+## 6B. Claim, pay & "Share to pay"
+
+### 💼 The pitch
+
+A customer finds a deal and buys a voucher in **seconds** — Apple Pay or card, right in the app, no account-funding or wallet top-up. If she'd rather **someone else pay** (her mom, her partner), she taps **"Share to pay,"** texts a link, and whoever opens it pays — but the voucher still lands in **her** account. We never hold inventory or take payment risk; Stripe runs the charge and we orchestrate. **We make money on a platform fee taken out of each sale** (see §2). The voucher only exists once money clears, so there's no "paid but no voucher" or "voucher but no money" state.
+
+### 🔧 Under the hood
+
+`apps/api/src/domain/checkout.ts` + `checkout.router.ts`. Two entry points, one fulfillment path:
+
+- **In-app purchase** — `checkout.createPurchase`. Computes the fee on the order total (`computeFee`), creates a **held Stripe PaymentIntent**, writes a `pending_payment` row in `transactions`, returns the `clientSecret` → the app's Stripe **PaymentSheet** (Apple Pay + card). Vouchers (`claims`) are minted **only** on the `payment_intent.succeeded` webhook — one per quantity — so an unpaid order never yields a live voucher.
+- **Share to pay** — `checkout.createGiftLink`. Creates a Stripe **Checkout Session** (Stripe-hosted page) and returns a Gloē URL (`PUBLIC_WEB_ORIGIN`). Any cardholder pays on that page; the voucher credits to the **redeemer** (`metadata.userId`), not the payer. Hard **$500/link cap** (`GIFT_LINK_MAX_AMOUNT_CENTS`) bounds fraud blast-radius since cardholder ≠ redeemer. Tagged `payment_source='gift_link'`.
+- Both converge on `fulfillPurchase` (resolved from the webhook by PaymentIntent id or Checkout Session id), which mints the vouchers. The full money flow — fee tiers, held funds, transfer on redemption — is **§4**.
+
+---
+
+## 6C. Apple Wallet passes
+
+### 💼 The pitch
+
+After buying, the customer adds her voucher to **Apple Wallet** with one tap — so it lives on her lock screen and she can redeem at the counter **without even opening the app**. It feels premium and legitimate (like an airline boarding pass), and it keeps Gloē present on her phone between visits. A small thing that makes the whole product feel real.
+
+### 🔧 Under the hood
+
+`apps/api/src/domain/walletPass.ts` (`buildVoucherPass`) builds a **signed `.pkpass`** with `passkit-generator`: Apple **`coupon`** layout, `serialNumber = claim.id`, a QR barcode carrying the redemption payload. Signed with the Pass Type ID cert (`signerCert.pem` + `signerKey.pem` + WWDR), loaded from `secrets/` locally or base64 env vars in prod (see §11 Phase 4). Mobile: `features/wallet/AddToWalletBadge.tsx` renders the official Add-to-Apple-Wallet button and hands the pass to PassKit.
+
+**Live updates** (flipping the pass to "Redeemed" automatically) need the APNs **Pass Web Service** — the `pass_registrations` schema exists, the wiring is pending. Not a launch blocker. See §10.
+
+---
+
+## 6D. Push notifications
+
+### 💼 The pitch
+
+Gloē pings the customer **when it matters** — a reply from support, a voucher about to expire, a redemption confirmation. That's what brings people back and builds trust that the app is "alive." We ask for permission **contextually** (after her first save or purchase, not on a cold launch) — the difference between ~60–80% opt-in and ~20%.
+
+### 🔧 Under the hood
+
+**Direct APNs** (no Expo push middleman): ES256 JWT auth with the `.p8` key (`apps/api/src/domain/apns.ts`). Device tokens are registered by `features/notifications/PushRegistrationBridge.tsx` + `usePushRegistration.ts` → stored in the `devices` table (`devices.ts` / `devices.router.ts`). A `410 Gone` from APNs prunes the dead token. Fired on events like a support agent reply (§8). Capability + entitlement notes are in §11.
+
+---
+
+## 6E. App shell & bottom navigation
+
+### 💼 The pitch
+
+**Four tabs, the whole app:** **Discover** (find deals), **Saved** (your shortlist), **Wallet** (your vouchers + the QR to redeem), **Profile** (account, support, settings). Simple enough that a first-timer understands the entire product in five seconds — which is the point. iPhone-only for v1 (iPad is a roadmap item).
+
+### 🔧 Under the hood
+
+`apps/mobile/app/(app)/(tabs)/_layout.tsx` — Expo Router `Tabs`, four screens (`discover`, `saved`, `wallet`, `profile`), icons via `features/tabs/TabIcon.tsx`, brand-tinted active state. The **Wallet tab** (`wallet.tsx`) is the voucher home: active vouchers sorted soonest-to-expire, a hero treatment for the most-urgent one, tap → `/my-deal/[id]` for the full-screen QR. (This tab replaced the old "messages" tab — see git history.)
 
 ---
 
