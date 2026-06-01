@@ -17,6 +17,7 @@ import { ComingSoon } from '../../../features/discover/ComingSoon';
 import { DealCardLarge } from '../../../features/discover/DealCardLarge';
 import { FeaturedCarousel } from '../../../features/discover/FeaturedCarousel';
 import { FilterPills, useCategoryOptions } from '../../../features/discover-header/FilterPills';
+import { TreatmentPills } from '../../../features/discover-header/TreatmentPills';
 import { FilterSheet, type DiscoverFilters } from '../../../features/discover-header/FilterSheet';
 import { LocationPill } from '../../../features/discover-header/LocationPill';
 import { SearchBar } from '../../../features/discover-header/SearchBar';
@@ -34,7 +35,16 @@ export default function DiscoverScreen() {
   const anonSeed = useAnonSeed();
 
   const [categorySlug, setCategorySlug] = useState<string | null>(null);
+  // Optional treatment drill-down under the selected category (second pill row).
+  const [subtypeSlug, setSubtypeSlug] = useState<string | null>(null);
   const [filters, setFilters] = useState<DiscoverFilters>({});
+
+  // Switching category clears any treatment drill-down — the old treatment
+  // doesn't belong to the new category.
+  const selectCategory = (slug: string | null) => {
+    setCategorySlug(slug);
+    setSubtypeSlug(null);
+  };
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const categoryOptions = useCategoryOptions();
 
@@ -53,6 +63,7 @@ export default function DiscoverScreen() {
       maxDistanceMiles: filters.maxDistanceMiles ?? 50,
       limit: 50,
       ...(categorySlug ? { category: categorySlug } : {}),
+      ...(subtypeSlug ? { subtypeSlug } : {}),
       ...(filters.minPriceCents !== undefined ? { minPriceCents: filters.minPriceCents } : {}),
       ...(filters.maxPriceCents !== undefined ? { maxPriceCents: filters.maxPriceCents } : {}),
       ...(filters.minDiscountPct !== undefined ? { minDiscountPct: filters.minDiscountPct } : {}),
@@ -151,14 +162,25 @@ export default function DiscoverScreen() {
             <SearchBar onPress={() => router.push('/(app)/search')} />
           </View>
 
-          {/* Category filter pills */}
+          {/* Category filter pills, with an optional treatment drill-down row
+              that only appears when the selected category has enough inventory. */}
           <View style={{ paddingLeft: space[5], paddingRight: space[3] }}>
             <FilterPills
               selectedSlug={categorySlug}
-              onSelect={setCategorySlug}
+              onSelect={selectCategory}
               onOpenFilters={() => setFilterSheetOpen(true)}
               activeFilterCount={activeFilterCount}
             />
+            {categorySlug ? (
+              <TreatmentPills
+                categorySlug={categorySlug}
+                selectedSubtype={subtypeSlug}
+                onSelect={setSubtypeSlug}
+                userLat={location.latitude}
+                userLng={location.longitude}
+                maxDistanceMiles={filters.maxDistanceMiles ?? 50}
+              />
+            ) : null}
           </View>
 
           {/* Thin "updating…" bar ONLY while swapping to new results with old

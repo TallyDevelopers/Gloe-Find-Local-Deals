@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { detectSubtypeForText, getDeal, getTrendingTreatments, listDeals, suggestSearchTerms } from '../domain/deals';
+import { detectSubtypeForText, getCategoryTreatments, getDeal, getTrendingTreatments, listDeals, suggestSearchTerms } from '../domain/deals';
 import { publicProcedure, router } from './trpc';
 
 const sortEnum = z.enum(['relevance', 'distance', 'price', 'rating', 'discount']);
@@ -15,6 +15,8 @@ export const dealsRouter = router({
           userLng: z.number().optional(),
           maxDistanceMiles: z.number().positive().optional(),
           category: z.string().optional(),
+          /** Optional treatment drill-down under the category (second pill row). */
+          subtypeSlug: z.string().optional(),
           limit: z.number().int().positive().max(100).optional(),
           offset: z.number().int().min(0).optional(),
           // Advanced filters from the filter sheet
@@ -88,6 +90,23 @@ export const dealsRouter = router({
   detectSubtype: publicProcedure
     .input(z.object({ title: z.string().max(200), categorySlug: z.string().optional() }))
     .query(({ ctx, input }) => detectSubtypeForText(ctx.sql, input.title, input.categorySlug)),
+
+  /**
+   * Treatments under a category that have enough nearby inventory to drill into
+   * — the optional second pill row. Empty/short when inventory is thin (no
+   * dead-ends), fills in as vendors are added.
+   */
+  categoryTreatments: publicProcedure
+    .input(
+      z.object({
+        categorySlug: z.string(),
+        userLat: z.number().optional(),
+        userLng: z.number().optional(),
+        maxDistanceMiles: z.number().positive().optional(),
+        minDeals: z.number().int().min(1).max(10).optional(),
+      }),
+    )
+    .query(({ ctx, input }) => getCategoryTreatments(ctx.sql, input.categorySlug, input)),
 
   /** Popular treatments near the user — zero-state chips for the search screen. */
   trending: publicProcedure

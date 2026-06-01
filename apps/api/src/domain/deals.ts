@@ -520,6 +520,52 @@ export async function getTrendingTreatments(
 }
 
 /**
+ * Treatments WITHIN a category that have enough nearby inventory to be worth
+ * drilling into — powers the optional second row of "treatment" pills under a
+ * selected category.
+ *
+ * The `minDeals` floor is the cold-start guard: we never surface a treatment
+ * drill-down that would dead-end on a single result. With thin inventory this
+ * returns few/none (so the UI stays category-only); as vendors are added,
+ * treatments cross the floor and the drill-downs light up on their own — same
+ * code, no flag to flip.
+ */
+export async function getCategoryTreatments(
+  sql: Sql,
+  categorySlug: string,
+  opts: { userLat?: number; userLng?: number; maxDistanceMiles?: number; minDeals?: number } = {},
+): Promise<SearchSuggestion[]> {
+  const minDeals = opts.minDeals ?? 2;
+  const radiusMeters = (opts.maxDistanceMiles ?? 50) * 1609.344;
+  const lat = opts.userLat, lng = opts.userLng;
+  const locFilter =
+    typeof lat === 'number' && typeof lng === 'number'
+      ? sql`AND ST_DWithin(v.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${radiusMeters})`
+      : sql``;
+
+  const rows = await sql<{ term: string; subtype_slug: string; category_slug: string; deal_count: number }[]>`
+    SELECT s.display_name AS term, s.slug AS subtype_slug, c.slug AS category_slug, COUNT(d.id) AS deal_count
+    FROM public.service_subtypes s
+    JOIN public.service_categories c ON c.id = s.category_id
+    JOIN public.deals d ON d.subtype_id = s.id AND d.status = 'active' AND d.expires_at > now()
+    JOIN public.vendors v ON v.id = d.vendor_id AND v.status = 'active'
+    ${locFilter}
+    WHERE c.slug = ${categorySlug}
+    GROUP BY s.id, s.display_name, s.slug, c.slug
+    HAVING COUNT(d.id) >= ${minDeals}
+    ORDER BY deal_count DESC, s.display_name
+  `;
+
+  return rows.map((r) => ({
+    term: r.term,
+    kind: 'subtype' as const,
+    subtypeSlug: r.subtype_slug,
+    categorySlug: r.category_slug,
+    dealCount: Number(r.deal_count),
+  }));
+}
+
+/**
  * Detect the treatment subtype implied by some text (the deal title) against
  * the live taxonomy. Powers the post-deal form's auto-tag chip. Returns null if
  * nothing confidently lands.
