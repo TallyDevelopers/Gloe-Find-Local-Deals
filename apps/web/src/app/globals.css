@@ -339,6 +339,12 @@ textarea {
 }
 .rail > * {
   scroll-snap-align: start;
+  /* Hold their width and let the rail scroll horizontally. Without this, the
+     flex rail SHRINKS cards to fit the viewport — fine on desktop (they already
+     fit) but on mobile it crams them into unreadable ~90px slivers (truncated
+     text, badge colliding with the heart). Desktop is unaffected: it was never
+     shrinking. */
+  flex-shrink: 0;
 }
 .hide-scrollbar {
   scrollbar-width: none;
