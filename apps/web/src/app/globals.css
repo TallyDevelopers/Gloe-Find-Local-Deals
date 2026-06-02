@@ -453,7 +453,11 @@ textarea {
   max-width: 1180px;
   margin: 0 auto;
 }
-.deal-aside-sticky {
+/* Sticky purchase panel. The grid ITEM sticks (with align-self:start it keeps
+   content height while the full grid row becomes its travel range), so the
+   panel follows as you scroll the long left column. */
+.deal-aside {
+  align-self: start;
   position: sticky;
   top: 92px;
 }
