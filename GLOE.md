@@ -82,65 +82,69 @@ Last consolidated: 2026-05-29. Last updated: 2026-06-01 (search & discovery engi
 
 ## 1. What Gloē is
 
-A two-sided marketplace for aesthetic services (Botox, filler, medspa, facials, IV, body, dental, etc.). Consumers find deals near them on the map, claim them in-app, and walk into the practice to redeem. Vendors post deals free and get paid out when a customer actually shows up.
+### 💼 The pitch
 
-**Three surfaces, one backend:**
+Gloē is the first place a woman looks when she's thinking about Botox, filler, or any aesthetic treatment — an app that shows the **best real deals near her** and lets her book in two taps. Vendors (medspas, injectors, wellness clinics) list deals **for free** and only pay Gloē when a customer **actually shows up and redeems**. Think "Groupon for aesthetics," but curated, mobile-first, and incentive-aligned — we only make money when our vendors do.
+
+**North Star Metric:** monthly redemptions per active consumer. Not downloads, not signups — the moment a voucher gets scanned at the spa. That's a real booking, real money, real value on both sides.
+
+### 🔧 Under the hood
+
+A two-sided marketplace for aesthetic services (Botox, filler, medspa, facials, IV, body, dental, etc.). **Three surfaces, one backend:**
 - **Mobile (iOS):** Expo dev-client. Consumer-facing — browse, claim, redeem.
 - **Web — vendor portal:** Next.js at `apps/web/src/app/vendor`. Signup, deals, dashboard, scanner.
 - **Web — admin (god mode):** Next.js at `apps/web/src/app/admin`. Vendor approval, payouts, fees, audit.
 - **API:** Hono + tRPC at `apps/api`. All business logic.
 
-**North Star Metric:** monthly redemptions per active consumer. Not downloads, not signups — the moment a voucher gets scanned at the spa.
-
 ---
 
 ## 2. The business model
 
+### 💼 The pitch
+
 **Pay-per-transaction, NOT subscription.** Locked 2026-05-19.
 
 - Consumers browse free, pay full deal price in-app (Apple Pay / card) at claim time.
-- Vendors sign up free, post deals free, pay no monthly anything.
-- Gloē collects payment, holds funds, pays vendor out **on redemption** minus a platform fee.
-- Platform fee is **tiered by deal price** (stored in `platform_fees` table, editable in admin).
+- Vendors sign up free, post deals free, pay **no monthly anything**.
+- Gloē collects payment, holds the funds, and pays the vendor out **on redemption** minus a platform fee.
 
-### Why we pivoted from subscription
-
-The original $99–199/mo vendor subscription model was killed because:
+**Why pay-as-you-earn.** The original $99–199/mo vendor subscription was killed because:
 
 > "If customers just sign up for a subscription and pay but there's not enough clients, they're gonna feel like they're paying for nothing as opposed to you just sign up, you don't pay anything until someone pays."
 
-Pay-as-you-earn aligns incentives (Gloē only makes money when vendors do), kills onboarding friction, and beats Groupon's 30–50% on positioning ("post free, we get paid only when you do").
+It aligns incentives (Gloē only makes money when vendors do), kills onboarding friction, and beats Groupon's 30–50% on positioning ("post free, we get paid only when you do").
 
-### Platform fee tiers (admin-controlled — current live values as of 2026-05-29)
+**Why we win.**
+- **Groupon:** takes 30–50% and dilutes the brand. We take ~20% (and we set it) and curate.
+- **RealSelf:** review-heavy, deal-light. We're transactional.
+- **Instagram ads:** vendors burn $1k+/mo and get nothing trackable. We charge nothing until a real booking lands.
+- **UNNI (closest competitor):** validates the market exists. We win on visual polish + breadth.
 
-**The fee schedule is not hardcoded. You set it.** Tiers live in the `platform_fees` table and are fully editable in admin — add, edit, deactivate, or override per-vendor at any time. The code (`computeFee`) reads whatever active rows exist; it never assumes a fixed scheme. What's below is the *current* configuration, not a permanent rule.
+**Two revenue lines:** (1) the **platform fee** on every sale (~20%, tiered, we set it), and (2) a thin margin on **instant payouts** — vendors who want their money in ~30 min instead of 1–2 days pay Stripe 3%; Stripe's real cost is ~1%, so **Gloē nets ~2%** per instant payout (vendor still sees ~94.7%). Standard ACH payouts stay free.
+
+### 🔧 Under the hood
+
+**The fee schedule is not hardcoded — it's data.** Tiers live in the `platform_fees` table, fully editable in admin (add / edit / deactivate / per-vendor override). `computeFee` reads whatever active rows exist; it never assumes a fixed scheme. Current live config:
 
 | Deal price | Gloē fee |
 |---|---|
 | $0–$500 | 20% |
 | $500+ | flat $60 |
 
-> Note: the active sub-$500 tier currently starts at **$0** (its label reads "$100–$499" but `min_cents=0`), so deals under $100 also pay 20%. There is no separate low tier today. This is a setting, not a bug — change it in admin if you want a different sub-$100 fee. If `computeFee` finds no matching active tier, it falls back to a safe 12%.
+> The active sub-$500 tier currently starts at **$0** (label reads "$100–$499" but `min_cents=0`), so deals under $100 also pay 20%. A setting, not a bug — change it in admin. If `computeFee` finds no matching active tier, it falls back to a safe 12%.
 
-Per-vendor override available in admin — a `vendor_id`-scoped tier beats the global one (`ORDER BY is_override DESC`). Applies forward only; historical bookings frozen via `platform_fee_snapshot` JSON on `transactions`.
-
-### Instant payout (vendor opt-in)
-
-- Vendor taps "Pay me now" on available balance → ~30 min arrival to debit card.
-- Stripe charges 3% (configured as pricing scheme in Stripe Dashboard, auto-applied to every Connect Instant Payout under the platform).
-- Stripe's underlying cost is ~1%, so Gloē nets ~2% on each instant payout. Vendor sees ~94.7%.
-- Standard payouts (1–2 day ACH) remain free.
-
-### Why we win
-
-- **Groupon:** takes 30–50% and dilutes the brand. We take ~20% (and we set it) and curate.
-- **RealSelf:** review-heavy, deal-light. We're transactional.
-- **Instagram ads:** vendors burn $1k+/mo and get nothing trackable. We charge nothing until a real booking lands.
-- **UNNI (closest competitor):** validates the market exists. We win on visual polish + breadth.
+- **Per-vendor override:** a `vendor_id`-scoped tier beats the global one (`ORDER BY is_override DESC`). Forward-only; historical bookings frozen via `platform_fee_snapshot` JSON on `transactions`.
+- **Instant payout** is a Stripe Connect pricing scheme (3%) auto-applied to every Instant Payout under the platform. Full money mechanics in §4.
 
 ---
 
 ## 3. Architecture
+
+### 💼 The pitch
+
+Three apps — a consumer iPhone app, a vendor website, and an admin "god mode" — all talking to **one brain** (the API) and **one database**. The API decides what *should* happen; Stripe confirms what *did*; webhooks keep the two honest. It's a deliberately boring, proven, type-safe stack chosen so a **solo founder can run the whole business reliably** — not a science project. The whole thing is one codebase (a monorepo), so a change to a rule shows up everywhere at once.
+
+### 🔧 Under the hood
 
 ### Mental model
 
@@ -212,6 +216,12 @@ Single Node API + direct SQL for dashboards + webhooks direct to DB + polling fo
 ---
 
 ## 4. The money pipeline
+
+### 💼 The pitch
+
+How money actually moves, in plain English: the customer pays Gloē up front; we **hold** the cash; when she actually shows up and **redeems**, we release the vendor's share (minus our fee) to their Stripe account, and Stripe pays it to their bank. The vendor only gets paid for **real, completed** bookings — that's the entire promise, and it's also our fraud protection. We never touch raw card details (Stripe does), and the API and Stripe webhooks constantly cross-check each other so money can't silently go missing.
+
+### 🔧 Under the hood
 
 ### TL;DR — four stages
 
@@ -334,6 +344,12 @@ payouts:         pending → paid
 
 ## 5. Database schema
 
+### 💼 The pitch
+
+The single source of record for the whole business — every vendor and customer, every deal, every voucher, every dollar in and out. It's Postgres (battle-tested), with **geography built in** (so "deals near me" is fast and exact) and **security enforced at the database itself** — a customer literally cannot query another customer's data even if the app had a bug. Boring and bulletproof on purpose; this is the money layer.
+
+### 🔧 Under the hood
+
 All tables in Supabase Postgres. PostGIS extension on. RLS enabled (auth at DB layer).
 
 ### Core tables
@@ -394,6 +410,12 @@ Hierarchical, editable in admin without code change.
 ---
 
 ## 6. Consumer app
+
+### 💼 The pitch
+
+The iPhone app a customer actually uses: **find** a deal (Discover + Search), **save** favorites, **buy and store** her voucher (Wallet), and manage her account + reach support (Profile). Designed to feel premium and get a first-timer from "curious about Botox" to "booked" in well under a minute. Individual features have their own deep-dives — §6A search, §6B pay, §6C Apple Wallet, §6D notifications, §6E the tab bar.
+
+### 🔧 Under the hood
 
 ### Tabs
 
@@ -474,6 +496,12 @@ Means we need a **dev-client build** (not Expo Go). Rebuild via `npx expo run:io
 ---
 
 ## 6A. Search & discovery engine
+
+### 💼 The pitch
+
+Type what you want — even misspelled ("botx") or in slang ("tox", "skinny shot") — and get the best matching deals **near you, instantly.** It understands aesthetic treatments the way patients actually talk about them, not just exact keywords. That's the difference between an app people search once, get nothing, and abandon — and one they actually use to find things. Built to feel like DoorDash/Groupon search, on infrastructure we already had.
+
+### 🔧 Under the hood
 
 DoorDash/Groupon-grade search, built on Postgres — **no Elasticsearch, no Algolia, no new infra**. The whole thing is one ranked query plus a domain brain. Shipped 2026-06-01.
 
@@ -602,6 +630,12 @@ Gloē pings the customer **when it matters** — a reply from support, a voucher
 
 ## 7. Vendor portal
 
+### 💼 The pitch
+
+Where a medspa runs its Gloē presence: sign up, get approved, **post deals** (auto-tagged by treatment), **scan customers' QR codes** to redeem, and **get paid**. Free to join, no monthly fee — the whole reason vendors say yes instead of burning $1k/mo on Instagram ads. Built as a website (not an app) because owners and front-desk staff live on a laptop at the counter.
+
+### 🔧 Under the hood
+
 `apps/web/src/app/vendor` (Next.js).
 
 ### Screens shipped
@@ -623,6 +657,12 @@ Gloē pings the customer **when it matters** — a reply from support, a voucher
 ---
 
 ## 8. Admin (god mode)
+
+### 💼 The pitch
+
+The founder's cockpit — **one screen to run the entire business:** approve vendors, watch the money, set fees, issue refunds, handle support, and audit every action. It's what lets one person operate a two-sided marketplace without a team. If the consumer app is the storefront and the vendor portal is the back office, this is mission control.
+
+### 🔧 Under the hood
 
 `apps/web/src/app/admin` (Next.js).
 
@@ -646,6 +686,12 @@ Gloē pings the customer **when it matters** — a reply from support, a voucher
 ---
 
 ## 9. Credit & loyalty system
+
+### 💼 The pitch
+
+A future loyalty layer: customers earn **credit** (from referrals, goodwill refunds, or gifts) that they spend on their next treatment — the hook that turns a one-time deal-hunter into a **repeat** customer, which is where marketplace economics actually win. **Not built yet** (Wallet shows $0); fully specced and ready when we want to pull the retention lever post-launch.
+
+### 🔧 Under the hood
 
 **Status: stubbed, not built.** Wallet tab shows balance of $0 with a "when referrals / refunds / gifts land" note.
 

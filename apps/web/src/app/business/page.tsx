@@ -1,10 +1,23 @@
 import { SignedIn, SignedOut } from '@clerk/nextjs';
+import type { Metadata } from 'next';
 import Link from 'next/link';
 
-import { Button } from '../components/ui';
-import { Wordmark } from '../components/Wordmark';
+import { Button } from '../../components/ui';
+import { Wordmark } from '../../components/Wordmark';
 
-export default function LandingPage() {
+export const metadata: Metadata = {
+  title: 'For Businesses',
+  description:
+    'Post your aesthetic deals on Gloē. Reach new clients near you and get paid when they book — no monthly fees, no upfront cost.',
+};
+
+/**
+ * Business / vendor acquisition landing. This used to live at `/`; the root is
+ * now the consumer marketplace, so the business pitch moved here and is linked
+ * from the consumer footer ("For Businesses"). Auth routes the vendor straight
+ * into their portal at /vendor.
+ */
+export default function ForBusinessPage() {
   return (
     <main
       style={{
@@ -30,12 +43,12 @@ export default function LandingPage() {
           no monthly fees, no upfront cost.
         </p>
 
-        <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 8 }}>
+        <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 8, flexWrap: 'wrap' }}>
           <SignedOut>
-            <Link href="/sign-up">
+            <Link href="/sign-up?redirect_url=/vendor">
               <Button>Get started — it&apos;s free</Button>
             </Link>
-            <Link href="/sign-in">
+            <Link href="/sign-in?redirect_url=/vendor">
               <Button variant="secondary">Sign in</Button>
             </Link>
           </SignedOut>
@@ -49,6 +62,10 @@ export default function LandingPage() {
         <p style={{ fontSize: 14, color: 'var(--text-tertiary)', marginTop: 16 }}>
           We only earn a small fee when a customer claims one of your deals. Way less than Groupon.
         </p>
+
+        <Link href="/" style={{ fontSize: 14, color: 'var(--brand-600)', fontWeight: 600, marginTop: 8 }}>
+          ← Back to Gloē
+        </Link>
       </div>
     </main>
   );

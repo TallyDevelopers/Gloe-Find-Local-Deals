@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { createGiftLink, createPurchase } from '../domain/checkout';
+import { createGiftLink, createHostedCheckout, createPurchase } from '../domain/checkout';
 import { protectedProcedure, router } from './trpc';
 
 /**
@@ -30,6 +30,31 @@ export const checkoutRouter = router({
           userId: ctx.auth.userId,
           variantId: input.variantId,
           quantity: input.quantity,
+        });
+      } catch (e) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: (e as Error).message });
+      }
+    }),
+
+  /**
+   * Web self-purchase. Returns a Stripe-hosted Checkout Session URL the buyer
+   * is redirected to (the web has no native PaymentSheet). On success Stripe
+   * sends them to /wallet and the existing webhook mints the voucher(s).
+   */
+  createHostedCheckout: protectedProcedure
+    .input(
+      z.object({
+        variantId: z.string().uuid(),
+        quantity: z.number().int().min(1).max(10).default(1),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await createHostedCheckout(ctx.sql, {
+          userId: ctx.auth.userId,
+          variantId: input.variantId,
+          quantity: input.quantity,
+          publicOrigin: PUBLIC_WEB_ORIGIN,
         });
       } catch (e) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: (e as Error).message });

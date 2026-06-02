@@ -1,15 +1,26 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 
 /**
- * Public routes don't require auth. Everything else (vendor portal, admin
- * portal) requires a signed-in user — role-gating happens in the layouts.
+ * Public routes don't require auth. The consumer marketplace (home, search,
+ * deal + spa pages) is fully browsable signed-out; saved/wallet/account gate
+ * themselves. Vendor + admin portals require a signed-in user — role-gating
+ * happens in their layouts.
  */
 const isPublicRoute = createRouteMatcher([
   '/',
+  '/search(.*)', // consumer search
+  '/deals/(.*)', // public deal detail (SEO)
+  '/spa/(.*)', // public vendor storefront (SEO)
+  '/treatments/(.*)', // public category listing (SEO)
   '/sign-in(.*)',
   '/sign-up(.*)',
-  '/for-business(.*)', // marketing / landing for vendors
-  '/gift/(.*)',         // shared payment links — recipients are anonymous
+  '/business(.*)', // "For Businesses" landing (moved off /)
+  '/for-business(.*)', // legacy alias
+  '/legal/(.*)', // terms / privacy
+  '/gift/(.*)', // shared payment links — recipients are anonymous
+  '/sitemap.xml', // crawlers — must be reachable signed-out
+  '/robots.txt',
+  '/manifest.webmanifest',
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
