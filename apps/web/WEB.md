@@ -4,7 +4,7 @@
 > that works on phones and computers. **Updated at the end of every phase.**
 > Companion to the root `GLOE.md` (which has the product/business overview).
 
-Last updated: 2026-06-02 · All phases (0–4) complete + desktop redesign. Consumer website is feature-complete; remaining items are polish (see end).
+Last updated: 2026-06-02 · All phases (0–4) complete + desktop redesign + iteration polish. **Merged to `main` and deployed via Railway.** See "Shipped log" and "Known gaps" at the end.
 
 ---
 
@@ -144,3 +144,66 @@ npm run typecheck --workspace=@gloe/web
 Browse `/`, `/deals/[id]`, `/spa/[id]`, `/search` signed-out. Sign in → save →
 `/saved`; `/wallet` shows scannable QR. Resize to phone width → bottom tab bar +
 single-column grid; desktop → top nav + multi-column.
+
+---
+
+## Shipped log (post-Phase-4 iteration — 2026-06-02)
+
+Chronological polish after the core build, all on `main`:
+
+- **Desktop-first redesign** — inline nav search (`NavSearch`), top-right "For
+  Businesses" entrance; home reworked into a destination: value-forward hero +
+  single editorial image, photo "Browse by treatment" cards, a rail per category
+  with **"View all" end-cards** (clickable title too), how-it-works band, "Get
+  the app" band, closing CTA.
+- **Treatments are real routes** (`/treatments/[slug]`) — fixes browser Back +
+  shareable/indexable. Visible Back on deal & spa pages too.
+- **Data-driven filter rail** (`ListingFilters`) on treatment pages — options are
+  derived from the deals actually present (inventory-gated, with live counts;
+  shown only when `0 < count < total`). Nothing hardcoded per category; filters
+  "pop up" as vendors list. Sticky sidebar on desktop → slide-up drawer on mobile.
+- **Mobile = app vibes, desktop = full website** — marketing bands hidden on
+  mobile; bottom tab bar only there.
+- **Saved + Wallet are signed-in-only** in the nav + tab bar; signed-out users
+  get a Sign in entry instead (no redirect walls).
+- **Share-to-pay** reworked into a device-aware sheet (`SharePayModal`): native
+  share where supported (iOS/Mac), copyable link + Text/Email + explicit
+  "Copied!" on PC; warm explanation of what it is.
+- **Warm location banner** (`LocationBanner`) when no location is set → one-tap
+  "Use my location"; feed re-ranks by distance once set.
+- **"Get the app" band** (`GetTheApp`) — faithful in-CSS iPhone render (dynamic
+  island, status bar, header, search, category pills, deal cards with real
+  photos + rating/reviews/distance/time, bottom tabs, home indicator) + **App
+  Store badge only** (iOS-first; Play removed). Phone hidden on small screens.
+- **Business profile reachable** — the storefront (`/spa/[id]`) existed but its
+  link was invisible; added a tappable **business row** on the deal page
+  (avatar + name + city + "View business profile" + chevron) and a branded hero
+  placeholder for vendors without a hero image.
+- **Sticky purchase panel** on the deal page (grid item + `align-self:start`).
+- **Copy is on-brand medspa** (injectables/fillers/facials/laser/skin/peptides) —
+  removed "massage"/"deep tissue"/"hair"/"brows" from all consumer + SEO text.
+
+## Deployment
+
+- **PR #1** (`feat/consumer-web-marketplace`) → **merged to `main`**.
+  Subsequent polish pushed directly to `main`. Railway builds the service(s)
+  watching `main`.
+- **Railway env — Web** (`@gloe/web`, `next build` / `next start -p 3000`):
+  `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`,
+  `NEXT_PUBLIC_SITE_URL`, `STRIPE_SECRET_KEY`.
+- **Railway env — API**: `PUBLIC_WEB_ORIGIN` = public web origin (drives Stripe
+  success/cancel redirects; defaults to `https://gloe.app`).
+- ⚠️ A **Railway web service for `apps/web`** must exist (root dir `apps/web`).
+  The `payment_source 'web'` migration is already applied + idempotent.
+
+## Known gaps / next (not blocking)
+
+- **Vendor full profile editor** — vendors can self-edit only description /
+  website / Instagram / hours (`vendor.myProfile`). Hero photo, logo, amenities,
+  providers are still admin/onboarding-set. Build a full Business Profile editor
+  in the vendor portal if self-serve is wanted.
+- **App Store badge** links to `#` — swap in the real URL once live.
+- Real testimonials/press strip on home; photo **attachments on support replies**;
+  replace **placeholder legal copy** before launch.
+- SSR is metadata-only (client islands hydrate data) — fine, but could move
+  deal/spa initial data server-side for first-paint if needed.
