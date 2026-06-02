@@ -22,7 +22,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: { default: 'Gloē — Beauty + wellness, beautifully booked.', template: '%s · Gloē' },
   description:
-    'Discover same-day beauty and wellness deals near you. Book botox, facials, hair, brows, and more — at premium spas, instantly.',
+    'Discover same-day beauty and wellness deals near you. Book botox, fillers, facials, laser, and more — at premium medspas, instantly.',
   applicationName: 'Gloē',
   keywords: [
     'beauty deals',
@@ -43,7 +43,7 @@ export const metadata: Metadata = {
     siteName: 'Gloē',
     title: 'Gloē — Beauty + wellness, beautifully booked.',
     description:
-      'Same-day beauty and wellness deals near you. Book botox, facials, hair, brows, and more at premium spas.',
+      'Same-day beauty and wellness deals near you. Book botox, fillers, facials, laser, and more at premium medspas.',
     url: SITE_URL,
     locale: 'en_US',
   },

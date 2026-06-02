@@ -251,6 +251,122 @@ export async function createGiftLink(
   };
 }
 
+export interface CreateHostedCheckoutResult {
+  checkoutUrl: string;
+  sessionId: string;
+  transactionId: string;
+  amountCents: number;
+}
+
+/**
+ * Web self-purchase via Stripe-hosted Checkout. Unlike createPurchase (native
+ * PaymentSheet) the web has no in-app sheet, so the signed-in buyer is sent to
+ * a hosted Checkout Session and redirected back to /wallet on success. The
+ * buyer is also the redeemer (voucher credits to them), so there's no
+ * share-to-pay ceiling. Fulfillment reuses the existing
+ * checkout.session.completed → fulfillPurchase path (keyed by session id).
+ */
+export async function createHostedCheckout(
+  sql: Sql,
+  args: { userId: string; variantId: string; quantity: number; publicOrigin: string },
+): Promise<CreateHostedCheckoutResult> {
+  const qty = Math.max(1, Math.min(MAX_QTY, Math.floor(args.quantity)));
+
+  const rows = await sql<{
+    variant_id: string;
+    deal_id: string;
+    vendor_id: string;
+    deal_price_cents: number;
+    spots_total: number | null;
+    spots_claimed: number;
+    deal_status: string;
+    per_customer_limit: number;
+    lifetime_limit_per_customer: number | null;
+    deal_title: string;
+    variant_label: string;
+    vendor_name: string;
+    deal_photo_url: string | null;
+  }[]>`
+    SELECT dv.id AS variant_id, d.id AS deal_id, d.vendor_id,
+           dv.deal_price_cents, dv.spots_total, dv.spots_claimed,
+           d.status AS deal_status, d.per_customer_limit, d.lifetime_limit_per_customer,
+           d.title AS deal_title, dv.label AS variant_label,
+           ven.business_name AS vendor_name,
+           (SELECT dp.url FROM public.deal_photos dp
+             WHERE dp.deal_id = d.id ORDER BY dp.display_order ASC LIMIT 1) AS deal_photo_url
+    FROM public.deal_variants dv
+    JOIN public.deals d ON d.id = dv.deal_id
+    JOIN public.vendors ven ON ven.id = d.vendor_id
+    WHERE dv.id = ${args.variantId} LIMIT 1
+  `;
+  const v = rows[0];
+  if (!v) throw new Error('Deal option not found.');
+  if (v.deal_status !== 'active') throw new Error('This deal is no longer available.');
+  if (v.spots_total !== null && v.spots_claimed + qty > v.spots_total) {
+    const left = v.spots_total - v.spots_claimed;
+    throw new Error(left <= 0 ? 'This deal is sold out.' : `Only ${left} left.`);
+  }
+  if (qty > v.per_customer_limit) {
+    throw new Error(`Limit ${v.per_customer_limit} per customer.`);
+  }
+  if (v.lifetime_limit_per_customer !== null) {
+    const priorRows = await sql<{ count: number }[]>`
+      SELECT COUNT(*)::int AS count FROM public.claims
+      WHERE user_id = ${args.userId} AND deal_id = ${v.deal_id}
+        AND status IN ('active', 'redeemed')
+    `;
+    const prior = priorRows[0]?.count ?? 0;
+    if (prior + qty > v.lifetime_limit_per_customer) {
+      const remaining = v.lifetime_limit_per_customer - prior;
+      throw new Error(
+        remaining <= 0
+          ? "You've already used this offer."
+          : `You can only buy ${remaining} more of this offer.`,
+      );
+    }
+  }
+
+  const totalCents = v.deal_price_cents * qty;
+  const fee = await computeFee(sql, totalCents, v.vendor_id);
+
+  const session = await createGiftCheckoutSession({
+    amountCents: fee.consumerPaidCents,
+    productName: v.deal_title,
+    productDescription: `${v.vendor_name} · ${v.variant_label}${qty > 1 ? ` × ${qty}` : ''}`,
+    productImageUrl: v.deal_photo_url,
+    successUrl: `${args.publicOrigin}/wallet?purchased=1`,
+    cancelUrl: `${args.publicOrigin}/deals/${v.deal_id}`,
+    metadata: {
+      userId: args.userId,
+      variantId: v.variant_id,
+      dealId: v.deal_id,
+      vendorId: v.vendor_id,
+      quantity: String(qty),
+      paymentSource: 'web',
+    },
+  });
+
+  const txnRows = await sql<{ id: string }[]>`
+    INSERT INTO public.transactions (
+      vendor_id, user_id, consumer_paid_cents, platform_fee_cents,
+      vendor_payout_cents, platform_fee_id, platform_fee_snapshot,
+      stripe_checkout_session_id, payment_source, status
+    ) VALUES (
+      ${v.vendor_id}, ${args.userId}, ${fee.consumerPaidCents}, ${fee.platformFeeCents},
+      ${fee.vendorPayoutCents}, ${fee.platformFeeId}, ${sql.json(fee.snapshot)},
+      ${session.sessionId}, 'web', 'pending_payment'
+    )
+    RETURNING id
+  `;
+
+  return {
+    checkoutUrl: session.url,
+    sessionId: session.sessionId,
+    transactionId: txnRows[0]!.id,
+    amountCents: fee.consumerPaidCents,
+  };
+}
+
 export interface PaymentMeta {
   userId: string;
   variantId: string;
