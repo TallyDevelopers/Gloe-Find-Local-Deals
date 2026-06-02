@@ -8,7 +8,7 @@ import { useEffect, useState } from 'react';
 import { PurchasePanel } from '../../../../components/consumer/PurchasePanel';
 import { SaveButton } from '../../../../components/consumer/SaveButton';
 import { Stars } from '../../../../components/consumer/Stars';
-import { Check, MapPin } from '../../../../components/consumer/icons';
+import { Check, ChevronRight, MapPin } from '../../../../components/consumer/icons';
 import { formatDistance, formatRating } from '../../../../components/consumer/format';
 import { trpc } from '../../../../lib/trpc';
 
@@ -47,12 +47,14 @@ export function DealDetailClient({ id }: { id: string }) {
             <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--brand-600)' }}>
               {d.category.subtypeDisplayName ?? d.category.displayName}
             </div>
-            <h1 style={{ fontSize: 34, lineHeight: 1.12, marginTop: 6 }}>{d.title}</h1>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+              <h1 style={{ fontSize: 34, lineHeight: 1.12, marginTop: 6 }}>{d.title}</h1>
+              <span style={{ marginTop: 6, flexShrink: 0 }}>
+                <SaveButton dealId={d.id} variant="bare" />
+              </span>
+            </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 12, flexWrap: 'wrap' }}>
-              <Link href={`/spa/${d.vendor.id}`} style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)' }}>
-                {d.vendor.businessName}
-              </Link>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8, flexWrap: 'wrap' }}>
               {formatRating(d.vendor) ? (
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--text-secondary)', fontSize: 14 }}>
                   <Stars value={d.vendor.combinedRating ?? 0} /> {formatRating(d.vendor)}
@@ -63,10 +65,34 @@ export function DealDetailClient({ id }: { id: string }) {
                   <MapPin size={13} /> {formatDistance(d.distanceMiles)}
                 </span>
               ) : null}
-              <span style={{ marginLeft: 'auto' }}>
-                <SaveButton dealId={d.id} variant="bare" />
-              </span>
             </div>
+
+            {/* Tappable business profile row — opens the spa storefront */}
+            <Link href={`/spa/${d.vendor.id}`} className="biz-row">
+              <span
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: '50%',
+                  background: 'var(--brand-100)',
+                  color: 'var(--brand-600)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontFamily: 'var(--font-display)',
+                  fontSize: 19,
+                  fontWeight: 600,
+                  flexShrink: 0,
+                }}
+              >
+                {d.vendor.businessName.charAt(0)}
+              </span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: 'block', fontWeight: 600, fontSize: 15.5, color: 'var(--text-primary)' }}>{d.vendor.businessName}</span>
+                <span style={{ display: 'block', fontSize: 13, color: 'var(--text-tertiary)' }}>{d.vendor.city} · View business profile</span>
+              </span>
+              <ChevronRight size={18} color="var(--text-tertiary)" />
+            </Link>
           </div>
 
           {/* Mobile inline purchase panel */}

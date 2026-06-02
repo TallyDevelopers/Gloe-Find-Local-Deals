@@ -33,7 +33,22 @@ export function SpaStorefrontClient({ id }: { id: string }) {
         {vendor.heroImageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={vendor.heroImageUrl} alt={vendor.businessName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-        ) : null}
+        ) : (
+          <div
+            style={{
+              width: '100%',
+              height: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '0 24px',
+              textAlign: 'center',
+              background: 'radial-gradient(700px 300px at 30% 20%, var(--accent-500), transparent 70%), linear-gradient(135deg, var(--brand-500), var(--gold-deep))',
+            }}
+          >
+            <span style={{ fontFamily: 'var(--font-display)', fontSize: 38, fontWeight: 500, color: 'var(--text-inverse)' }}>{vendor.businessName}</span>
+          </div>
+        )}
         <button
           type="button"
           onClick={() => router.back()}

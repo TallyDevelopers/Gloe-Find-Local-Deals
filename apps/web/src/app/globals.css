@@ -503,6 +503,25 @@ textarea {
 .deal-thumb[data-active='true'] {
   border-color: var(--brand-500);
 }
+/* Tappable business-profile row on the deal page */
+.biz-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-elevated);
+  color: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+.biz-row:hover {
+  border-color: var(--brand-500);
+  box-shadow: 0 8px 22px rgba(43, 32, 25, 0.08);
+  transform: translateY(-1px);
+}
+
 .deal-section {
   padding: 24px 0;
   border-top: 1px solid var(--border-subtle);
