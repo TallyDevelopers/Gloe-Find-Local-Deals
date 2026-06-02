@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
 import { DealCard } from '../../components/consumer/DealCard';
+import { GetTheApp } from '../../components/consumer/GetTheApp';
 import { LocationBanner } from '../../components/consumer/LocationBanner';
 import { DealGridSkeleton } from '../../components/consumer/Skeletons';
 import { ArrowRight, Check, Search, Sparkles, Star } from '../../components/consumer/icons';
@@ -169,6 +170,9 @@ export default function HomePage() {
           <ValueCard step="Glow" title="Show & enjoy" body="Book with the spa, show your QR at check-in, and enjoy — payment’s already handled." />
         </div>
       </section>
+
+      {/* Get the app */}
+      <GetTheApp />
 
       {/* Closing CTA */}
       <section className="cta-band">

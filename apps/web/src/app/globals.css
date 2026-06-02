@@ -646,6 +646,42 @@ textarea {
   margin-top: 3px;
 }
 
+/* "Get the app" band — marketing copy + badges + an iPhone render */
+.app-band {
+  margin-top: 56px;
+  background:
+    radial-gradient(700px 280px at 85% 20%, var(--brand-100), transparent 70%),
+    linear-gradient(180deg, var(--surface-secondary), var(--surface-primary));
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+}
+.app-band-inner {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 64px 28px;
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 56px;
+  align-items: center;
+}
+@media (max-width: 900px) {
+  .app-band-inner {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    text-align: center;
+    gap: 36px;
+  }
+  .app-phone-col {
+    order: -1;
+  }
+}
+@media (max-width: 760px) {
+  /* On a phone the giant mock is redundant — copy + badges carry it */
+  .app-phone-col {
+    display: none;
+  }
+}
+
 /* Closing CTA band */
 .cta-band {
   margin-top: 64px;

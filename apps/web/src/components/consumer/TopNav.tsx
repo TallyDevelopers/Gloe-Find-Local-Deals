@@ -28,12 +28,14 @@ export function TopNav() {
 
         <nav className="topnav-links">
           <LocationPill />
-          <NavLink href="/saved" active={pathname === '/saved'}>
-            <Bookmark size={18} /> Saved
-          </NavLink>
-          <NavLink href="/wallet" active={pathname.startsWith('/wallet')}>
-            <Wallet size={18} /> Wallet
-          </NavLink>
+          <SignedIn>
+            <NavLink href="/saved" active={pathname === '/saved'}>
+              <Bookmark size={18} /> Saved
+            </NavLink>
+            <NavLink href="/wallet" active={pathname.startsWith('/wallet')}>
+              <Wallet size={18} /> Wallet
+            </NavLink>
+          </SignedIn>
           <SignedOut>
             <Link href="/sign-in" className="topnav-signin">
               Sign in
