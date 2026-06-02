@@ -1,5 +1,5 @@
 import { Wordmark } from '../Wordmark';
-import { Bookmark, Check, Heart, MapPin, Search, Sparkles, Star, User, Wallet } from './icons';
+import { Bookmark, Check, Clock, Heart, MapPin, Search, Sparkles, Star, User, Wallet } from './icons';
 
 /**
  * "Get the app" marketing band: value copy + App Store / Google Play badges on
@@ -44,7 +44,6 @@ export function GetTheApp() {
 
           <div style={{ display: 'flex', gap: 12, marginTop: 26, flexWrap: 'wrap', justifyContent: 'inherit' }}>
             <AppStoreBadge />
-            <GooglePlayBadge />
           </div>
         </div>
 
@@ -144,8 +143,34 @@ function PhoneMock() {
 
         {/* Deal cards */}
         <div style={{ flex: 1, overflow: 'hidden', padding: '12px 14px 0', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <MiniDeal img="linear-gradient(135deg,#f6e4de,#e8b4ab)" treatment="BOTOX" title="Botox — 20, 40 or 60 units" price="$169" was="$260" vendor="Encinitas Glow Co" rating="4.9" off="35%" />
-          <MiniDeal img="linear-gradient(135deg,#efe7df,#d9c3b6)" treatment="HYDRAFACIAL" title="Signature Hydrafacial glow" price="$129" was="$199" vendor="The Skin Lounge" rating="4.8" off="35%" />
+          <MiniDeal
+            photo="https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?auto=format&fit=crop&w=400&q=70"
+            fallback="linear-gradient(135deg,#f6e4de,#e8b4ab)"
+            treatment="BOTOX"
+            title="Botox — 20, 40 or 60 units"
+            price="$169"
+            was="$260"
+            vendor="Encinitas Glow Co"
+            rating="4.9"
+            reviews="142"
+            time="12 min"
+            miles="2.3 mi"
+            off="35%"
+          />
+          <MiniDeal
+            photo="https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?auto=format&fit=crop&w=400&q=70"
+            fallback="linear-gradient(135deg,#efe7df,#d9c3b6)"
+            treatment="HYDRAFACIAL"
+            title="Signature Hydrafacial glow"
+            price="$129"
+            was="$199"
+            vendor="The Skin Lounge"
+            rating="4.8"
+            reviews="86"
+            time="9 min"
+            miles="1.4 mi"
+            off="35%"
+          />
         </div>
 
         {/* Bottom tab bar */}
@@ -162,10 +187,11 @@ function PhoneMock() {
   );
 }
 
-function MiniDeal({ img, treatment, title, price, was, vendor, rating, off }: { img: string; treatment: string; title: string; price: string; was: string; vendor: string; rating: string; off: string }) {
+function MiniDeal({ photo, fallback, treatment, title, price, was, vendor, rating, reviews, time, miles, off }: { photo: string; fallback: string; treatment: string; title: string; price: string; was: string; vendor: string; rating: string; reviews: string; time: string; miles: string; off: string }) {
   return (
     <div style={{ background: 'var(--surface-elevated)', borderRadius: 14, overflow: 'hidden', border: '1px solid var(--border-subtle)', boxShadow: '0 1px 3px rgba(43,32,25,0.06)' }}>
-      <div style={{ position: 'relative', height: 78, background: img }}>
+      {/* Real photo with a brand gradient underneath as a graceful fallback */}
+      <div style={{ position: 'relative', height: 84, backgroundImage: `url(${photo}), ${fallback}`, backgroundSize: 'cover', backgroundPosition: 'center' }}>
         <span style={{ position: 'absolute', top: 7, left: 7, background: 'var(--brand-500)', color: 'var(--text-inverse)', fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 999 }}>{off} off</span>
         <span style={{ position: 'absolute', top: 6, right: 6, width: 22, height: 22, borderRadius: '50%', background: 'var(--surface-elevated)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 4px rgba(43,32,25,0.18)' }}>
           <Heart size={12} color="var(--text-primary)" />
@@ -178,11 +204,20 @@ function MiniDeal({ img, treatment, title, price, was, vendor, rating, off }: { 
           <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-primary)' }}>{price}</span>
           <span style={{ fontSize: 10, color: 'var(--text-tertiary)', textDecoration: 'line-through' }}>{was}</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 3, fontSize: 9.5, color: 'var(--text-tertiary)' }}>
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{vendor}</span>
+        <div style={{ fontSize: 9.5, fontWeight: 600, color: 'var(--text-secondary)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{vendor}</div>
+        {/* Reviews + distance + drive time, like the real card */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, fontSize: 9, color: 'var(--text-tertiary)' }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
             <Star size={9} color="var(--gold)" fill="var(--gold)" strokeWidth={0} />
-            {rating}
+            {rating} ({reviews})
+          </span>
+          <span>·</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+            <Clock size={9} color="var(--text-tertiary)" /> {time}
+          </span>
+          <span>·</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+            <MapPin size={9} color="var(--text-tertiary)" /> {miles}
           </span>
         </div>
       </div>
@@ -235,21 +270,6 @@ function AppStoreBadge() {
       <span style={{ textAlign: 'left', lineHeight: 1.1 }}>
         <span style={{ display: 'block', fontSize: 9, opacity: 0.85 }}>Download on the</span>
         <span style={{ display: 'block', fontSize: 16, fontWeight: 600 }}>App Store</span>
-      </span>
-    </a>
-  );
-}
-
-function GooglePlayBadge() {
-  return (
-    <a href="#" aria-label="Get it on Google Play" style={badgeStyle}>
-      <span
-        aria-hidden
-        style={{ width: 18, height: 20, clipPath: 'polygon(0 0, 100% 50%, 0 100%)', background: 'linear-gradient(150deg,#00e0ff 0%,#00f076 38%,#ffd400 68%,#ff3b30 100%)' }}
-      />
-      <span style={{ textAlign: 'left', lineHeight: 1.1 }}>
-        <span style={{ display: 'block', fontSize: 9, opacity: 0.85, letterSpacing: '0.04em' }}>GET IT ON</span>
-        <span style={{ display: 'block', fontSize: 16, fontWeight: 600 }}>Google Play</span>
       </span>
     </a>
   );
