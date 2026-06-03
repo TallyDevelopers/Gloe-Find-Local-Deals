@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 
+import { JsonLd, breadcrumbLd, productLd } from '../../../../lib/jsonLd';
 import { fetchDealMeta } from '../../../../lib/serverApi';
 import { DealDetailClient } from './DealDetailClient';
 
@@ -34,5 +35,34 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
 export default async function DealDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  return <DealDetailClient id={id} />;
+  // Deduped with generateMetadata's fetch (same URL) — no extra round trip.
+  const deal = await fetchDealMeta(id);
+
+  return (
+    <>
+      {deal ? (
+        <JsonLd
+          data={[
+            productLd({
+              id: deal.id,
+              title: deal.title,
+              description: deal.description,
+              image: deal.primaryPhotoUrl,
+              treatment: deal.category.subtypeDisplayName ?? deal.category.displayName,
+              vendorName: deal.vendor.businessName,
+              priceCents: deal.headlineVariant?.dealPriceCents ?? null,
+              expiresAt: deal.expiresAt,
+              rating: { value: deal.vendor.combinedRating, count: deal.vendor.combinedReviewCount },
+            }),
+            breadcrumbLd([
+              { name: 'Home', path: '/' },
+              { name: deal.category.displayName, path: `/treatments/${deal.category.slug}` },
+              { name: deal.title, path: `/deals/${deal.id}` },
+            ]),
+          ]}
+        />
+      ) : null}
+      <DealDetailClient id={id} />
+    </>
+  );
 }

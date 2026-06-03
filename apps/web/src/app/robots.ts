@@ -5,7 +5,7 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://gloe.app';
 export default function robots(): MetadataRoute.Robots {
   return {
     rules: [
-      { userAgent: '*', allow: '/', disallow: ['/admin', '/admin/', '/vendor/post', '/sign-in', '/sign-up'] },
+      { userAgent: '*', allow: '/', disallow: ['/admin', '/admin/', '/vendor/post', '/sign-in', '/sign-up', '/wallet', '/account', '/saved'] },
     ],
     sitemap: `${SITE_URL}/sitemap.xml`,
     host: SITE_URL,

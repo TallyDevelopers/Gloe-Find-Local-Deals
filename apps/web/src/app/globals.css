@@ -31,8 +31,10 @@
   --radius-lg: 16px;
   --radius-pill: 999px;
 
-  --font-display: 'Fraunces', Georgia, serif;
-  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  /* ResortPass-style pairing: a high-end serif used LIGHT for headlines
+     (their "Moulin"), and a clean grotesque for body/UI (their "Basetica"). */
+  --font-display: var(--font-fraunces), 'Fraunces', Georgia, serif;
+  --font-body: var(--font-hanken), 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-wordmark: 'Outfit', 'Inter', sans-serif;
 }
 
@@ -54,7 +56,8 @@ h1,
 h2,
 h3 {
   font-family: var(--font-display);
-  font-weight: 500;
+  font-weight: 400;
+  letter-spacing: -0.01em;
   color: var(--text-primary);
 }
 
@@ -445,9 +448,10 @@ textarea {
   color: #fff;
 }
 .hero h1 {
-  font-size: 52px;
-  line-height: 1.04;
-  letter-spacing: -0.01em;
+  font-size: 60px;
+  font-weight: 300; /* light serif — the ResortPass "Moulin 300" headline look */
+  line-height: 1.05;
+  letter-spacing: -0.015em;
   color: #fff;
   text-shadow: 0 2px 24px rgba(0, 0, 0, 0.3);
 }

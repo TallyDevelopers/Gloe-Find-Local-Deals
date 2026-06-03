@@ -62,13 +62,12 @@ export default function HomePage() {
         <div className="hero-scrim" aria-hidden />
         <div className="hero-content">
           <h1>
-            Treat yourself
+            Your best glow
             <br />
-            for less.
+            starts here.
           </h1>
           <p className="hero-sub">
-            Botox, fillers, facials &amp; laser at premium medspas near you — up to 60% off,
-            your voucher delivered instantly.
+            Book vetted, top-rated medspas near you — botox, fillers &amp; facials, up to 60% off.
           </p>
 
           <form className="hero-search" onSubmit={submitSearch}>
@@ -143,7 +142,7 @@ export default function HomePage() {
       {/* How it works */}
       <section className="value-band">
         <div className="value-grid">
-          <ValueCard step="Discover" title="Find it nearby" body="Browse same-day deals at premium, vetted spas around you — by treatment, distance, and price." />
+          <ValueCard step="Discover" title="Find it nearby" body="Browse deals at premium, vetted spas around you — by treatment, distance, and price." />
           <ValueCard step="Claim" title="Pay in seconds" body="Secure checkout with Apple Pay or card. Your QR voucher lands in your wallet instantly." />
           <ValueCard step="Glow" title="Show & enjoy" body="Book with the spa, show your QR at check-in, and enjoy — payment’s already handled." />
         </div>
@@ -159,7 +158,7 @@ export default function HomePage() {
         </div>
         <h2 style={{ fontSize: 32, maxWidth: 560, margin: '0 auto' }}>Your next glow is minutes away</h2>
         <p style={{ color: 'var(--text-secondary)', marginTop: 12, fontSize: 17, maxWidth: 480, marginInline: 'auto' }}>
-          Join thousands booking beauty &amp; wellness for less — no membership, no catch.
+          Join thousands booking vetted beauty &amp; wellness near them — no membership, no catch.
         </p>
         <Link href="/search" style={{ display: 'inline-block', marginTop: 24, background: 'var(--brand-500)', color: 'var(--text-inverse)', padding: '15px 34px', borderRadius: 'var(--radius-pill)', fontSize: 16, fontWeight: 700 }}>
           Find a deal near you

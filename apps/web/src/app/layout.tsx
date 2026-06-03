@@ -1,18 +1,25 @@
 import { ClerkProvider } from '@clerk/nextjs';
 import type { Metadata, Viewport } from 'next';
-import { Fraunces, Inter, Outfit } from 'next/font/google';
+import { Fraunces, Hanken_Grotesk, Inter, Outfit } from 'next/font/google';
 import type { ReactNode } from 'react';
 
+import { JsonLd, organizationLd, websiteLd } from '../lib/jsonLd';
 import { TrpcProvider } from '../lib/TrpcProvider';
 import './globals.css';
 
+// Fraunces — high-end serif used LIGHT (weight 300) for hero/headlines, the
+// ResortPass "Moulin" look. Hanken Grotesk — clean grotesque for body/UI, the
+// "Basetica" look. Inter stays for surfaces that reference it directly (gift).
 const fraunces = Fraunces({ subsets: ['latin'], variable: '--font-fraunces', display: 'swap' });
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter', display: 'swap' });
-// Outfit — modern geometric sans for the Gloē wordmark. latin-ext includes ē.
+const hanken = Hanken_Grotesk({ subsets: ['latin'], variable: '--font-hanken', display: 'swap' });
+// Outfit — modern geometric sans for the Gloē wordmark AND the consumer
+// marketplace headlines (--font-display). latin-ext includes ē. 700 gives the
+// big hero/section headlines real weight.
 const outfit = Outfit({
   subsets: ['latin', 'latin-ext'],
   variable: '--font-outfit',
-  weight: ['400', '500', '600'],
+  weight: ['400', '500', '600', '700'],
   display: 'swap',
 });
 
@@ -22,15 +29,17 @@ export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: { default: 'Gloē — Beauty + wellness, beautifully booked.', template: '%s · Gloē' },
   description:
-    'Discover same-day beauty and wellness deals near you. Book botox, fillers, facials, laser, and more — at premium medspas, instantly.',
+    'Book vetted beauty & wellness near you — botox, fillers, facials, laser and more at top-rated medspas. Save up to 60%, voucher delivered instantly.',
   applicationName: 'Gloē',
   keywords: [
-    'beauty deals',
-    'wellness deals',
-    'last-minute spa booking',
-    'botox near me',
     'medspa deals',
-    'beauty booking app',
+    'botox near me',
+    'lip filler near me',
+    'hydrafacial near me',
+    'laser hair removal deals',
+    'beauty deals near me',
+    'wellness deals',
+    'med spa near me',
     'Gloē',
   ],
   authors: [{ name: 'Gloē' }],
@@ -43,14 +52,14 @@ export const metadata: Metadata = {
     siteName: 'Gloē',
     title: 'Gloē — Beauty + wellness, beautifully booked.',
     description:
-      'Same-day beauty and wellness deals near you. Book botox, fillers, facials, laser, and more at premium medspas.',
+      'Book vetted beauty & wellness deals near you — botox, fillers, facials, laser and more at top-rated medspas. Save up to 60%.',
     url: SITE_URL,
     locale: 'en_US',
   },
   twitter: {
     card: 'summary_large_image',
     title: 'Gloē — Beauty + wellness, beautifully booked.',
-    description: 'Same-day beauty and wellness deals near you.',
+    description: 'Vetted beauty & wellness deals near you — top-rated medspas, up to 60% off.',
   },
   robots: {
     index: true,
@@ -72,8 +81,9 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <ClerkProvider>
-      <html lang="en" className={`${fraunces.variable} ${inter.variable} ${outfit.variable}`}>
+      <html lang="en" className={`${fraunces.variable} ${inter.variable} ${hanken.variable} ${outfit.variable}`}>
         <body>
+          <JsonLd data={[organizationLd(), websiteLd()]} />
           <TrpcProvider>{children}</TrpcProvider>
         </body>
       </html>

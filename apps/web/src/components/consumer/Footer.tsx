@@ -30,7 +30,7 @@ export function Footer() {
         <div style={{ maxWidth: 320 }}>
           <Wordmark size={24} tone="gold" />
           <p style={{ marginTop: 12, fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-            Beauty + wellness, beautifully booked. Same-day deals at premium spas near you.
+            Beauty + wellness, beautifully booked. Vetted, top-rated medspas near you.
           </p>
         </div>
 

@@ -65,12 +65,14 @@ export function DealCard({ deal, width }: { deal: DealSummary; width?: number })
         <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>
           {subtitle}
         </div>
+        {/* Product name: bold sans (ResortPass pattern) — the one bold element;
+            everything below it (vendor, rating, distance) stays regular/muted. */}
         <div
           style={{
-            fontFamily: 'var(--font-display)',
-            fontSize: 17,
-            fontWeight: 500,
-            lineHeight: 1.2,
+            fontSize: 16,
+            fontWeight: 700,
+            letterSpacing: '-0.01em',
+            lineHeight: 1.25,
             color: 'var(--text-primary)',
             marginTop: 3,
             overflow: 'hidden',
@@ -92,7 +94,7 @@ export function DealCard({ deal, width }: { deal: DealSummary; width?: number })
           ) : null}
         </div>
 
-        <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', marginTop: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div style={{ fontSize: 13, fontWeight: 400, color: 'var(--text-secondary)', marginTop: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {deal.vendor.businessName}
         </div>
 

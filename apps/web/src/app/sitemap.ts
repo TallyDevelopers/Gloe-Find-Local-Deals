@@ -3,6 +3,25 @@ import type { MetadataRoute } from 'next';
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://gloe.app';
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
+/** Emit a /treatments/{slug} URL per category — the local-SEO landing pages. */
+async function fetchTreatmentRoutes(now: Date): Promise<MetadataRoute.Sitemap> {
+  try {
+    const res = await fetch(`${API_URL}/trpc/categories.list?input=${encodeURIComponent(JSON.stringify({}))}`, {
+      next: { revalidate: 3600 },
+    });
+    if (!res.ok) return [];
+    const json = (await res.json()) as { result?: { data?: { slug: string }[] } };
+    return (json.result?.data ?? []).map((c) => ({
+      url: `${SITE_URL}/treatments/${c.slug}`,
+      lastModified: now,
+      changeFrequency: 'daily' as const,
+      priority: 0.9,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 /** Pull active deals from the public API to emit deal + spa URLs for SEO. */
 async function fetchDealAndSpaRoutes(now: Date): Promise<MetadataRoute.Sitemap> {
   try {
@@ -30,15 +49,18 @@ async function fetchDealAndSpaRoutes(now: Date): Promise<MetadataRoute.Sitemap> 
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date();
-  const dynamic = await fetchDealAndSpaRoutes(now);
+  const [treatments, dealsAndSpas] = await Promise.all([
+    fetchTreatmentRoutes(now),
+    fetchDealAndSpaRoutes(now),
+  ]);
   return [
     { url: `${SITE_URL}/`, lastModified: now, changeFrequency: 'daily', priority: 1.0 },
     { url: `${SITE_URL}/search`, lastModified: now, changeFrequency: 'weekly', priority: 0.6 },
     { url: `${SITE_URL}/business`, lastModified: now, changeFrequency: 'monthly', priority: 0.5 },
     { url: `${SITE_URL}/legal/terms`, lastModified: now, changeFrequency: 'yearly', priority: 0.2 },
     { url: `${SITE_URL}/legal/privacy`, lastModified: now, changeFrequency: 'yearly', priority: 0.2 },
-    { url: `${SITE_URL}/sign-in`, lastModified: now, changeFrequency: 'yearly', priority: 0.3 },
     { url: `${SITE_URL}/sign-up`, lastModified: now, changeFrequency: 'yearly', priority: 0.5 },
-    ...dynamic,
+    ...treatments,
+    ...dealsAndSpas,
   ];
 }
