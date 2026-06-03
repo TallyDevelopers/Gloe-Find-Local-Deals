@@ -2,6 +2,7 @@
 
 import type { DealDetail } from '@gloe/api-client';
 
+import { EmbeddedCheckoutModal } from './EmbeddedCheckoutModal';
 import { discountPct, formatExpiry, formatPrice } from './format';
 import { Share } from './icons';
 import { SharePayModal } from './SharePayModal';
@@ -9,9 +10,10 @@ import { useBuy } from './useBuy';
 
 /**
  * Purchase card for the deal page — variant picker, quantity, price breakdown,
- * Buy now (hosted Stripe Checkout) and Share to pay. Rendered as a sticky card
- * in the desktop right column; on mobile the page shows it inline plus a slim
- * sticky bar.
+ * Buy now and Share to pay. "Buy now" opens an in-page embedded Stripe checkout
+ * (a centered modal on desktop, a bottom sheet on mobile) — the customer never
+ * leaves gloe.app. Rendered as a sticky card in the desktop right column and
+ * inline on mobile.
  */
 export function PurchasePanel({
   deal,
@@ -26,7 +28,7 @@ export function PurchasePanel({
   qty: number;
   setQty: (n: number) => void;
 }) {
-  const { buy, startShare, shareUrl, closeShare, loading, sharing, error } = useBuy();
+  const { buy, startShare, shareUrl, closeShare, checkoutSecret, closeCheckout, loading, sharing, error } = useBuy();
   const variant = deal.variants.find((v) => v.id === variantId) ?? deal.variants[0];
   if (!variant) return null;
 
@@ -160,6 +162,10 @@ export function PurchasePanel({
       {error ? <p style={{ color: 'var(--error)', fontSize: 13.5, marginTop: 8, textAlign: 'center' }}>{error}</p> : null}
 
       <SharePayModal url={shareUrl} onClose={closeShare} />
+
+      {/* In-page Stripe checkout — opens when "Buy now" succeeds. Modal on
+          desktop, bottom sheet on mobile. The customer never leaves gloe.app. */}
+      {checkoutSecret ? <EmbeddedCheckoutModal clientSecret={checkoutSecret} onClose={closeCheckout} /> : null}
 
       {/* Reassurance */}
       <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border-subtle)', fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>

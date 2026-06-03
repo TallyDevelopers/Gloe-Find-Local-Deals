@@ -7,6 +7,7 @@ import { usePathname } from 'next/navigation';
 import { Wordmark } from '../Wordmark';
 import { LocationPill } from './LocationPill';
 import { NavSearch } from './NavSearch';
+import { useHeroHeader } from './useHeroHeader';
 import { Bookmark, Wallet } from './icons';
 
 /**
@@ -16,15 +17,18 @@ import { Bookmark, Wallet } from './icons';
  */
 export function TopNav() {
   const pathname = usePathname();
+  const overHero = useHeroHeader();
 
   return (
-    <header className="topnav show-desktop">
+    <header className={`topnav show-desktop${overHero ? ' over-hero' : ''}`}>
       <div className="topnav-inner">
         <Link href="/" aria-label="Gloē home" style={{ display: 'inline-flex', alignItems: 'center' }}>
-          <Wordmark size={26} tone="gold" />
+          <Wordmark size={26} tone={overHero ? 'light' : 'gold'} />
         </Link>
 
-        <NavSearch />
+        {/* The header search is redundant while the hero (with its own big
+            search) is on screen — only show it once scrolled past the hero. */}
+        {overHero ? <div style={{ flex: 1 }} /> : <NavSearch />}
 
         <nav className="topnav-links">
           <LocationPill />

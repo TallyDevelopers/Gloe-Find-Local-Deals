@@ -244,7 +244,7 @@ export async function createGiftLink(
 
   return {
     giftUrl: `${args.publicOrigin}/gift/${session.sessionId}`,
-    stripeCheckoutUrl: session.url,
+    stripeCheckoutUrl: session.url!,
     sessionId: session.sessionId,
     transactionId: txnRows[0]!.id,
     amountCents: fee.consumerPaidCents,
@@ -252,7 +252,10 @@ export async function createGiftLink(
 }
 
 export interface CreateHostedCheckoutResult {
-  checkoutUrl: string;
+  /** Hosted-mode redirect URL (null in embedded mode). */
+  checkoutUrl: string | null;
+  /** Embedded-mode client secret for Stripe's <EmbeddedCheckout> (null in hosted mode). */
+  clientSecret: string | null;
   sessionId: string;
   transactionId: string;
   amountCents: number;
@@ -268,7 +271,7 @@ export interface CreateHostedCheckoutResult {
  */
 export async function createHostedCheckout(
   sql: Sql,
-  args: { userId: string; variantId: string; quantity: number; publicOrigin: string },
+  args: { userId: string; variantId: string; quantity: number; publicOrigin: string; embedded?: boolean },
 ): Promise<CreateHostedCheckoutResult> {
   const qty = Math.max(1, Math.min(MAX_QTY, Math.floor(args.quantity)));
 
@@ -334,8 +337,11 @@ export async function createHostedCheckout(
     productName: v.deal_title,
     productDescription: `${v.vendor_name} · ${v.variant_label}${qty > 1 ? ` × ${qty}` : ''}`,
     productImageUrl: v.deal_photo_url,
-    successUrl: `${args.publicOrigin}/wallet?purchased=1`,
-    cancelUrl: `${args.publicOrigin}/deals/${v.deal_id}`,
+    // Embedded: Stripe renders the form on gloe.app and returns the payer to
+    // /wallet after success. Hosted (legacy): redirect + back-out URLs.
+    ...(args.embedded
+      ? { uiMode: 'embedded' as const, returnUrl: `${args.publicOrigin}/wallet?purchased=1&session_id={CHECKOUT_SESSION_ID}` }
+      : { successUrl: `${args.publicOrigin}/wallet?purchased=1`, cancelUrl: `${args.publicOrigin}/deals/${v.deal_id}` }),
     metadata: {
       userId: args.userId,
       variantId: v.variant_id,
@@ -360,7 +366,8 @@ export async function createHostedCheckout(
   `;
 
   return {
-    checkoutUrl: session.url,
+    checkoutUrl: session.url ?? null,
+    clientSecret: session.clientSecret ?? null,
     sessionId: session.sessionId,
     transactionId: txnRows[0]!.id,
     amountCents: fee.consumerPaidCents,

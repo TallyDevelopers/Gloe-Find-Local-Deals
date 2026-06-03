@@ -3,6 +3,7 @@
 import type { DealSummary } from '@gloe/api-client';
 import Link from 'next/link';
 
+import { BlurImage } from './BlurImage';
 import { SaveButton } from './SaveButton';
 import { Clock, MapPin, Star } from './icons';
 import { discountPct, formatDistance, formatDriveTime, formatPrice, formatRating } from './format';
@@ -29,11 +30,9 @@ export function DealCard({ deal, width }: { deal: DealSummary; width?: number })
     >
       <div style={{ position: 'relative', width: '100%', aspectRatio: '1 / 1', background: 'var(--surface-secondary)' }}>
         {deal.primaryPhotoUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <BlurImage
             src={deal.primaryPhotoUrl}
             alt={deal.title}
-            loading="lazy"
             style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
           />
         ) : null}

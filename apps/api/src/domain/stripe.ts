@@ -344,7 +344,10 @@ export async function createTransferForClaim(args: {
 
 export interface CheckoutSessionResult {
   sessionId: string;
-  url: string;
+  /** Hosted-mode redirect URL. Present when uiMode is 'hosted' (the default). */
+  url?: string;
+  /** Embedded-mode client secret for Stripe's <EmbeddedCheckout>. Present when uiMode is 'embedded'. */
+  clientSecret?: string;
 }
 
 /**
@@ -369,18 +372,26 @@ export async function createGiftCheckoutSession(args: {
   productDescription: string;
   /** Photo of the deal, shown on the Stripe checkout page. Optional. */
   productImageUrl?: string | null;
-  /** Where Stripe sends the payer after success — our hosted "done" page. */
-  successUrl: string;
-  /** Where Stripe sends the payer if they back out. */
-  cancelUrl: string;
+  /** Where Stripe sends the payer after success (hosted mode only). */
+  successUrl?: string;
+  /** Where Stripe sends the payer if they back out (hosted mode only). */
+  cancelUrl?: string;
+  /**
+   * 'hosted' (default) → Stripe-hosted page, returns a redirect `url`.
+   * 'embedded' → Stripe renders the form on OUR site, returns a `clientSecret`
+   * for <EmbeddedCheckout>. Used by the web so checkout never leaves gloe.app.
+   */
+  uiMode?: 'hosted' | 'embedded';
+  /** Required for embedded mode — where Stripe returns the payer after payment. */
+  returnUrl?: string;
   metadata: Record<string, string>;
 }): Promise<CheckoutSessionResult> {
-  const session = await client().checkout.sessions.create({
-    mode: 'payment',
+  const common = {
+    mode: 'payment' as const,
     line_items: [
       {
         price_data: {
-          currency: 'usd',
+          currency: 'usd' as const,
           unit_amount: args.amountCents,
           product_data: {
             name: args.productName,
@@ -391,12 +402,10 @@ export async function createGiftCheckoutSession(args: {
         quantity: 1,
       },
     ],
-    // Capture payer identity — we record these on the transaction so we know
-    // who actually paid (not just who redeems).
-    billing_address_collection: 'auto',
+    // Capture payer identity — recorded on the transaction so we know who
+    // actually paid (not just who redeems).
+    billing_address_collection: 'auto' as const,
     phone_number_collection: { enabled: false },
-    success_url: args.successUrl,
-    cancel_url: args.cancelUrl,
     metadata: args.metadata,
     payment_intent_data: {
       // The PaymentIntent inherits the same metadata so the existing
@@ -404,7 +413,28 @@ export async function createGiftCheckoutSession(args: {
       // that event before checkout.session.completed (rare, but possible).
       metadata: args.metadata,
     },
-  });
+  };
+
+  if (args.uiMode === 'embedded') {
+    // This account's API version uses the newer Checkout naming: 'embedded_page'
+    // (the old 'embedded' is deprecated). Returns a client_secret for Stripe.js
+    // embedded checkout on our own page.
+    const params: StripeNode.Checkout.SessionCreateParams = {
+      ...common,
+      ui_mode: 'embedded_page',
+      return_url: args.returnUrl,
+    };
+    const session = await client().checkout.sessions.create(params);
+    if (!session.client_secret) throw new Error('Stripe did not return a Checkout Session client secret');
+    return { sessionId: session.id, clientSecret: session.client_secret };
+  }
+
+  const params: StripeNode.Checkout.SessionCreateParams = {
+    ...common,
+    success_url: args.successUrl,
+    cancel_url: args.cancelUrl,
+  };
+  const session = await client().checkout.sessions.create(params);
   if (!session.url) throw new Error('Stripe did not return a Checkout Session URL');
   return { sessionId: session.id, url: session.url };
 }

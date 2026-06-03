@@ -31,7 +31,7 @@ export function GetTheApp() {
             Your vouchers in Apple Wallet, one‑tap Apple Pay checkout, and a ping the moment a deal drops near you.
           </p>
 
-          <ul style={{ listStyle: 'none', margin: '20px 0 0', display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 420 }}>
+          <ul className="app-checks" style={{ listStyle: 'none', margin: '20px 0 0', display: 'flex', flexDirection: 'column', gap: 10, maxWidth: 420 }}>
             {['Apple Wallet passes — your QR, always handy', 'Apple Pay checkout in one tap', 'Get notified when new deals land nearby'].map((t) => (
               <li key={t} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, color: 'var(--text-secondary)', fontSize: 15 }}>
                 <span style={{ flexShrink: 0, marginTop: 2 }}>
@@ -42,7 +42,7 @@ export function GetTheApp() {
             ))}
           </ul>
 
-          <div style={{ display: 'flex', gap: 12, marginTop: 26, flexWrap: 'wrap', justifyContent: 'inherit' }}>
+          <div className="app-cta" style={{ display: 'flex', gap: 12, marginTop: 26, flexWrap: 'wrap' }}>
             <AppStoreBadge />
           </div>
         </div>
@@ -60,6 +60,7 @@ export function GetTheApp() {
 function PhoneMock() {
   return (
     <div
+      className="phone-mock"
       style={{
         width: 280,
         height: 574,

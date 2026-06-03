@@ -7,19 +7,20 @@ import { useState } from 'react';
 import { trpc } from '../../lib/trpc';
 
 /**
- * Shared checkout actions for the deal page (used by both the desktop purchase
- * panel and the mobile sticky bar). "Buy now" → hosted Stripe Checkout. "Share
- * to pay" generates a gift link and opens the <SharePayModal/> (which adapts to
- * the device — native share sheet vs. copy/Text/Email). Signed-out shoppers are
+ * Shared checkout actions for the deal page. "Buy now" → EMBEDDED Stripe
+ * Checkout: we fetch a client secret and render the payment form in-page
+ * (<EmbeddedCheckoutModal/>) so the buyer never leaves gloe.app. "Share to pay"
+ * generates a gift link and opens the <SharePayModal/>. Signed-out shoppers are
  * routed to sign-in with a return path.
  */
 export function useBuy() {
   const { isSignedIn } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
-  const hosted = trpc.checkout.createHostedCheckout.useMutation();
+  const embedded = trpc.checkout.createEmbeddedCheckout.useMutation();
   const gift = trpc.checkout.createGiftLink.useMutation();
   const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
 
   function requireAuth(): boolean {
     if (isSignedIn) return true;
@@ -29,8 +30,8 @@ export function useBuy() {
 
   async function buy(variantId: string, quantity: number) {
     if (!requireAuth()) return;
-    const res = await hosted.mutateAsync({ variantId, quantity });
-    window.location.href = res.checkoutUrl;
+    const res = await embedded.mutateAsync({ variantId, quantity });
+    if (res.clientSecret) setClientSecret(res.clientSecret);
   }
 
   async function startShare(variantId: string, quantity: number) {
@@ -44,8 +45,11 @@ export function useBuy() {
     startShare,
     shareUrl,
     closeShare: () => setShareUrl(null),
-    loading: hosted.isPending,
+    /** When set, render <EmbeddedCheckoutModal clientSecret={...}/>. */
+    checkoutSecret: clientSecret,
+    closeCheckout: () => setClientSecret(null),
+    loading: embedded.isPending,
     sharing: gift.isPending,
-    error: hosted.error?.message ?? gift.error?.message ?? null,
+    error: embedded.error?.message ?? gift.error?.message ?? null,
   };
 }

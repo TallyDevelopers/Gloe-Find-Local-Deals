@@ -62,6 +62,34 @@ export const checkoutRouter = router({
     }),
 
   /**
+   * Web self-purchase via EMBEDDED Stripe Checkout — the form renders on
+   * gloe.app (Stripe's <EmbeddedCheckout>), so the buyer never leaves the site.
+   * Returns a `clientSecret`; same validation, txn record, and webhook
+   * fulfillment as the hosted path.
+   */
+  createEmbeddedCheckout: protectedProcedure
+    .input(
+      z.object({
+        variantId: z.string().uuid(),
+        quantity: z.number().int().min(1).max(10).default(1),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const res = await createHostedCheckout(ctx.sql, {
+          userId: ctx.auth.userId,
+          variantId: input.variantId,
+          quantity: input.quantity,
+          publicOrigin: PUBLIC_WEB_ORIGIN,
+          embedded: true,
+        });
+        return { clientSecret: res.clientSecret, sessionId: res.sessionId, amountCents: res.amountCents };
+      } catch (e) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: (e as Error).message });
+      }
+    }),
+
+  /**
    * "Share to pay" — generate a Gloē-hosted gift URL that the signed-in
    * customer (the redeemer) can text/share to whoever's actually paying.
    * The voucher credits to the redeemer's account on payment success.

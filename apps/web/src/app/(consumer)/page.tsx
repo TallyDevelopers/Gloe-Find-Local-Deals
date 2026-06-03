@@ -5,11 +5,13 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
+import { BlurImage } from '../../components/consumer/BlurImage';
 import { DealCard } from '../../components/consumer/DealCard';
 import { GetTheApp } from '../../components/consumer/GetTheApp';
+import { useMediaQuery } from '../../components/consumer/useMediaQuery';
 import { LocationBanner } from '../../components/consumer/LocationBanner';
 import { DealGridSkeleton } from '../../components/consumer/Skeletons';
-import { ArrowRight, Check, Search, Sparkles, Star } from '../../components/consumer/icons';
+import { ArrowRight, Search, Sparkles, Star } from '../../components/consumer/icons';
 import { useDealLocationArgs, useLocation } from '../../lib/location';
 import { trpc } from '../../lib/trpc';
 
@@ -24,6 +26,9 @@ export default function HomePage() {
   const { location } = useLocation();
   const locArgs = useDealLocationArgs();
   const [q, setQ] = useState('');
+  // Denser, ResortPass-style rail cards on phones (more peek = "scroll me");
+  // unchanged on desktop. Defaults to 260 on SSR/desktop.
+  const railCardW = useMediaQuery('(max-width: 760px)') ? 196 : 260;
 
   const categories = trpc.categories.list.useQuery();
   const feed = trpc.deals.list.useQuery({ ...locArgs, limit: 100 });
@@ -39,7 +44,6 @@ export default function HomePage() {
     }
     return m;
   }, [feed.data]);
-  const heroDeal = useMemo(() => (feed.data?.deals ?? []).find((d) => d.primaryPhotoUrl) ?? null, [feed.data]);
 
   function submitSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -50,53 +54,30 @@ export default function HomePage() {
 
   return (
     <div>
-      {/* Hero */}
+      {/* Hero — full-bleed image with centered text + search over it
+          (ResortPass-style). Drop a purchased photo at /public/hero.jpg; until
+          then a warm brand gradient shows through as a graceful fallback. */}
       <section className="hero">
-        <div className="hero-inner">
-          <div className="hero-grid">
-            <div>
-              <span style={badgeStyle}>
-                <Sparkles size={15} color="var(--brand-600)" /> Same-day beauty &amp; wellness
-              </span>
-              <h1 style={{ marginTop: 18 }}>
-                Treat yourself
-                <br />
-                for less.
-              </h1>
-              <p style={{ fontSize: 19, color: 'var(--text-secondary)', lineHeight: 1.5, maxWidth: 520, marginTop: 16 }}>
-                Gloē is the easiest way to book botox, fillers, facials, and laser at premium
-                medspas near you — up to 60% off, with your voucher delivered instantly.
-              </p>
+        <div className="hero-bg" aria-hidden />
+        <div className="hero-scrim" aria-hidden />
+        <div className="hero-content">
+          <h1>
+            Treat yourself
+            <br />
+            for less.
+          </h1>
+          <p className="hero-sub">
+            Botox, fillers, facials &amp; laser at premium medspas near you — up to 60% off,
+            your voucher delivered instantly.
+          </p>
 
-              <form className="hero-search" onSubmit={submitSearch}>
-                <Search size={20} color="var(--text-tertiary)" />
-                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Try “botox”, “hydrafacial”, “lip filler”…" aria-label="Search treatments" />
-                <button type="submit" style={{ background: 'var(--brand-500)', color: 'var(--text-inverse)', border: 'none', borderRadius: 'var(--radius-pill)', padding: '11px 22px', fontSize: 15, fontWeight: 700 }}>
-                  Search
-                </button>
-              </form>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 16, color: 'var(--text-tertiary)', fontSize: 13.5, flexWrap: 'wrap' }}>
-                <span style={trustChip}><Check size={14} color="var(--success)" /> No membership</span>
-                <span style={trustChip}><Check size={14} color="var(--success)" /> Instant QR voucher</span>
-                <span style={trustChip}><Check size={14} color="var(--success)" /> 3-day refund</span>
-              </div>
-            </div>
-
-            {heroDeal?.primaryPhotoUrl ? (
-              <Link href={`/deals/${heroDeal.id}`} className="hero-photo">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={heroDeal.primaryPhotoUrl} alt={heroDeal.title} />
-                <div className="hero-photo-cap">
-                  <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', opacity: 0.85 }}>
-                    {heroDeal.category.subtypeDisplayName ?? heroDeal.category.displayName}
-                  </div>
-                  <div style={{ fontFamily: 'var(--font-display)', fontSize: 22, marginTop: 2 }}>{heroDeal.title}</div>
-                  <div style={{ fontSize: 14, opacity: 0.9, marginTop: 2 }}>{heroDeal.vendor.businessName}</div>
-                </div>
-              </Link>
-            ) : null}
-          </div>
+          <form className="hero-search" onSubmit={submitSearch}>
+            <Search size={20} color="var(--text-tertiary)" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Try “botox”, “hydrafacial”…" aria-label="Search treatments" />
+            <button type="submit" className="hero-search-btn">
+              Search
+            </button>
+          </form>
         </div>
       </section>
 
@@ -119,10 +100,7 @@ export default function HomePage() {
               const img = deals.find((d) => d.primaryPhotoUrl)?.primaryPhotoUrl ?? null;
               return (
                 <Link key={c.slug} href={`/treatments/${c.slug}`} className="cat-card">
-                  {img ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={img} alt={c.displayName} loading="lazy" />
-                  ) : null}
+                  {img ? <BlurImage src={img} alt={c.displayName} /> : null}
                   <span className="cat-card-label">
                     <span className="name">{c.displayName}</span>
                     <span className="count">{deals.length} deal{deals.length > 1 ? 's' : ''} nearby</span>
@@ -153,7 +131,7 @@ export default function HomePage() {
               </div>
               <div className="rail hide-scrollbar">
                 {deals.slice(0, 12).map((deal) => (
-                  <DealCard key={deal.id} deal={deal} width={260} />
+                  <DealCard key={deal.id} deal={deal} width={railCardW} />
                 ))}
                 <ViewMoreCard slug={c.slug} label={c.displayName} count={deals.length} />
               </div>
@@ -190,22 +168,6 @@ export default function HomePage() {
     </div>
   );
 }
-
-const badgeStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 7,
-  fontSize: 13,
-  fontWeight: 700,
-  letterSpacing: '0.08em',
-  textTransform: 'uppercase',
-  color: 'var(--brand-600)',
-  background: 'var(--surface-elevated)',
-  padding: '7px 14px',
-  borderRadius: 'var(--radius-pill)',
-  border: '1px solid var(--border-subtle)',
-};
-const trustChip: React.CSSProperties = { display: 'inline-flex', alignItems: 'center', gap: 5 };
 
 /** Terminal card at the end of a category rail — the "view all" affordance. */
 function ViewMoreCard({ slug, label, count }: { slug: string; label: string; count: number }) {
