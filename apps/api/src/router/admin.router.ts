@@ -27,6 +27,7 @@ import {
   createAgentReply,
   setSupportTicketStatus,
   listAdminTransactions,
+  setVendorTake,
   reviewDeal,
   searchEverything,
   setVendorAutoReleaseOnRedemption,
@@ -56,6 +57,7 @@ import { refundTransaction, forceRefundRedeemed, windDownVendor } from '../domai
 import { dealInput, dealFields } from './vendor.router';
 import { createVendor } from '../domain/vendorSignup';
 import { startVendorOnboarding } from '../domain/vendorStripe';
+import { getTrendingConfig, setTrendingConfig } from '../domain/platformSettings';
 import { adminProcedure, protectedProcedure, router } from './trpc';
 
 /** Throws FORBIDDEN unless the caller is an `owner` (not just an admin). */
@@ -179,11 +181,29 @@ export const adminRouter = router({
         status: z.array(z.string()).optional(),
         vendorId: z.string().uuid().optional(),
         since: z.string().optional(),
+        until: z.string().optional(),
         query: z.string().optional(),
         limit: z.number().int().positive().max(200).optional(),
       }),
     )
     .query(({ ctx, input }) => listAdminTransactions(ctx.sql, input)),
+
+  /** Read the auto-"Trending" threshold (min purchases + window days). */
+  getTrendingConfig: adminProcedure.query(({ ctx }) => getTrendingConfig(ctx.sql)),
+
+  /** Tune the auto-"Trending" threshold (god-mode). */
+  setTrendingConfig: adminProcedure
+    .input(z.object({ minPurchases: z.number().int().min(1).max(10000), windowDays: z.number().int().min(1).max(365) }))
+    .mutation(({ ctx, input }) => setTrendingConfig(ctx.sql, input)),
+
+  /** Set the editorial "Gloē's take" + perk chips on a spa (admin-only). */
+  setVendorTake: adminProcedure
+    .input(z.object({
+      vendorId: z.string().uuid(),
+      take: z.string().max(600).nullable(),
+      perks: z.array(z.string().max(60)).max(6),
+    }))
+    .mutation(({ ctx, input }) => setVendorTake(ctx.sql, input.vendorId, input.take, input.perks)),
 
   /** Transaction drill-in: tx + vendor + customer + claims + audit. */
   transactionDetail: adminProcedure

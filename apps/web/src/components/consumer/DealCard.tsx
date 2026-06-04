@@ -59,6 +59,28 @@ export function DealCard({ deal, width }: { deal: DealSummary; width?: number })
         <div style={{ position: 'absolute', top: 8, right: 8 }}>
           <SaveButton dealId={deal.id} size="sm" />
         </div>
+
+        {deal.isTrending ? (
+          <span
+            style={{
+              position: 'absolute',
+              bottom: 12,
+              left: 0,
+              background: '#B05A6B',
+              color: '#fff',
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: '0.05em',
+              textTransform: 'uppercase',
+              padding: '3px 8px',
+              // Small ribbon tab flush to the image's left edge.
+              borderRadius: '0 4px 4px 0',
+              boxShadow: '0 1px 4px rgba(0,0,0,0.25)',
+            }}
+          >
+            Trending
+          </span>
+        ) : null}
       </div>
 
       <div style={{ padding: '12px 14px 16px' }}>

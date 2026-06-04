@@ -47,6 +47,8 @@ export function TransactionsView({ onJumpToCustomer, openTransactionId, onOpenCo
   const router = useRouter();
   const [filter, setFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
+  const [since, setSince] = useState('');
+  const [until, setUntil] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
 
   // Honor a deep-linked transaction (⌘K search, Pulse) by opening its drawer.
@@ -60,9 +62,21 @@ export function TransactionsView({ onJumpToCustomer, openTransactionId, onOpenCo
   const statusList = useMemo(() => (filter === 'all' ? undefined : [filter]), [filter]);
 
   const list = trpc.admin.listTransactions.useQuery(
-    { status: statusList, query: search || undefined, limit: 100 },
+    { status: statusList, query: search || undefined, since: since || undefined, until: until || undefined, limit: 100 },
     { refetchInterval: 30_000 },
   );
+
+  // Quick date presets — set `since` to N days ago, clear `until`.
+  function setRangeDays(days: number) {
+    const d = new Date();
+    d.setDate(d.getDate() - days);
+    setSince(d.toISOString().slice(0, 10));
+    setUntil('');
+  }
+  function clearDates() {
+    setSince('');
+    setUntil('');
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -112,6 +126,24 @@ export function TransactionsView({ onJumpToCustomer, openTransactionId, onOpenCo
               {f.label}
             </button>
           ))}
+        </div>
+
+        {/* Date range — quick presets + explicit from/to (filters on paid date). */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', width: '100%' }}>
+          {[{ d: 7, l: '7d' }, { d: 30, l: '30d' }, { d: 90, l: '90d' }].map((p) => (
+            <button key={p.d} onClick={() => setRangeDays(p.d)} style={datePresetBtn}>
+              {p.l}
+            </button>
+          ))}
+          <span style={{ fontSize: 12, color: 'var(--text-tertiary)', marginLeft: 4 }}>From</span>
+          <input type="date" value={since} max={until || undefined} onChange={(e) => setSince(e.target.value)} style={dateInput} />
+          <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>to</span>
+          <input type="date" value={until} min={since || undefined} onChange={(e) => setUntil(e.target.value)} style={dateInput} />
+          {(since || until) ? (
+            <button onClick={clearDates} style={{ ...datePresetBtn, color: 'var(--brand-600)' }}>
+              Clear
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -173,7 +205,10 @@ export function TransactionsView({ onJumpToCustomer, openTransactionId, onOpenCo
                   </Td>
                   <Td align="right" mono>{money(r.consumerPaidCents)}</Td>
                   <Td align="right" mono>{money(r.platformFeeCents)}</Td>
-                  <Td align="right" mono>{money(r.vendorPayoutCents)}</Td>
+                  <Td align="right" mono>
+                    {money(r.vendorPayoutCents)}
+                    <PayoutBadge row={r} />
+                  </Td>
                   <Td>
                     <span style={{ fontSize: 11, fontWeight: 700, color: STATUS_COLOR[r.status] ?? 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                       {r.status.replace('_', ' ')}
@@ -211,6 +246,26 @@ const stripeLink: React.CSSProperties = {
   fontSize: 12,
 };
 
+const datePresetBtn: React.CSSProperties = {
+  padding: '5px 10px',
+  fontSize: 12,
+  fontWeight: 600,
+  borderRadius: 999,
+  border: '1px solid var(--border-default)',
+  background: 'var(--surface-elevated)',
+  color: 'var(--text-primary)',
+  cursor: 'pointer',
+};
+
+const dateInput: React.CSSProperties = {
+  padding: '5px 8px',
+  fontSize: 12,
+  border: '1px solid var(--border-default)',
+  borderRadius: 'var(--radius-md)',
+  background: 'var(--surface-default)',
+  color: 'var(--text-primary)',
+};
+
 const inlineLinkBtn: React.CSSProperties = {
   background: 'none',
   border: 'none',
@@ -246,6 +301,23 @@ function Td({ children, align, mono, style }: { children: React.ReactNode; align
     }}>
       {children}
     </td>
+  );
+}
+
+/**
+ * Tiny line under the payout amount telling you whether the money actually left
+ * for the vendor (transferred/released) or is still sitting with us (held).
+ */
+function PayoutBadge({ row }: { row: Row }) {
+  const paidOut = row.status === 'released' || !!row.releasedAt || !!row.stripeTransferId;
+  const held = !paidOut && (row.status === 'paid' || row.status === 'partially_refunded');
+  if (!paidOut && !held) return null;
+  return (
+    <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', marginTop: 2, color: paidOut ? 'var(--success)' : 'var(--text-tertiary)' }}>
+      {paidOut
+        ? `Paid out${row.releasedAt ? ' · ' + new Date(row.releasedAt).toLocaleDateString([], { month: 'numeric', day: 'numeric' }) : ''}`
+        : 'Held'}
+    </div>
   );
 }
 

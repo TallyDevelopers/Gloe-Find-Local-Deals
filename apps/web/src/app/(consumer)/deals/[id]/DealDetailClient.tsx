@@ -100,6 +100,8 @@ export function DealDetailClient({ id }: { id: string }) {
             <PurchasePanel deal={d} variantId={vid} setVariantId={setVariantId} qty={qty} setQty={setQty} />
           </div>
 
+          {(d.gloeTake || d.gloePerks.length > 0) ? <GloeTake take={d.gloeTake} perks={d.gloePerks} /> : null}
+
           {/* Long-form sections */}
           {d.description ? (
             <section className="deal-section">
@@ -226,6 +228,31 @@ function WhereSection({ deal }: { deal: DealDetail }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, color: 'var(--text-secondary)' }}>
         <MapPin size={16} color="var(--brand-600)" />
         <span>{address ?? `${deal.vendor.businessName}, ${deal.vendor.city}`}</span>
+      </div>
+    </section>
+  );
+}
+
+/** Editorial "Gloē's take" callout — our voice on the spa + quick perk chips. */
+function GloeTake({ take, perks }: { take: string | null; perks: string[] }) {
+  return (
+    <section className="deal-section">
+      <div style={{ background: 'var(--brand-50)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)', padding: '18px 20px' }}>
+        <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--brand-600)', marginBottom: take ? 8 : (perks.length ? 10 : 0) }}>
+          Gloē&rsquo;s take
+        </div>
+        {take ? (
+          <p style={{ color: 'var(--text-secondary)', lineHeight: 1.65, fontSize: 15.5, whiteSpace: 'pre-wrap' }}>{take}</p>
+        ) : null}
+        {perks.length > 0 ? (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: take ? 14 : 0 }}>
+            {perks.map((p) => (
+              <span key={p} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--surface-elevated)', border: '1px solid var(--border-subtle)', borderRadius: 999, padding: '6px 12px', fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500 }}>
+                <Check size={14} color="var(--success)" /> {p}
+              </span>
+            ))}
+          </div>
+        ) : null}
       </div>
     </section>
   );

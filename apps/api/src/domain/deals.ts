@@ -1,5 +1,6 @@
 import { detectTreatment, expandQuery, type DetectedTreatment } from './aestheticSynonyms';
 import type { Sql } from '../db/client';
+import { getTrendingConfig } from './platformSettings';
 
 /** Sort modes for the deal list / search. Default = relevance-blended ranking. */
 export type DealSort = 'relevance' | 'distance' | 'price' | 'rating' | 'discount';
@@ -145,6 +146,8 @@ export interface DealSummary {
   driveSeconds: number | null;
   /** Headline variant (the first one) for feed display. */
   headlineVariant: DealVariant | null;
+  /** Auto-computed: enough recent purchases to show the "Trending" ribbon. */
+  isTrending: boolean;
 }
 
 export interface DealRedemption {
@@ -163,6 +166,10 @@ export interface DealDetail extends DealSummary {
   whatsIncluded: string[];
   restrictions: string[];
   finePrint: string | null;
+  /** Editorial "Gloē's take" on the spa (admin-written), shown on the deal page. */
+  gloeTake: string | null;
+  /** Quick "good to know" perk chips for the spa (admin-written). */
+  gloePerks: string[];
   redemption: DealRedemption;
   variants: DealVariant[];
   photos: DealPhoto[];
@@ -224,6 +231,8 @@ export async function listDeals(sql: Sql, params: ListParams = {}): Promise<Deal
   } = params;
   const hasUserLocation = typeof userLat === 'number' && typeof userLng === 'number';
   const radiusMeters = maxDistanceMiles * 1609.344;
+  // Auto-"Trending" threshold (admin-tunable in god-mode).
+  const trending = await getTrendingConfig(sql);
   // Each of the three filters becomes part of a single EXISTS subquery so
   // we only require ONE matching variant (the cheapest) per deal — not all of them.
   const hasPriceMin = typeof minPriceCents === 'number';
@@ -274,6 +283,14 @@ export async function listDeals(sql: Sql, params: ListParams = {}): Promise<Deal
       d.title,
       d.expires_at,
       d.is_sponsored,
+      (
+        SELECT COUNT(DISTINCT t.id) >= ${trending.minPurchases}
+        FROM public.transactions t
+        JOIN public.claims cl ON cl.transaction_id = t.id
+        WHERE cl.deal_id = d.id
+          AND t.status IN ('paid', 'released', 'partially_refunded')
+          AND COALESCE(t.paid_at, t.created_at) >= now() - (${trending.windowDays} * INTERVAL '1 day')
+      ) AS is_trending,
       c.slug          AS category_slug,
       c.display_name  AS category_display_name,
       s.slug          AS subtype_slug,
@@ -398,6 +415,7 @@ export async function listDeals(sql: Sql, params: ListParams = {}): Promise<Deal
       distanceMiles: miles,
       driveSeconds: estimateDriveSeconds(miles),
       headlineVariant: headlineVariants.get(r.id) ?? null,
+      isTrending: r.is_trending,
     };
   });
 
@@ -589,10 +607,19 @@ export async function detectSubtypeForText(
 }
 
 export async function getDeal(sql: Sql, dealId: string): Promise<DealDetail | null> {
+  const trending = await getTrendingConfig(sql);
   const dealRows = await sql<DealDetailRow[]>`
     SELECT
       d.id, d.title, d.description, d.whats_included, d.restrictions, d.fine_print,
       d.expires_at, d.is_sponsored, d.per_customer_limit,
+      (
+        SELECT COUNT(DISTINCT t.id) >= ${trending.minPurchases}
+        FROM public.transactions t
+        JOIN public.claims cl ON cl.transaction_id = t.id
+        WHERE cl.deal_id = d.id
+          AND t.status IN ('paid', 'released', 'partially_refunded')
+          AND COALESCE(t.paid_at, t.created_at) >= now() - (${trending.windowDays} * INTERVAL '1 day')
+      ) AS is_trending,
       d.redemption_address, d.redemption_lat, d.redemption_lng, d.redemption_map_url,
       c.slug AS category_slug, c.display_name AS category_display_name,
       s.slug AS subtype_slug, s.display_name AS subtype_display_name,
@@ -610,6 +637,8 @@ export async function getDeal(sql: Sql, dealId: string): Promise<DealDetail | nu
       v.google_place_id AS vendor_google_place_id,
       v.region        AS vendor_region,
       v.postal_code   AS vendor_postal_code,
+      v.gloe_take     AS vendor_gloe_take,
+      v.gloe_perks    AS vendor_gloe_perks,
       ST_Y(v.location::geometry) AS vendor_lat,
       ST_X(v.location::geometry) AS vendor_lng
     FROM public.deals d
@@ -657,6 +686,9 @@ export async function getDeal(sql: Sql, dealId: string): Promise<DealDetail | nu
     whatsIncluded: deal.whats_included as string[],
     restrictions: deal.restrictions as string[],
     finePrint: deal.fine_print,
+    gloeTake: deal.vendor_gloe_take,
+    gloePerks: deal.vendor_gloe_perks ?? [],
+    isTrending: deal.is_trending,
     expiresAt: deal.expires_at,
     isSponsored: deal.is_sponsored,
     category: {
@@ -806,6 +838,7 @@ interface DealListRow {
   vendor_lng: number | null;
   primary_photo_url: string | null;
   distance_miles: string | null;
+  is_trending: boolean;
   /** Present only on search queries (q set). */
   relevance_sim?: string | null;
   hard_match?: boolean | null;
@@ -828,6 +861,8 @@ interface DealDetailRow extends Omit<DealListRow, 'primary_photo_url' | 'distanc
   vendor_postal_code: string | null;
   vendor_lat: number | null;
   vendor_lng: number | null;
+  vendor_gloe_take: string | null;
+  vendor_gloe_perks: string[] | null;
   per_customer_limit: number;
 }
 

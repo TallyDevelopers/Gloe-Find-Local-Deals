@@ -19,6 +19,7 @@ export function SettingsView() {
         </p>
       </div>
       <DealReviewQueue />
+      <TrendingSettings />
       <Card>
         <h2 style={{ fontSize: 18, marginBottom: 4 }}>Platform fees</h2>
         <p style={{ color: 'var(--text-tertiary)', fontSize: 13, marginBottom: 12 }}>
@@ -231,6 +232,67 @@ function Block({ label, children }: { label: string; children: React.ReactNode }
     </div>
   );
 }
+
+/** Tune the auto-"Trending" ribbon threshold (min purchases within N days). */
+function TrendingSettings() {
+  const utils = trpc.useUtils();
+  const q = trpc.admin.getTrendingConfig.useQuery();
+  const save = trpc.admin.setTrendingConfig.useMutation({
+    onSuccess: () => { void utils.admin.getTrendingConfig.invalidate(); },
+  });
+  const [minPurchases, setMinPurchases] = useState('');
+  const [windowDays, setWindowDays] = useState('');
+  const [saved, setSaved] = useState(false);
+
+  // Prefill once the config lands (only if the user hasn't typed yet).
+  if (q.data && minPurchases === '' && windowDays === '') {
+    setMinPurchases(String(q.data.minPurchases));
+    setWindowDays(String(q.data.windowDays));
+  }
+
+  const submit = async () => {
+    await save.mutateAsync({
+      minPurchases: Math.max(1, parseInt(minPurchases, 10) || 3),
+      windowDays: Math.max(1, parseInt(windowDays, 10) || 7),
+    });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1800);
+  };
+
+  return (
+    <Card>
+      <h2 style={{ fontSize: 18, marginBottom: 4 }}>Trending ribbon</h2>
+      <p style={{ color: 'var(--text-tertiary)', fontSize: 13, marginBottom: 14 }}>
+        A deal shows the <strong>Trending</strong> ribbon when it hits this many paid purchases within the window. Auto-computed — no manual tagging.
+      </p>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, flexWrap: 'wrap' }}>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-tertiary)' }}>Min purchases</span>
+          <input type="number" min={1} value={minPurchases} onChange={(e) => setMinPurchases(e.target.value)} style={settingInput} />
+        </label>
+        <span style={{ fontSize: 13, color: 'var(--text-tertiary)', paddingBottom: 9 }}>within</span>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-tertiary)' }}>Window (days)</span>
+          <input type="number" min={1} value={windowDays} onChange={(e) => setWindowDays(e.target.value)} style={settingInput} />
+        </label>
+        <button type="button" onClick={submit} disabled={save.isPending} style={linkBtn}>
+          {save.isPending ? 'Saving…' : 'Save'}
+        </button>
+        {saved ? <span style={{ fontSize: 13, color: 'var(--success)', fontWeight: 600, paddingBottom: 9 }}>Saved ✓</span> : null}
+      </div>
+    </Card>
+  );
+}
+
+const settingInput: React.CSSProperties = {
+  width: 90,
+  padding: '8px 10px',
+  fontSize: 14,
+  border: '1px solid var(--border-default)',
+  borderRadius: 'var(--radius-md)',
+  background: 'var(--surface-default)',
+  color: 'var(--text-primary)',
+};
 
 function Card({ children }: { children: React.ReactNode }) {
   return (

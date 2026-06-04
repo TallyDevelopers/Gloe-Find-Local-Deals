@@ -251,6 +251,8 @@ export interface TransactionListFilters {
   vendorId?: string;
   /** ISO date string (YYYY-MM-DD) — inclusive lower bound on paid_at. */
   since?: string;
+  /** ISO date string (YYYY-MM-DD) — inclusive upper bound on paid_at. */
+  until?: string;
   query?: string;
   limit?: number;
 }
@@ -261,6 +263,7 @@ export async function listAdminTransactions(sql: Sql, filters: TransactionListFi
     ? filters.status
     : ['paid', 'released', 'partially_refunded', 'refunded', 'pending_payment', 'failed', 'disputed'];
   const sinceClause = filters.since ?? '1970-01-01';
+  const untilClause = filters.until ?? '2999-01-01';
   const vendorIdOrNull = filters.vendorId ?? null;
   const queryLike = filters.query ? `%${filters.query}%` : null;
 
@@ -273,6 +276,7 @@ export async function listAdminTransactions(sql: Sql, filters: TransactionListFi
     stripe_payment_intent_id: string | null;
     stripe_transfer_id: string | null;
     paid_at: string | null;
+    released_at: string | null;
     created_at: string;
     vendor_id: string;
     business_name: string;
@@ -283,7 +287,7 @@ export async function listAdminTransactions(sql: Sql, filters: TransactionListFi
   }[]>`
     SELECT
       t.id, t.status, t.consumer_paid_cents, t.platform_fee_cents, t.vendor_payout_cents,
-      t.stripe_payment_intent_id, t.stripe_transfer_id, t.paid_at, t.created_at,
+      t.stripe_payment_intent_id, t.stripe_transfer_id, t.paid_at, t.released_at, t.created_at,
       v.id AS vendor_id, v.business_name,
       u.id AS customer_id,
       COALESCE(NULLIF(TRIM(CONCAT(u.first_name, ' ', u.last_name)), ''), u.email) AS customer_name,
@@ -295,6 +299,7 @@ export async function listAdminTransactions(sql: Sql, filters: TransactionListFi
     WHERE t.status = ANY(${sql.array(statuses)})
       AND (${vendorIdOrNull}::uuid IS NULL OR t.vendor_id = ${vendorIdOrNull}::uuid)
       AND COALESCE(t.paid_at, t.created_at) >= ${sinceClause}::timestamptz
+      AND COALESCE(t.paid_at, t.created_at) < (${untilClause}::date + INTERVAL '1 day')
       AND (${queryLike}::text IS NULL
            OR v.business_name ILIKE ${queryLike}
            OR u.email ILIKE ${queryLike}
@@ -313,6 +318,7 @@ export async function listAdminTransactions(sql: Sql, filters: TransactionListFi
     stripePaymentIntentId: r.stripe_payment_intent_id,
     stripeTransferId: r.stripe_transfer_id,
     paidAt: r.paid_at,
+    releasedAt: r.released_at,
     createdAt: r.created_at,
     vendorId: r.vendor_id,
     vendorName: r.business_name,
@@ -321,6 +327,21 @@ export async function listAdminTransactions(sql: Sql, filters: TransactionListFi
     customerEmail: r.customer_email,
     claimStatus: r.claim_status,
   }));
+}
+
+/**
+ * Set the editorial "Gloē's take" + quick perk chips on a spa. Admin-only.
+ * Take is trimmed (null when blank); perks are trimmed, deduped, capped at 6.
+ */
+export async function setVendorTake(sql: Sql, vendorId: string, take: string | null, perks: string[]) {
+  const cleanTake = take && take.trim() !== '' ? take.trim() : null;
+  const cleanPerks = Array.from(new Set(perks.map((p) => p.trim()).filter(Boolean))).slice(0, 6);
+  await sql`
+    UPDATE public.vendors
+       SET gloe_take = ${cleanTake}, gloe_perks = ${sql.array(cleanPerks)}
+     WHERE id = ${vendorId}::uuid
+  `;
+  return { ok: true, gloeTake: cleanTake, gloePerks: cleanPerks };
 }
 
 export async function getAdminTransactionDetail(sql: Sql, transactionId: string) {
@@ -1090,6 +1111,8 @@ export async function getVendorDetail(sql: Sql, vendorId: string) {
     stripe_account_status: string | null;
     google_place_id: string | null;
     auto_release_on_redemption: boolean;
+    gloe_take: string | null;
+    gloe_perks: string[] | null;
     purchases: number;
     gross_cents: number;
     income_cents: number;
@@ -1098,6 +1121,7 @@ export async function getVendorDetail(sql: Sql, vendorId: string) {
     SELECT v.id, v.display_id, v.business_name, v.status, v.city, v.region, v.address_line1, v.phone,
       (v.owner_user_id IS NOT NULL) AS has_owner, v.admin_bypass,
       v.stripe_account_status, v.google_place_id, v.auto_release_on_redemption,
+      v.gloe_take, v.gloe_perks,
       COALESCE((SELECT COUNT(*)::int FROM public.transactions t WHERE t.vendor_id=v.id AND t.status IN ('paid','released','partially_refunded')),0) AS purchases,
       COALESCE((SELECT SUM(consumer_paid_cents) FROM public.transactions t WHERE t.vendor_id=v.id AND t.status IN ('paid','released','partially_refunded')),0)::int AS gross_cents,
       COALESCE((SELECT SUM(platform_fee_cents) FROM public.transactions t WHERE t.vendor_id=v.id AND t.status IN ('paid','released','partially_refunded')),0)::int AS income_cents,
@@ -1240,6 +1264,8 @@ export async function getVendorDetail(sql: Sql, vendorId: string) {
         createdAt: f.created_at,
       })),
       autoReleaseOnRedemption: v.auto_release_on_redemption,
+      gloeTake: v.gloe_take,
+      gloePerks: v.gloe_perks ?? [],
     },
     heldPayouts: heldRows.map((r) => ({
       claimId: r.claim_id,

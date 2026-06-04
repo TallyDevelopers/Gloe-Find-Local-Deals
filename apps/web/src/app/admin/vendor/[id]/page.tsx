@@ -189,6 +189,13 @@ export default function VendorDetailPage() {
 
             <WindDownPanel vendorId={id} vendorName={data.vendor.businessName} />
 
+            <GloeTakeEditor
+              vendorId={id}
+              initialTake={data.vendor.gloeTake}
+              initialPerks={data.vendor.gloePerks}
+              onSaved={() => utils.admin.vendorDetail.invalidate({ vendorId: id })}
+            />
+
             {/* Listings */}
             <Card>
               <h2 style={{ fontSize: 19, marginBottom: 16 }}>Listings ({data.deals.length})</h2>
@@ -870,6 +877,84 @@ const modalInput: React.CSSProperties = {
   background: 'var(--surface-default)',
   color: 'var(--text-primary)',
 };
+
+/**
+ * Admin editor for "Gloē's take" — the editorial note + perk chips on a spa.
+ * Per-vendor, so it shows on every deal for this business + the spa storefront.
+ */
+function GloeTakeEditor({
+  vendorId, initialTake, initialPerks, onSaved,
+}: {
+  vendorId: string;
+  initialTake: string | null;
+  initialPerks: string[];
+  onSaved: () => void;
+}) {
+  const save = trpc.admin.setVendorTake.useMutation();
+  const [take, setTake] = useState(initialTake ?? '');
+  const [perks, setPerks] = useState<string[]>(initialPerks);
+  const [draft, setDraft] = useState('');
+  const [saved, setSaved] = useState(false);
+
+  const addPerk = () => {
+    const p = draft.trim();
+    if (!p || perks.includes(p) || perks.length >= 6) { setDraft(''); return; }
+    setPerks([...perks, p]);
+    setDraft('');
+  };
+  const submit = async () => {
+    await save.mutateAsync({ vendorId, take: take.trim() === '' ? null : take, perks });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1800);
+    onSaved();
+  };
+
+  return (
+    <Card>
+      <h2 style={{ fontSize: 19, marginBottom: 6 }}>Gloē&rsquo;s take</h2>
+      <p style={{ fontSize: 13, color: 'var(--text-tertiary)', marginBottom: 14 }}>
+        Editorial note in Gloē&rsquo;s voice + quick &ldquo;good to know&rdquo; perks. Shows on every deal for this spa.
+      </p>
+      <textarea
+        value={take}
+        onChange={(e) => setTake(e.target.value)}
+        maxLength={600}
+        rows={4}
+        placeholder="e.g. Chic, sunlit space with the warmest front desk in town — grab a flat white next door at Blue Bottle before your appointment."
+        style={{ ...modalInput, width: '100%', fontFamily: 'inherit', resize: 'vertical' }}
+      />
+      <div style={{ marginTop: 12 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-tertiary)', marginBottom: 6 }}>
+          Perks ({perks.length}/6)
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+          {perks.map((p) => (
+            <span key={p} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--brand-50)', border: '1px solid var(--border-subtle)', borderRadius: 999, padding: '5px 10px', fontSize: 13 }}>
+              {p}
+              <button type="button" onClick={() => setPerks(perks.filter((x) => x !== p))} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', fontSize: 15, lineHeight: 1, padding: 0 }}>×</button>
+            </span>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addPerk(); } }}
+            maxLength={60}
+            placeholder="Add a perk (e.g. Free parking) — press Enter"
+            disabled={perks.length >= 6}
+            style={{ ...modalInput, flex: 1 }}
+          />
+          <Button onClick={addPerk} disabled={perks.length >= 6}>Add</Button>
+        </div>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 14 }}>
+        <Button onClick={submit} disabled={save.isPending}>{save.isPending ? 'Saving…' : 'Save take'}</Button>
+        {saved ? <span style={{ fontSize: 13, color: 'var(--success)', fontWeight: 600 }}>Saved ✓</span> : null}
+      </div>
+    </Card>
+  );
+}
 
 function Tag({ ok, label }: { ok: boolean | null; label: string }) {
   const c = ok === null ? 'var(--text-tertiary)' : ok ? 'var(--success)' : 'var(--accent-500)';
