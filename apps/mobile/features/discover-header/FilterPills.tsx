@@ -19,9 +19,11 @@ export const CATEGORY_OPTIONS: CategoryOption[] = [
   { slug: 'injectables', label: 'Injectables' },
   { slug: 'skin', label: 'Skin' },
   { slug: 'laser', label: 'Laser' },
-  { slug: 'body', label: 'Body' },
-  { slug: 'wellness', label: 'Wellness' },
-  { slug: 'other', label: 'Other' },
+  { slug: 'weight-loss', label: 'Weight Loss' },
+  { slug: 'body', label: 'Body & Contouring' },
+  { slug: 'wellness', label: 'IV Therapy' },
+  { slug: 'hormones-peptides', label: 'Hormones & Peptides' },
+  { slug: 'other', label: 'Lashes & Eyes' },
 ];
 
 /**

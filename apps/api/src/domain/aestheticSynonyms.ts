@@ -203,7 +203,7 @@ const SUBTYPE_ALIASES: Record<string, string[]> = {
   'myers cocktail iv': ['myers cocktail', 'myers'],
   'nad+ iv': ['nad+', 'nad'],
   'semaglutide': ['semaglutide', 'ozempic', 'wegovy', 'skinny shot'],
-  'weight loss (tirzepatide)': ['tirzepatide', 'mounjaro', 'zepbound'],
+  'tirzepatide': ['tirzepatide', 'mounjaro', 'zepbound', 'weight loss'],
   'brow services': ['brow', 'brows', 'eyebrow', 'microblading', 'brow lamination'],
   'lash services': ['lash', 'lashes', 'lash lift', 'lash extensions'],
   'spray tans': ['spray tan', 'spray tanning', 'airbrush tan'],
