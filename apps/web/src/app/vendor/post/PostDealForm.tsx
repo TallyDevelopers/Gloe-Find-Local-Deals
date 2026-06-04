@@ -271,6 +271,7 @@ export function PostDealForm({ mode }: { mode: PostDealMode }) {
         perCustomerLimit: payload.perCustomerLimit,
         codeValidityDays: payload.codeValidityDays,
         photoUrls: payload.photoUrls,
+        videos: payload.videos,
         variants: payload.variants,
       });
       return;

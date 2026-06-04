@@ -1,11 +1,13 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import type { RouterOutputs } from '@gloe/api-client';
 
 import { trpc } from '../../../lib/trpc';
+import { stripeDashboardUrl } from '../../../lib/stripeDashboard';
+import { RefundControl } from '../components/RefundControl';
 
 type Row = RouterOutputs['admin']['listTransactions'][number];
 
@@ -35,13 +37,25 @@ function money(cents: number): string {
 interface TransactionsViewProps {
   /** Tell the shell to switch to Customers and open this customer's drawer. */
   onJumpToCustomer?: (customerId: string) => void;
+  /** Deep-link target: open this transaction's drawer on mount (from ⌘K / Pulse). */
+  openTransactionId?: string | null;
+  /** Called once the deep-link target has been consumed so the shell can clear it. */
+  onOpenConsumed?: () => void;
 }
 
-export function TransactionsView({ onJumpToCustomer }: TransactionsViewProps = {}) {
+export function TransactionsView({ onJumpToCustomer, openTransactionId, onOpenConsumed }: TransactionsViewProps = {}) {
   const router = useRouter();
   const [filter, setFilter] = useState<string>('all');
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
+
+  // Honor a deep-linked transaction (⌘K search, Pulse) by opening its drawer.
+  useEffect(() => {
+    if (openTransactionId) {
+      setSelected(openTransactionId);
+      onOpenConsumed?.();
+    }
+  }, [openTransactionId, onOpenConsumed]);
 
   const statusList = useMemo(() => (filter === 'all' ? undefined : [filter]), [filter]);
 
@@ -178,7 +192,12 @@ export function TransactionsView({ onJumpToCustomer }: TransactionsViewProps = {
       </div>
 
       {selected ? (
-        <TransactionDrawer id={selected} onClose={() => setSelected(null)} />
+        <TransactionDrawer
+          id={selected}
+          onClose={() => setSelected(null)}
+          onJumpToCustomer={onJumpToCustomer}
+          onRefunded={() => list.refetch()}
+        />
       ) : null}
     </div>
   );
@@ -230,9 +249,20 @@ function Td({ children, align, mono, style }: { children: React.ReactNode; align
   );
 }
 
-function TransactionDrawer({ id, onClose }: { id: string; onClose: () => void }) {
+function TransactionDrawer({
+  id, onClose, onJumpToCustomer, onRefunded,
+}: {
+  id: string;
+  onClose: () => void;
+  onJumpToCustomer?: (customerId: string) => void;
+  onRefunded?: () => void;
+}) {
   const detail = trpc.admin.transactionDetail.useQuery({ id });
   const d = detail.data;
+  // A voucher is redeemed once any claim has a redeemedAt — that gates whether
+  // a refund needs the force/claw-back path (money already moved to the vendor).
+  const isRedeemed = !!d?.claims.some((c) => c.redeemedAt);
+  const refundable = !!d && ['paid', 'partially_refunded', 'released'].includes(d.transaction.status);
 
   return (
     <div
@@ -285,28 +315,43 @@ function TransactionDrawer({ id, onClose }: { id: string; onClose: () => void })
               <Row label="Vendor">
                 <a href={`/admin/vendor/${d.vendor.id}`} style={{ color: 'var(--brand-600)', fontWeight: 600 }}>{d.vendor.name} →</a>
               </Row>
-              <Row label="Customer">{d.customer ? `${d.customer.name ?? '—'}` : '—'}</Row>
+              <Row label="Customer">
+                {d.customer && d.customer.id && onJumpToCustomer ? (
+                  <button onClick={() => onJumpToCustomer(d.customer!.id!)} style={inlineLinkBtn}>
+                    {d.customer.name ?? d.customer.email ?? '—'}
+                  </button>
+                ) : (d.customer?.name ?? '—')}
+              </Row>
               <Row label="Customer email">{d.customer?.email ?? '—'}</Row>
             </Section>
+
+            {refundable ? (
+              <RefundControl
+                transactionId={d.transaction.id}
+                consumerPaidCents={d.transaction.consumerPaidCents}
+                isRedeemed={isRedeemed}
+                onDone={() => { onRefunded?.(); void detail.refetch(); }}
+              />
+            ) : null}
 
             <Section title="Stripe references">
               <Row label="PaymentIntent" mono>
                 {d.transaction.stripePaymentIntentId ? (
-                  <a href={`https://dashboard.stripe.com/test/payments/${d.transaction.stripePaymentIntentId}`} target="_blank" rel="noreferrer" style={stripeLink}>
+                  <a href={stripeDashboardUrl(`payments/${d.transaction.stripePaymentIntentId}`)} target="_blank" rel="noreferrer" style={stripeLink}>
                     {d.transaction.stripePaymentIntentId} ↗
                   </a>
                 ) : '—'}
               </Row>
               <Row label="Charge" mono>
                 {d.transaction.stripeChargeId ? (
-                  <a href={`https://dashboard.stripe.com/test/payments/${d.transaction.stripeChargeId}`} target="_blank" rel="noreferrer" style={stripeLink}>
+                  <a href={stripeDashboardUrl(`payments/${d.transaction.stripeChargeId}`)} target="_blank" rel="noreferrer" style={stripeLink}>
                     {d.transaction.stripeChargeId} ↗
                   </a>
                 ) : '—'}
               </Row>
               <Row label="Transfer" mono>
                 {d.transaction.stripeTransferId ? (
-                  <a href={`https://dashboard.stripe.com/test/connect/transfers/${d.transaction.stripeTransferId}`} target="_blank" rel="noreferrer" style={stripeLink}>
+                  <a href={stripeDashboardUrl(`connect/transfers/${d.transaction.stripeTransferId}`)} target="_blank" rel="noreferrer" style={stripeLink}>
                     {d.transaction.stripeTransferId} ↗
                   </a>
                 ) : '—'}

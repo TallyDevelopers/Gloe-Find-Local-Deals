@@ -115,7 +115,13 @@ export function PayoutsView() {
                     }}
                   >
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 14, fontWeight: 700 }}>{p.vendorName}</div>
+                      <a
+                        href={`/admin/vendor/${p.vendorId}`}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{ fontSize: 14, fontWeight: 700, color: 'var(--brand-600)', textDecoration: 'none' }}
+                      >
+                        {p.vendorName} →
+                      </a>
                       <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
                         {new Date(p.createdAt).toLocaleString()} · <span style={{ fontFamily: 'monospace' }}>{p.stripePayoutId}</span>
                       </div>

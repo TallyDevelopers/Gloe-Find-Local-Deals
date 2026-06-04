@@ -1,5 +1,60 @@
 /* Gloe web — design tokens mirrored from @gloe/ui/tokens as CSS variables.
    Kept in sync manually for now; small surface, rarely changes. */
+
+/* === Modern type: Clash Display + General Sans (self-hosted, free for commercial)
+   Fontshare / Indian Type Foundry. Files live in apps/web/public/fonts. Currently
+   applied ONLY to the gloe.app consumer site (scoped under .consumer-shell below);
+   vendor/admin/business keep their current fonts until sign-off. */
+@font-face {
+  font-family: 'Clash Display';
+  src: url('/fonts/clash-display-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Clash Display';
+  src: url('/fonts/clash-display-500.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Clash Display';
+  src: url('/fonts/clash-display-600.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Clash Display';
+  src: url('/fonts/clash-display-700.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'General Sans';
+  src: url('/fonts/general-sans-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'General Sans';
+  src: url('/fonts/general-sans-500.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'General Sans';
+  src: url('/fonts/general-sans-600.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --surface-primary: #faf5f2;
   --surface-secondary: #f3ebe6;
@@ -31,10 +86,11 @@
   --radius-lg: 16px;
   --radius-pill: 999px;
 
-  /* ResortPass-style pairing: a high-end serif used LIGHT for headlines
-     (their "Moulin"), and a clean grotesque for body/UI (their "Basetica"). */
-  --font-display: var(--font-fraunces), 'Fraunces', Georgia, serif;
-  --font-body: var(--font-hanken), 'Hanken Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  /* Modern pairing across the whole app: Clash Display headlines + General Sans
+     body/UI (self-hosted, free for commercial — Fontshare). Hanken/system are
+     fallbacks while the woff2 loads. */
+  --font-display: 'Clash Display', var(--font-hanken), system-ui, sans-serif;
+  --font-body: 'General Sans', var(--font-hanken), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-wordmark: 'Outfit', 'Inter', sans-serif;
 }
 
@@ -57,7 +113,8 @@ h2,
 h3 {
   font-family: var(--font-display);
   font-weight: 400;
-  letter-spacing: -0.01em;
+  /* Clash Display reads best slightly tightened */
+  letter-spacing: -0.02em;
   color: var(--text-primary);
 }
 
@@ -75,6 +132,18 @@ input,
 select,
 textarea {
   font-family: var(--font-body);
+}
+
+/* === gloe.app consumer site — hero + section sizing =========================
+   Fonts (Clash Display + General Sans) are now global (see :root). These rules
+   are the consumer-only sizing/weight tweaks that don't belong in the portals. */
+.consumer-shell .hero h1 {
+  /* Medium (not light) — the hero sits over a photo, where thin strokes get lost
+     and read weak. 500 holds authority without the heavy look. */
+  font-weight: 500;
+}
+.consumer-shell .section-head h2 {
+  font-size: 32px;
 }
 
 /* Hide the brand panel on narrow screens — form goes full-width */
@@ -288,10 +357,10 @@ textarea {
   color: #fff;
 }
 .topnav-inner {
-  max-width: 1280px;
+  max-width: 1600px;
   margin: 0 auto;
   height: 68px;
-  padding: 0 28px;
+  padding: 0 40px;
   display: flex;
   align-items: center;
   gap: 22px;
@@ -347,9 +416,12 @@ textarea {
    over-hero mode (below), taking zero flow space, so the hero starts flush at
    the very top with nothing behind it. The hero's own padding clears it. */
 .consumer-container {
-  max-width: 1280px;
+  /* Wide marketplace column (ResortPass fills the screen on big displays rather
+     than sitting in a slim center strip). Detail pages self-cap narrower:
+     .deal-layout = 1180px, hero text = 720px. */
+  max-width: 1600px;
   margin: 0 auto;
-  padding: 28px 28px 0;
+  padding: 28px 40px 0;
   width: 100%;
 }
 
@@ -378,8 +450,8 @@ textarea {
   gap: 18px;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
-  padding: 4px 28px 8px;
-  max-width: 1280px;
+  padding: 4px 40px 8px;
+  max-width: 1600px;
   margin: 0 auto;
 }
 .rail > * {
@@ -1402,6 +1474,204 @@ textarea {
   margin-bottom: 14px;
 }
 
+/* --- Trust strip (under the hero) --- */
+.trust-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 18px;
+  padding: 22px 26px;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 1px 3px rgba(43, 32, 25, 0.05);
+}
+.trust-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.trust-icon {
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--brand-50);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.trust-title {
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--text-primary);
+}
+.trust-body {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  line-height: 1.45;
+  margin-top: 2px;
+}
+@media (max-width: 860px) {
+  .trust-strip {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px 18px;
+    padding: 18px;
+  }
+}
+/* Phones: 2×2 grid, kept compact but WITH the short description so each badge
+   still means something (bare labels read cheap). */
+@media (max-width: 600px) {
+  .trust-strip {
+    gap: 14px 14px;
+    padding: 16px;
+  }
+  .trust-item {
+    align-items: flex-start;
+    gap: 9px;
+  }
+  .trust-icon {
+    width: 34px;
+    height: 34px;
+  }
+  .trust-title {
+    font-size: 13.5px;
+    line-height: 1.2;
+  }
+  .trust-body {
+    font-size: 11.5px;
+    line-height: 1.35;
+    margin-top: 3px;
+  }
+}
+
+/* --- FAQ accordion --- */
+.faq-band {
+  padding: 56px 0;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--surface-primary);
+}
+.faq-list {
+  max-width: 760px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.faq-item {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 0 20px;
+}
+.faq-item summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 0;
+  cursor: pointer;
+  list-style: none;
+  font-weight: 600;
+  font-size: 16px;
+  color: var(--text-primary);
+}
+.faq-item summary::-webkit-details-marker {
+  display: none;
+}
+.faq-item summary svg {
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+.faq-item[open] summary svg {
+  transform: rotate(180deg);
+}
+.faq-item p {
+  padding: 0 0 18px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  font-size: 15px;
+}
+
+/* --- App-download ribbon (mobile web only, above the header) --- */
+.app-ribbon {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 46px;
+  padding: 0 8px 0 12px;
+  background: linear-gradient(90deg, var(--brand-600), var(--brand-500));
+  color: var(--text-inverse);
+  position: relative;
+  z-index: 40;
+}
+.app-ribbon-link {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-inverse);
+}
+.app-ribbon-badge {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.18);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.app-ribbon-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+.app-ribbon-text strong {
+  font-size: 13.5px;
+  font-weight: 700;
+}
+.app-ribbon-text span {
+  font-size: 11.5px;
+  opacity: 0.88;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.app-ribbon-cta {
+  flex-shrink: 0;
+  margin-left: auto;
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--brand-600);
+  font-weight: 700;
+  font-size: 13px;
+  padding: 7px 15px;
+  border-radius: var(--radius-pill);
+}
+.app-ribbon-close {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-inverse);
+  padding: 6px;
+  display: inline-flex;
+  opacity: 0.8;
+}
+/* Desktop: no install path, so hide entirely (also drops it from flow). */
+@media (min-width: 761px) {
+  .app-ribbon {
+    display: none;
+  }
+}
+/* Mobile home: the over-hero header is position:absolute top:0 — push it below
+   the ribbon so the transparent logo/nav don't overlap the ribbon. */
+@media (max-width: 760px) {
+  .has-app-ribbon .mobile-header.over-hero {
+    top: 46px;
+  }
+}
+
 @media (max-width: 900px) {
   .hero-grid {
     grid-template-columns: 1fr;
@@ -1432,7 +1702,7 @@ textarea {
   grid-template-columns: 264px minmax(0, 1fr);
   gap: 36px;
   align-items: start;
-  max-width: 1280px;
+  max-width: 1600px;
   margin: 0 auto;
 }
 .filter-rail {

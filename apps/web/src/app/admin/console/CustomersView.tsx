@@ -289,7 +289,7 @@ function TransactionRow({ t, onRefunded, onJumpToRefundByTxn }: { t: CustomerTxn
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 600 }}>{t.dealTitle ?? t.vendorName}</div>
           <div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
-            {t.vendorName} · {t.paidAt ? new Date(t.paidAt).toLocaleString() : 'pending'} · {t.status}
+            <a href={`/admin/vendor/${t.vendorId}`} style={{ color: 'var(--brand-600)', textDecoration: 'none', fontWeight: 600 }}>{t.vendorName}</a> · {t.paidAt ? new Date(t.paidAt).toLocaleString() : 'pending'} · {t.status}
             {t.claimStatus ? <span> · voucher {t.claimStatus}</span> : null}
             {t.refundedCents > 0 ? (
               onJumpToRefundByTxn ? (

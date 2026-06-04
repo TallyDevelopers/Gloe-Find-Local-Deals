@@ -12,6 +12,12 @@ import {
   getVendorDetail,
   getVendorRoster,
   isAdmin,
+  getAdminRole,
+  listAdmins,
+  countOwners,
+  addAdminByEmail,
+  removeAdmin,
+  setAdminRole,
   listAdminAuditLog,
   listAdminRefunds,
   listAdminCustomers,
@@ -29,7 +35,7 @@ import {
 import { writeAudit } from '../domain/audit';
 import { getCustomerOrdersForTicket, getSupportTicketCustomer } from '../domain/supportTickets';
 import { createSignedUpload } from '../db/storage';
-import { createDeal, getDealForReview, updateDeal } from '../domain/dealCreate';
+import { createDeal, getDealForReview, replaceDealPhotos, updateDeal } from '../domain/dealCreate';
 import { cacheStaticMap } from '../domain/dealMap';
 import {
   createTier,
@@ -46,17 +52,100 @@ import {
 } from '../domain/payouts';
 import { getConnectedAccountRequirements, getPlatformBalance } from '../domain/stripe';
 import { getStripeMoneyForVendor } from '../domain/vendorHub';
-import { refundTransaction, windDownVendor } from '../domain/vendorOps';
+import { refundTransaction, forceRefundRedeemed, windDownVendor } from '../domain/vendorOps';
 import { dealInput, dealFields } from './vendor.router';
 import { createVendor } from '../domain/vendorSignup';
 import { startVendorOnboarding } from '../domain/vendorStripe';
 import { adminProcedure, protectedProcedure, router } from './trpc';
+
+/** Throws FORBIDDEN unless the caller is an `owner` (not just an admin). */
+async function assertOwner(ctx: { sql: Parameters<typeof getAdminRole>[0]; auth: { userId: string } }) {
+  const role = await getAdminRole(ctx.sql, ctx.auth.userId);
+  if (role !== 'owner') {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'Only owners can manage the admin team.' });
+  }
+}
 
 export const adminRouter = router({
   /** Lets the web app route a login to admin vs vendor. Any signed-in user. */
   whoami: protectedProcedure.query(async ({ ctx }) => {
     return { isAdmin: await isAdmin(ctx.sql, ctx.auth.userId) };
   }),
+
+  /* ───────────────────────── Admin team ───────────────────────── */
+
+  /** Everyone with admin access. Any admin can view; only owners can mutate. */
+  listAdmins: adminProcedure.query(({ ctx }) => listAdmins(ctx.sql, ctx.auth.userId)),
+
+  /** Grant admin access by email. Owner-only. The person must already have an account. */
+  addAdmin: adminProcedure
+    .input(z.object({
+      email: z.string().email(),
+      role: z.enum(['owner', 'moderator']).default('moderator'),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await assertOwner(ctx);
+      try {
+        const { userId } = await addAdminByEmail(ctx.sql, input.email, input.role);
+        void writeAudit(ctx.sql, {
+          action: 'admin.added',
+          actorUserId: ctx.auth.userId,
+          meta: { grantedUserId: userId, email: input.email, role: input.role },
+        });
+        return { userId };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Failed to add admin.';
+        if (msg === 'NO_SUCH_USER') {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'No Gloē account found for that email. Ask them to sign in once first, then try again.' });
+        }
+        if (msg === 'ALREADY_ADMIN') {
+          throw new TRPCError({ code: 'CONFLICT', message: 'That person is already an admin.' });
+        }
+        throw new TRPCError({ code: 'BAD_REQUEST', message: msg });
+      }
+    }),
+
+  /** Revoke admin access. Owner-only. Can't remove yourself or the last owner. */
+  removeAdmin: adminProcedure
+    .input(z.object({ userId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      await assertOwner(ctx);
+      if (input.userId === ctx.auth.userId) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: "You can't remove your own admin access." });
+      }
+      const targetRole = await getAdminRole(ctx.sql, input.userId);
+      if (!targetRole) throw new TRPCError({ code: 'NOT_FOUND', message: 'That admin no longer exists.' });
+      if (targetRole === 'owner' && (await countOwners(ctx.sql)) <= 1) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Can\'t remove the last owner. Promote someone else to owner first.' });
+      }
+      await removeAdmin(ctx.sql, input.userId);
+      void writeAudit(ctx.sql, {
+        action: 'admin.removed',
+        actorUserId: ctx.auth.userId,
+        meta: { removedUserId: input.userId, previousRole: targetRole },
+      });
+      return { ok: true };
+    }),
+
+  /** Change an admin's role. Owner-only. Can't demote the last owner. */
+  setAdminRole: adminProcedure
+    .input(z.object({ userId: z.string().uuid(), role: z.enum(['owner', 'moderator']) }))
+    .mutation(async ({ ctx, input }) => {
+      await assertOwner(ctx);
+      const current = await getAdminRole(ctx.sql, input.userId);
+      if (!current) throw new TRPCError({ code: 'NOT_FOUND', message: 'That admin no longer exists.' });
+      if (current === input.role) return { ok: true };
+      if (current === 'owner' && input.role !== 'owner' && (await countOwners(ctx.sql)) <= 1) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Can\'t demote the last owner. Promote someone else first.' });
+      }
+      await setAdminRole(ctx.sql, input.userId, input.role);
+      void writeAudit(ctx.sql, {
+        action: 'admin.role_changed',
+        actorUserId: ctx.auth.userId,
+        meta: { targetUserId: input.userId, from: current, to: input.role },
+      });
+      return { ok: true };
+    }),
 
   overview: adminProcedure.query(({ ctx }) => getOverview(ctx.sql)),
 
@@ -331,6 +420,34 @@ export const adminRouter = router({
       return result;
     }),
 
+  /**
+   * Force-refund an ALREADY-REDEEMED voucher (the dispute / comp case). Refunds
+   * the customer and, by default, claws back the vendor's share via a transfer
+   * reversal. Owner-gated — it can push a vendor's Connect balance negative.
+   */
+  forceRefundRedeemed: adminProcedure
+    .input(z.object({
+      transactionId: z.string().uuid(),
+      amountCents: z.number().int().positive(),
+      reason: z.string().min(3).max(280),
+      reverseTransfer: z.boolean().default(true),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await assertOwner(ctx);
+      const result = await forceRefundRedeemed(
+        ctx.sql,
+        input.transactionId,
+        input.amountCents,
+        ctx.auth.userId,
+        input.reason,
+        input.reverseTransfer,
+      );
+      if (!result.refunded) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: result.error ?? 'Refund failed.' });
+      }
+      return result;
+    }),
+
   /** Wind down a vendor: refund every active voucher, then suspend. */
   windDownVendor: adminProcedure
     .input(z.object({ vendorId: z.string().uuid(), reason: z.string().min(3).max(280) }))
@@ -362,9 +479,11 @@ export const adminRouter = router({
 
   /**
    * God-mode quick-edit. For the most-edited fields (title / description /
-   * fine print / expiry) without sending the deal back through review.
-   * Use this for "fix the typo, remove the bad fine print, push the expiry"
-   * fixes; for variant/photo/video changes route through the full updateDeal.
+   * fine print / expiry / photos) without sending the deal back through review.
+   * Use this for "fix the typo, remove the bad fine print, push the expiry,
+   * swap the cover photo" fixes; for variant/video changes route through the
+   * full updateDeal. When `photoUrls` is sent, it fully replaces the deal's
+   * photo set (first = cover); omit it to leave photos untouched.
    */
   quickEditDeal: adminProcedure
     .input(z.object({
@@ -373,6 +492,7 @@ export const adminRouter = router({
       description: z.string().min(10).max(2000).optional(),
       finePrint: z.string().max(2000).nullable().optional(),
       expiresAt: z.string().optional(),
+      photoUrls: z.array(z.string().min(1)).min(1).max(8).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       // Pull the deal to confirm it exists + capture before-state for audit.
@@ -391,29 +511,43 @@ export const adminRouter = router({
       if (input.description !== undefined) changes.description = input.description;
       if (input.finePrint !== undefined)   changes.fine_print = input.finePrint;
       if (input.expiresAt !== undefined)   changes.expires_at = input.expiresAt;
-      if (Object.keys(changes).length === 0) {
+
+      const hasFieldChanges = Object.keys(changes).length > 0;
+      const hasPhotoChanges = input.photoUrls !== undefined;
+      if (!hasFieldChanges && !hasPhotoChanges) {
         return { id: input.dealId, status: row.status, changed: 0 };
       }
 
       // Manual COALESCE-style update (postgres tag template requires this shape).
-      await ctx.sql`
-        UPDATE public.deals
-        SET title       = COALESCE(${changes.title       as string | undefined ?? null}, title),
-            description = COALESCE(${changes.description as string | undefined ?? null}, description),
-            fine_print  = ${input.finePrint === undefined ? ctx.sql`fine_print` : input.finePrint},
-            expires_at  = COALESCE(${changes.expires_at  as string | undefined ?? null}, expires_at),
-            updated_at  = now()
-        WHERE id = ${input.dealId}
-      `;
+      if (hasFieldChanges) {
+        await ctx.sql`
+          UPDATE public.deals
+          SET title       = COALESCE(${changes.title       as string | undefined ?? null}, title),
+              description = COALESCE(${changes.description as string | undefined ?? null}, description),
+              fine_print  = ${input.finePrint === undefined ? ctx.sql`fine_print` : input.finePrint},
+              expires_at  = COALESCE(${changes.expires_at  as string | undefined ?? null}, expires_at),
+              updated_at  = now()
+          WHERE id = ${input.dealId}
+        `;
+      }
 
+      // Photos: full replace (delete + reinsert). First URL becomes the cover.
+      if (hasPhotoChanges) {
+        await replaceDealPhotos(ctx.sql, input.dealId, input.photoUrls!);
+        if (!hasFieldChanges) {
+          await ctx.sql`UPDATE public.deals SET updated_at = now() WHERE id = ${input.dealId}`;
+        }
+      }
+
+      const changedFields = [...Object.keys(changes), ...(hasPhotoChanges ? ['photos'] : [])];
       void writeAudit(ctx.sql, {
         action: 'deal.admin_edited',
         actorUserId: ctx.auth.userId,
         vendorId: row.vendor_id,
-        meta: { dealId: input.dealId, fields: Object.keys(changes), previousTitle: row.title },
+        meta: { dealId: input.dealId, fields: changedFields, previousTitle: row.title },
       });
 
-      return { id: input.dealId, status: row.status, changed: Object.keys(changes).length };
+      return { id: input.dealId, status: row.status, changed: changedFields.length };
     }),
 
   /**
@@ -602,7 +736,7 @@ export const adminRouter = router({
   reviewDeal: adminProcedure
     .input(z.object({
       dealId: z.string().uuid(),
-      decision: z.enum(['approve', 'reject']),
+      decision: z.enum(['approve', 'reject', 'request_changes']),
       reason: z.string().max(500).nullable().optional(),
     }))
     .mutation(({ ctx, input }) =>
@@ -672,6 +806,17 @@ export const adminRouter = router({
         perCustomerLimit: z.number().int().min(1).max(10).default(1),
         codeValidityDays: z.number().int().min(1).max(90).default(7),
         photoUrls: z.array(z.string().url()).max(8).default([]),
+        videos: z
+          .array(
+            z.object({
+              videoUrl: z.string().url(),
+              thumbnailUrl: z.string().url(),
+              caption: z.string().max(200).nullable().optional(),
+              durationSeconds: z.number().int().positive().nullable().optional(),
+            }),
+          )
+          .max(5)
+          .default([]),
         variants: z
           .array(
             z.object({
@@ -711,6 +856,7 @@ export const adminRouter = router({
         perCustomerLimit: input.perCustomerLimit,
         codeValidityDays: input.codeValidityDays,
         photoUrls: input.photoUrls,
+        videos: input.videos,
         variants: input.variants,
       });
       // Founder-posted deals go live immediately.

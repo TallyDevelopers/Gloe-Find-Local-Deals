@@ -56,7 +56,11 @@ export type AuditAction =
   | 'deal.admin_edited'  // god mode edited deal content (skips re-review)
   // Support tickets
   | 'support.replied'      // agent replied to a support ticket
-  | 'support.status_set';  // agent resolved / closed / reopened a ticket
+  | 'support.status_set'   // agent resolved / closed / reopened a ticket
+  // Admin team management
+  | 'admin.added'          // a user was granted admin access
+  | 'admin.removed'        // an admin was revoked
+  | 'admin.role_changed';  // an admin's role (owner/moderator) was changed
 
 export interface AuditEntry {
   action: AuditAction;

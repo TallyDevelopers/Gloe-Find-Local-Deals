@@ -1,17 +1,6 @@
-import {
-  Fraunces_400Regular,
-  Fraunces_500Medium,
-  Fraunces_600SemiBold,
-} from '@expo-google-fonts/fraunces';
-import {
-  Inter_400Regular,
-  Inter_500Medium,
-  Inter_600SemiBold,
-  Inter_700Bold,
-  useFonts,
-} from '@expo-google-fonts/inter';
 import { Outfit_500Medium, Outfit_600SemiBold } from '@expo-google-fonts/outfit';
 import Constants from 'expo-constants';
+import { useFonts } from 'expo-font';
 import { Slot } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState } from 'react';
@@ -51,14 +40,19 @@ function resolveApiUrl(): string {
 }
 
 export default function RootLayout() {
+  // Clash Display (headlines) + General Sans (body) — self-hosted OTFs, matching
+  // the web. The base family names (ClashDisplay / GeneralSans) are what
+  // tokens.fontFamily references; the weighted variants are registered too for
+  // any explicit per-weight use. Outfit stays for the wordmark logo.
   const [fontsLoaded, fontError] = useFonts({
-    Fraunces: Fraunces_400Regular,
-    Fraunces_500Medium,
-    Fraunces_600SemiBold,
-    Inter: Inter_400Regular,
-    Inter_500Medium,
-    Inter_600SemiBold,
-    Inter_700Bold,
+    ClashDisplay: require('../assets/fonts/ClashDisplay-Regular.otf'),
+    'ClashDisplay-Medium': require('../assets/fonts/ClashDisplay-Medium.otf'),
+    'ClashDisplay-Semibold': require('../assets/fonts/ClashDisplay-Semibold.otf'),
+    'ClashDisplay-Bold': require('../assets/fonts/ClashDisplay-Bold.otf'),
+    GeneralSans: require('../assets/fonts/GeneralSans-Regular.otf'),
+    'GeneralSans-Medium': require('../assets/fonts/GeneralSans-Medium.otf'),
+    'GeneralSans-Semibold': require('../assets/fonts/GeneralSans-Semibold.otf'),
+    'GeneralSans-Bold': require('../assets/fonts/GeneralSans-Bold.otf'),
     Outfit_500Medium,
     Outfit_600SemiBold,
   });

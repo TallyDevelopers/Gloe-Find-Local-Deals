@@ -11,7 +11,7 @@ import { GetTheApp } from '../../components/consumer/GetTheApp';
 import { useMediaQuery } from '../../components/consumer/useMediaQuery';
 import { LocationBanner } from '../../components/consumer/LocationBanner';
 import { DealGridSkeleton } from '../../components/consumer/Skeletons';
-import { ArrowRight, Search, Sparkles, Star } from '../../components/consumer/icons';
+import { ArrowRight, ChevronDown, Lock, MapPin, Search, ShieldCheck, Star, Wallet, Zap } from '../../components/consumer/icons';
 import { useDealLocationArgs, useLocation } from '../../lib/location';
 import { trpc } from '../../lib/trpc';
 
@@ -80,6 +80,17 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* Trust strip — reassurance band right under the hero (ResortPass-style).
+          Inventory-independent, so it fills the page even with thin data. */}
+      <div className="consumer-container" style={{ paddingTop: 20 }}>
+        <div className="trust-strip">
+          <TrustItem icon={<ShieldCheck size={22} color="var(--brand-600)" />} title="Vetted med-spas" body="Every provider licensed & reviewed" />
+          <TrustItem icon={<Wallet size={22} color="var(--brand-600)" />} title="Money-back guarantee" body="Full refund if it’s not as described" />
+          <TrustItem icon={<Zap size={22} color="var(--brand-600)" />} title="Instant voucher" body="QR in your wallet the second you pay" />
+          <TrustItem icon={<Lock size={22} color="var(--brand-600)" />} title="Secure checkout" body="Encrypted Stripe payments, no membership" />
+        </div>
+      </div>
+
       {/* Warm nudge when we don't have a location yet */}
       {!location ? (
         <div className="consumer-container" style={{ paddingTop: 8 }}>
@@ -96,7 +107,8 @@ export default function HomePage() {
           <div className="cat-card-grid">
             {populated.map((c) => {
               const deals = byCat.get(c.slug) ?? [];
-              const img = deals.find((d) => d.primaryPhotoUrl)?.primaryPhotoUrl ?? null;
+              // Prefer a curated static tile image; fall back to a real deal photo.
+              const img = TREATMENT_TILE_IMAGES[c.slug] ?? deals.find((d) => d.primaryPhotoUrl)?.primaryPhotoUrl ?? null;
               return (
                 <Link key={c.slug} href={`/treatments/${c.slug}`} className="cat-card">
                   {img ? <BlurImage src={img} alt={c.displayName} /> : null}
@@ -142,14 +154,37 @@ export default function HomePage() {
       {/* How it works */}
       <section className="value-band">
         <div className="value-grid">
-          <ValueCard step="Discover" title="Find it nearby" body="Browse deals at premium, vetted spas around you — by treatment, distance, and price." />
-          <ValueCard step="Claim" title="Pay in seconds" body="Secure checkout with Apple Pay or card. Your QR voucher lands in your wallet instantly." />
-          <ValueCard step="Glow" title="Show & enjoy" body="Book with the spa, show your QR at check-in, and enjoy — payment’s already handled." />
+          <ValueCard step="Discover" icon={<MapPin size={24} color="var(--brand-600)" />} title="Find it nearby" body="Browse deals at premium, vetted spas around you — by treatment, distance, and price." />
+          <ValueCard step="Claim" icon={<Wallet size={24} color="var(--brand-600)" />} title="Pay in seconds" body="Secure checkout with Apple Pay or card. Your QR voucher lands in your wallet instantly." />
+          <ValueCard step="Glow" icon={<Star size={24} color="var(--brand-600)" />} title="Show & enjoy" body="Book with the spa, show your QR at check-in, and enjoy — payment’s already handled." />
         </div>
       </section>
 
       {/* Get the app */}
       <GetTheApp />
+
+      {/* FAQ — anchors the bottom, answers the refund/voucher questions, SEO. */}
+      <section className="faq-band">
+        <div className="consumer-container" style={{ paddingTop: 0 }}>
+          <div style={{ textAlign: 'center', marginBottom: 28 }}>
+            <h2 style={{ fontSize: 32 }}>Questions, answered</h2>
+            <p style={{ color: 'var(--text-secondary)', marginTop: 10, fontSize: 17 }}>
+              Everything you need to know before you book.
+            </p>
+          </div>
+          <div className="faq-list">
+            {FAQS.map((f) => (
+              <details key={f.q} className="faq-item">
+                <summary>
+                  <span>{f.q}</span>
+                  <ChevronDown size={20} color="var(--text-tertiary)" />
+                </summary>
+                <p>{f.a}</p>
+              </details>
+            ))}
+          </div>
+        </div>
+      </section>
 
       {/* Closing CTA */}
       <section className="cta-band">
@@ -167,6 +202,15 @@ export default function HomePage() {
     </div>
   );
 }
+
+/**
+ * Curated "Browse by treatment" tile images, keyed by category slug. When a
+ * category has one, it overrides the auto-picked deal photo (more consistent,
+ * on-brand). Add more as art is sourced — drop the file in /public/treatments.
+ */
+const TREATMENT_TILE_IMAGES: Record<string, string> = {
+  injectables: '/treatments/injectables.jpg',
+};
 
 /** Terminal card at the end of a category rail — the "view all" affordance. */
 function ViewMoreCard({ slug, label, count }: { slug: string; label: string; count: number }) {
@@ -199,12 +243,46 @@ function ViewMoreCard({ slug, label, count }: { slug: string; label: string; cou
   );
 }
 
-function ValueCard({ step, title, body }: { step: string; title: string; body: string }) {
+function TrustItem({ icon, title, body }: { icon: React.ReactNode; title: string; body: string }) {
+  return (
+    <div className="trust-item">
+      <span className="trust-icon">{icon}</span>
+      <div>
+        <div className="trust-title">{title}</div>
+        <div className="trust-body">{body}</div>
+      </div>
+    </div>
+  );
+}
+
+/** Homepage FAQ — also the source for FAQPage structured data if we add it. */
+const FAQS: { q: string; a: string }[] = [
+  {
+    q: 'Is my purchase refundable?',
+    a: 'Yes. If a treatment isn’t as described or you can’t use it, contact us and we’ll make it right — including a full refund. Vouchers are valid through their expiration date.',
+  },
+  {
+    q: 'How do I get and use my voucher?',
+    a: 'The moment you pay, a QR voucher lands in your Gloē wallet (and your email). Book with the spa, then show the QR at check-in — your payment is already handled.',
+  },
+  {
+    q: 'Do I need a membership or subscription?',
+    a: 'No. Gloē is pay-as-you-go. You only pay for the treatments you book — no membership fees, no recurring charges, no catch.',
+  },
+  {
+    q: 'Are the spas and providers vetted?',
+    a: 'Every business is licensed and reviewed before it can list on Gloē, and real customer ratings are shown on each deal so you can book with confidence.',
+  },
+  {
+    q: 'Is checkout secure?',
+    a: 'Payments run through Stripe with full encryption. Gloē never stores your card details, and Apple Pay is supported for one-tap checkout.',
+  },
+];
+
+function ValueCard({ step, icon, title, body }: { step: string; icon: React.ReactNode; title: string; body: string }) {
   return (
     <div className="value-card">
-      <div className="value-icon">
-        <Sparkles size={24} color="var(--brand-600)" />
-      </div>
+      <div className="value-icon">{icon}</div>
       <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--brand-600)' }}>{step}</div>
       <h3 style={{ fontSize: 21, marginTop: 4 }}>{title}</h3>
       <p style={{ color: 'var(--text-secondary)', lineHeight: 1.6, marginTop: 8, maxWidth: 320, marginInline: 'auto' }}>{body}</p>

@@ -152,8 +152,8 @@ export const radius = {
 } as const;
 
 export const fontFamily = {
-  display: 'Fraunces',
-  body: 'Inter',
+  display: 'ClashDisplay',
+  body: 'GeneralSans',
 } as const;
 
 export const fontSize = {

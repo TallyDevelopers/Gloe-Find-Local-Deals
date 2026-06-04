@@ -84,7 +84,7 @@ export function DealPreview({ data }: { data: DealPreviewData }) {
                 {data.categoryLabel.toUpperCase()}
                 {data.subtypeLabel ? ` · ${data.subtypeLabel}` : ''}
               </div>
-              <div style={{ fontFamily: 'var(--font-fraunces), serif', fontSize: 24, fontWeight: 500, marginTop: 4, color: 'var(--text-primary)' }}>
+              <div style={{ fontFamily: 'var(--font-display), serif', fontSize: 24, fontWeight: 500, marginTop: 4, color: 'var(--text-primary)' }}>
                 {data.title || 'Your deal title'}
               </div>
               <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 6 }}>
@@ -124,7 +124,7 @@ export function DealPreview({ data }: { data: DealPreviewData }) {
             {/* price block */}
             <div style={{ background: 'var(--surface-elevated)', borderRadius: 14, padding: 16 }}>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
-                <span style={{ fontFamily: 'var(--font-fraunces), serif', fontSize: 28, fontWeight: 600 }}>
+                <span style={{ fontFamily: 'var(--font-display), serif', fontSize: 28, fontWeight: 600 }}>
                   ${deal || '—'}
                 </span>
                 {orig ? (
@@ -411,7 +411,7 @@ const pStyle: React.CSSProperties = { fontSize: 14, color: 'var(--text-secondary
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <div style={{ fontFamily: 'var(--font-fraunces), serif', fontSize: 17, fontWeight: 500 }}>{title}</div>
+      <div style={{ fontFamily: 'var(--font-display), serif', fontSize: 17, fontWeight: 500 }}>{title}</div>
       {children}
     </div>
   );

@@ -191,7 +191,13 @@ function RefundRow({
           <span>{r.customerName ?? r.customerEmail ?? '—'}</span>
         )}
       </Td>
-      <Td><span style={{ color: 'var(--text-secondary)' }}>{r.vendorName ?? '—'}</span></Td>
+      <Td>
+        {r.vendorId ? (
+          <a href={`/admin/vendor/${r.vendorId}`} style={{ color: 'var(--brand-600)', textDecoration: 'none' }}>{r.vendorName ?? '—'}</a>
+        ) : (
+          <span style={{ color: 'var(--text-secondary)' }}>{r.vendorName ?? '—'}</span>
+        )}
+      </Td>
       <Td>
         <span style={{ fontWeight: 700, color: refunded ? 'var(--error)' : 'var(--text-tertiary)' }}>
           {refunded ? `−${money(r.amountCents)}` : money(r.amountCents)}

@@ -1,5 +1,5 @@
 import { trpc, type DealSummary } from '@gloe/api-client';
-import { Stack, Text, radius, shadow, space, useTheme } from '@gloe/ui';
+import { Stack, Text, fontFamily, radius, shadow, space, useTheme } from '@gloe/ui';
 import { keepPreviousData } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
@@ -104,7 +104,7 @@ export default function SearchScreen() {
               onChangeText={setQuery}
               placeholder="Search Botox, filler, lasers…"
               placeholderTextColor={palette.text.tertiary}
-              style={{ flex: 1, fontFamily: 'Inter', fontSize: 16, color: palette.text.primary }}
+              style={{ flex: 1, fontFamily: fontFamily.body, fontSize: 16, color: palette.text.primary }}
               autoFocus
               returnKeyType="search"
               onSubmitEditing={() => commitRecent(debounced)}

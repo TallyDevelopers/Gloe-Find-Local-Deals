@@ -164,7 +164,7 @@ function OpenState({
       <div style={{ textAlign: 'center', marginBottom: 28 }}>
         <h1
           style={{
-            fontFamily: 'var(--font-fraunces)',
+            fontFamily: 'var(--font-display)',
             fontSize: 36,
             fontWeight: 500,
             lineHeight: 1.15,
@@ -200,7 +200,7 @@ function OpenState({
         <div style={{ padding: 24 }}>
           <h2
             style={{
-              fontFamily: 'var(--font-fraunces)',
+              fontFamily: 'var(--font-display)',
               fontSize: 22,
               fontWeight: 500,
               lineHeight: 1.25,
@@ -225,7 +225,7 @@ function OpenState({
           ) : null}
           <p
             style={{
-              fontFamily: 'var(--font-fraunces)',
+              fontFamily: 'var(--font-display)',
               fontSize: 32,
               fontWeight: 600,
               color: 'var(--text-primary)',
@@ -272,7 +272,7 @@ function PaidState({ productName }: { productName: string }) {
     >
       <div
         style={{
-          fontFamily: 'var(--font-fraunces)',
+          fontFamily: 'var(--font-display)',
           fontSize: 42,
           marginBottom: 16,
           color: 'var(--gold)',
@@ -282,7 +282,7 @@ function PaidState({ productName }: { productName: string }) {
       </div>
       <h1
         style={{
-          fontFamily: 'var(--font-fraunces)',
+          fontFamily: 'var(--font-display)',
           fontSize: 28,
           fontWeight: 500,
           lineHeight: 1.2,
@@ -321,7 +321,7 @@ function ExpiredState() {
     >
       <h1
         style={{
-          fontFamily: 'var(--font-fraunces)',
+          fontFamily: 'var(--font-display)',
           fontSize: 24,
           fontWeight: 500,
           color: 'var(--text-primary)',

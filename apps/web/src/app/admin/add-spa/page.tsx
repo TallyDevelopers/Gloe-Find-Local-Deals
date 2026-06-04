@@ -4,8 +4,8 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 import { Button, Card, Field, TextInput } from '../../../components/ui';
-import { Wordmark } from '../../../components/Wordmark';
 import { trpc } from '../../../lib/trpc';
+import { AdminChrome } from '../console/AdminChrome';
 
 const CATEGORIES = [
   { slug: 'injectables', label: 'Injectables' },
@@ -102,17 +102,8 @@ export default function AddSpaPage() {
   };
 
   return (
-    <div style={{ minHeight: '100vh' }}>
-      <header style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--surface-elevated)' }}>
-        <div style={{ maxWidth: 720, margin: '0 auto', padding: '16px 32px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Wordmark size={22} tone="gold" />
-          <button onClick={() => router.push('/admin')} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: 15 }}>
-            Cancel
-          </button>
-        </div>
-      </header>
-
-      <main style={{ maxWidth: 620, margin: '0 auto', padding: '40px 24px', display: 'flex', flexDirection: 'column', gap: 24 }}>
+    <AdminChrome active="vendors">
+      <div style={{ maxWidth: 620, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
         <div>
           <h1 style={{ fontSize: 32 }}>Add a spa</h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: 16, marginTop: 4 }}>
@@ -177,7 +168,7 @@ export default function AddSpaPage() {
             </Button>
           </div>
         </Card>
-      </main>
-    </div>
+      </div>
+    </AdminChrome>
   );
 }

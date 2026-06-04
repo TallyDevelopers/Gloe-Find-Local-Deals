@@ -2,7 +2,6 @@
 
 import { SignedIn, SignedOut, UserButton } from '@clerk/nextjs';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
 
 import { Wordmark } from '../Wordmark';
 import { LocationPill } from './LocationPill';
@@ -16,7 +15,6 @@ import { Bookmark, Wallet } from './icons';
  * and account controls. "For Businesses" lives here too — quiet, top-right.
  */
 export function TopNav() {
-  const pathname = usePathname();
   const overHero = useHeroHeader();
 
   return (
@@ -32,21 +30,20 @@ export function TopNav() {
 
         <nav className="topnav-links">
           <LocationPill />
-          <SignedIn>
-            <NavLink href="/saved" active={pathname === '/saved'}>
-              <Bookmark size={18} /> Saved
-            </NavLink>
-            <NavLink href="/wallet" active={pathname.startsWith('/wallet')}>
-              <Wallet size={18} /> Wallet
-            </NavLink>
-          </SignedIn>
           <SignedOut>
             <Link href="/sign-in" className="topnav-signin">
               Sign in
             </Link>
           </SignedOut>
           <SignedIn>
-            <UserButton afterSignOutUrl="/" appearance={{ elements: { avatarBox: { width: 34, height: 34 } } }} />
+            {/* Saved + Wallet live inside the avatar menu now — keeps the header
+                calm (just location · avatar · For Businesses). */}
+            <UserButton afterSignOutUrl="/" appearance={{ elements: { avatarBox: { width: 34, height: 34 } } }}>
+              <UserButton.MenuItems>
+                <UserButton.Link label="Wallet" labelIcon={<Wallet size={16} />} href="/wallet" />
+                <UserButton.Link label="Saved" labelIcon={<Bookmark size={16} />} href="/saved" />
+              </UserButton.MenuItems>
+            </UserButton>
           </SignedIn>
           <Link href="/business" className="topnav-biz">
             For Businesses
@@ -57,23 +54,3 @@ export function TopNav() {
   );
 }
 
-function NavLink({ href, active, children }: { href: string; active: boolean; children: React.ReactNode }) {
-  return (
-    <Link
-      href={href}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 7,
-        fontSize: 15,
-        fontWeight: 600,
-        padding: '8px 12px',
-        borderRadius: 'var(--radius-pill)',
-        color: active ? 'var(--brand-600)' : 'var(--text-secondary)',
-        background: active ? 'var(--brand-50)' : 'transparent',
-      }}
-    >
-      {children}
-    </Link>
-  );
-}

@@ -1,12 +1,12 @@
 'use client';
 
-import { UserButton } from '@clerk/nextjs';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { Button, Card } from '../../../../components/ui';
-import { Wordmark } from '../../../../components/Wordmark';
 import { trpc } from '../../../../lib/trpc';
+import { AdminChrome } from '../../console/AdminChrome';
+import { PhotoUploader } from '../../../vendor/post/PhotoUploader';
 import { CopyableId } from '../../components/CopyableId';
 import { FeeTiersEditor } from '../../components/FeeTiersEditor';
 
@@ -62,18 +62,8 @@ export default function VendorDetailPage() {
   };
 
   return (
-    <div style={{ minHeight: '100vh' }}>
-      <header style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--surface-elevated)', position: 'sticky', top: 0, zIndex: 20 }}>
-        <div style={{ padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <button onClick={() => router.push('/admin')} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', fontSize: 15 }}>← Admin</button>
-            <Wordmark size={22} tone="gold" />
-          </div>
-          <UserButton />
-        </div>
-      </header>
-
-      <main style={{ maxWidth: 920, margin: '0 auto', padding: '32px 24px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <AdminChrome active="vendors">
+      <div style={{ maxWidth: 920, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
         {!data ? (
           <p style={{ color: 'var(--text-tertiary)' }}>Loading…</p>
         ) : (
@@ -254,8 +244,8 @@ export default function VendorDetailPage() {
             ) : null}
           </>
         )}
-      </main>
-    </div>
+      </div>
+    </AdminChrome>
   );
 }
 
@@ -726,6 +716,7 @@ function DealQuickEditModal({
   const [description, setDescription] = useState('');
   const [finePrint, setFinePrint] = useState('');
   const [expiresAt, setExpiresAt] = useState('');
+  const [photos, setPhotos] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   // Prefill once the data lands.
@@ -734,12 +725,17 @@ function DealQuickEditModal({
     setTitle(d.title);
     setDescription(d.description);
     setFinePrint(d.finePrint ?? '');
+    setPhotos(d.photoUrls);
     // <input type="datetime-local"> expects YYYY-MM-DDTHH:mm — slice off TZ + seconds.
     setExpiresAt(new Date(d.expiresAt).toISOString().slice(0, 16));
   }, [d]);
 
   const submit = async () => {
     setError(null);
+    if (photos.length === 0) {
+      setError('A deal needs at least one photo. Add one before saving.');
+      return;
+    }
     try {
       await save.mutateAsync({
         dealId,
@@ -747,6 +743,7 @@ function DealQuickEditModal({
         description,
         finePrint: finePrint.trim() === '' ? null : finePrint,
         expiresAt: new Date(expiresAt).toISOString(),
+        photoUrls: photos,
       });
       onSaved();
     } catch (e) {
@@ -775,7 +772,7 @@ function DealQuickEditModal({
         <div>
           <h2 style={{ fontSize: 19 }}>Quick edit deal</h2>
           <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
-            Edits stay live without re-review. Audit-logged. For variant / photo / video changes, route the vendor to edit it themselves.
+            Edits stay live without re-review. Audit-logged. For variant / video changes, route the vendor to edit it themselves.
           </div>
         </div>
 
@@ -819,6 +816,10 @@ function DealQuickEditModal({
                 onChange={(e) => setExpiresAt(e.target.value)}
                 style={modalInput}
               />
+            </Field>
+
+            <Field label="Photos">
+              <PhotoUploader urls={photos} onChange={setPhotos} />
             </Field>
 
             {error ? (

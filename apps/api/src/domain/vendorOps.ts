@@ -252,6 +252,143 @@ export async function refundTransaction(
 }
 
 /**
+ * Force-refund a transaction whose voucher has ALREADY been redeemed.
+ *
+ * This is the deliberate, money-moving sibling of `refundTransaction` (which
+ * refuses redeemed claims). Use it for the "customer redeemed, then disputed /
+ * we comped them" case. Two things happen:
+ *   1. Refund the customer's PaymentIntent (full or partial). We keep our
+ *      platform fee (`refund_application_fee: false`), same as normal refunds.
+ *   2. If the vendor already received their transfer (redeemed → released),
+ *      claw it back with a proportional Stripe transfer reversal so the platform
+ *      isn't left funding the refund. Reversal can push the vendor's Connect
+ *      balance negative — Stripe recovers it from their future charges. Pass
+ *      `reverseTransfer: false` to eat it on the platform instead (a comp).
+ *
+ * The voucher itself stays `redeemed` — the service was delivered; we're only
+ * unwinding money. Transaction flips to refunded / partially_refunded.
+ *
+ * Owner-gated at the router. Every outcome is audited.
+ */
+export async function forceRefundRedeemed(
+  sql: Sql,
+  transactionId: string,
+  amountCents: number,
+  actorUserId: string,
+  reason: string,
+  reverseTransfer: boolean,
+): Promise<{ refunded: boolean; stripeRefundId: string | null; reversedCents: number; amountCents: number; isFullRefund: boolean; error: string | null }> {
+  if (!Number.isFinite(amountCents) || amountCents <= 0) return fail('amount must be > 0', null, null, null);
+  if (!reason || reason.trim().length === 0) return fail('reason is required', null, null, null);
+
+  const rows = await sql<{
+    claim_id: string;
+    claim_status: string;
+    tx_id: string;
+    tx_status: string;
+    vendor_id: string;
+    pi_id: string | null;
+    transfer_id: string | null;
+    consumer_paid_cents: number;
+    vendor_payout_cents: number;
+    refunded_cents: number;
+  }[]>`
+    SELECT
+      c.id AS claim_id, c.status AS claim_status,
+      t.id AS tx_id, t.status AS tx_status, c.vendor_id,
+      t.stripe_payment_intent_id AS pi_id, t.stripe_transfer_id AS transfer_id,
+      t.consumer_paid_cents, t.vendor_payout_cents, t.refunded_cents
+    FROM public.transactions t
+    JOIN public.claims c ON c.transaction_id = t.id
+    WHERE t.id = ${transactionId}
+    LIMIT 1
+  `;
+  const r = rows[0];
+  if (!r) return fail('transaction_or_claim_not_found', null, null, null);
+  if (!['paid', 'partially_refunded', 'released'].includes(r.tx_status)) {
+    return fail(`transaction is ${r.tx_status}, cannot force-refund`, r.vendor_id, r.claim_id, r.tx_id);
+  }
+  if (!r.pi_id) return fail('no Stripe PaymentIntent on this transaction', r.vendor_id, r.claim_id, r.tx_id);
+  const remaining = r.consumer_paid_cents - r.refunded_cents;
+  if (amountCents > remaining) {
+    return fail(`amount ${amountCents} exceeds refundable balance ${remaining}`, r.vendor_id, r.claim_id, r.tx_id);
+  }
+  const isFullRefund = amountCents === remaining;
+
+  // 1) Refund the customer.
+  let refundId: string;
+  try {
+    const refund = await stripe().refunds.create(
+      {
+        payment_intent: r.pi_id,
+        amount: amountCents,
+        reason: 'requested_by_customer',
+        refund_application_fee: false,
+        metadata: { gloe_reason: reason, transaction_id: transactionId, claim_id: r.claim_id, redeemed: 'true' },
+      },
+      { idempotencyKey: `force_refund_txn_${transactionId}_${r.refunded_cents}` },
+    );
+    refundId = refund.id;
+  } catch (e) {
+    return fail(`stripe refund failed: ${e instanceof Error ? e.message : String(e)}`, r.vendor_id, r.claim_id, r.tx_id);
+  }
+
+  // 2) Claw back the vendor's proportional share, if asked and a transfer exists.
+  let reversedCents = 0;
+  if (reverseTransfer && r.transfer_id && r.vendor_payout_cents > 0) {
+    reversedCents = Math.round((amountCents * r.vendor_payout_cents) / r.consumer_paid_cents);
+    if (reversedCents > 0) {
+      try {
+        await stripe().transfers.createReversal(
+          r.transfer_id,
+          { amount: reversedCents, metadata: { gloe_reason: reason, transaction_id: transactionId } },
+          { idempotencyKey: `force_reverse_txn_${transactionId}_${r.refunded_cents}` },
+        );
+      } catch (e) {
+        // Refund already went through; surface the reversal failure but don't
+        // unwind the customer refund. Audit captures the partial outcome.
+        reversedCents = 0;
+        void writeAudit(sql, {
+          action: 'refund.refused',
+          actorUserId, vendorId: r.vendor_id, claimId: r.claim_id, transactionId: r.tx_id,
+          meta: { stage: 'transfer_reversal', error: e instanceof Error ? e.message : String(e), refundIssued: refundId },
+        });
+      }
+    }
+  }
+
+  const newRefundedCents = r.refunded_cents + amountCents;
+  const newStatus = isFullRefund ? 'refunded' : 'partially_refunded';
+  await sql`
+    UPDATE public.transactions
+    SET status = ${newStatus}, refunded_cents = ${newRefundedCents},
+        refunded_at = COALESCE(refunded_at, now()), updated_at = now()
+    WHERE id = ${r.tx_id}
+  `;
+
+  void writeAudit(sql, {
+    action: isFullRefund ? 'refund.issued' : 'refund.partial',
+    actorUserId, vendorId: r.vendor_id, claimId: r.claim_id, transactionId: r.tx_id,
+    meta: {
+      stripeRefundId: refundId, amountCents, reversedCents,
+      cumulativeRefundedCents: newRefundedCents, consumerPaidCents: r.consumer_paid_cents,
+      redeemedForceRefund: true, reverseTransfer, reason,
+    },
+  });
+
+  return { refunded: true, stripeRefundId: refundId, reversedCents, amountCents, isFullRefund, error: null };
+
+  function fail(err: string, vendorId: string | null, claimId: string | null, txId: string | null) {
+    void writeAudit(sql, {
+      action: 'refund.refused',
+      actorUserId, vendorId, claimId, transactionId: txId,
+      meta: { reason: err, redeemedForceRefund: true, attemptedAmountCents: amountCents, attemptedRefundReason: reason },
+    });
+    return { refunded: false as const, stripeRefundId: null, reversedCents: 0, amountCents, isFullRefund: false, error: err };
+  }
+}
+
+/**
  * The "wind down a vendor" button. For one vendor:
  *   1. Refund every active (unredeemed) claim.
  *   2. Suspend the vendor (pulls live deals → draft).

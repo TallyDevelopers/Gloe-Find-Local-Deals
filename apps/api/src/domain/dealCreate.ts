@@ -104,6 +104,19 @@ async function insertPhotos(tx: TxSql, dealId: string, photoUrls: string[]) {
   }
 }
 
+/**
+ * Replace just a deal's photos, leaving everything else untouched. Used by the
+ * admin quick-edit to remove / reorder / swap images without routing the deal
+ * through the full re-review form. First URL becomes the hero (cover); the rest
+ * are gallery, in array order. Photos have no downstream FKs — safe to wipe.
+ */
+export async function replaceDealPhotos(sql: Sql, dealId: string, photoUrls: string[]): Promise<void> {
+  await sql.begin(async (tx) => {
+    await tx`DELETE FROM public.deal_photos WHERE deal_id = ${dealId}`;
+    await insertPhotos(tx, dealId, photoUrls);
+  });
+}
+
 async function insertVideos(tx: TxSql, dealId: string, videos: DealVideoInput[]) {
   let order = 0;
   for (const v of videos) {

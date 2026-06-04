@@ -45,8 +45,8 @@ export async function searchEverything(sql: Sql, query: string): Promise<SearchH
          OR t.id::text = ${q}
       ORDER BY t.created_at DESC LIMIT 5
     `,
-    sql<{ id: string; title: string; business_name: string }[]>`
-      SELECT d.id, d.title, v.business_name
+    sql<{ id: string; title: string; business_name: string; vendor_id: string }[]>`
+      SELECT d.id, d.title, v.business_name, v.id AS vendor_id
       FROM public.deals d
       JOIN public.vendors v ON v.id = d.vendor_id
       WHERE d.title ILIKE ${like}
@@ -71,8 +71,7 @@ export async function searchEverything(sql: Sql, query: string): Promise<SearchH
       id: c.id,
       title: name,
       subtitle: c.email ?? c.id,
-      // Customers tab is a Session 2 build — fallback to a search-prefilled link for now.
-      href: `/admin?q=${encodeURIComponent(name)}`,
+      href: `/admin?tab=customers&customer=${c.id}`,
     });
   }
   for (const t of transactions) {
@@ -81,7 +80,7 @@ export async function searchEverything(sql: Sql, query: string): Promise<SearchH
       id: t.id,
       title: `$${(t.consumer_paid_cents / 100).toFixed(2)} · ${t.business_name}`,
       subtitle: `${t.status} · ${t.stripe_payment_intent_id ?? t.id.slice(0, 8)}`,
-      href: `/admin?tx=${t.id}`,
+      href: `/admin?tab=transactions&tx=${t.id}`,
     });
   }
   for (const d of deals) {
@@ -90,8 +89,8 @@ export async function searchEverything(sql: Sql, query: string): Promise<SearchH
       id: d.id,
       title: d.title,
       subtitle: d.business_name,
-      // Deal detail lives in vendor page; jump there + future-deal-detail-anchor.
-      href: `/admin/vendor/${d.id}`,
+      // Deal detail lives on its vendor's page — route to the vendor, not the deal id.
+      href: `/admin/vendor/${d.vendor_id}`,
     });
   }
   return hits;
@@ -502,12 +501,14 @@ export async function getAdminCustomerDetail(sql: Sql, customerId: string) {
     refunded_cents: number;
     paid_at: string | null;
     created_at: string;
+    vendor_id: string;
     vendor_name: string;
     claim_status: string | null;
     deal_title: string | null;
   }[]>`
     SELECT
       t.id, t.display_id, t.status, t.consumer_paid_cents, t.refunded_cents, t.paid_at, t.created_at,
+      t.vendor_id,
       v.business_name AS vendor_name,
       (SELECT c.status FROM public.claims c WHERE c.transaction_id = t.id LIMIT 1) AS claim_status,
       (SELECT (c.snapshot ->> 'dealTitle') FROM public.claims c WHERE c.transaction_id = t.id LIMIT 1) AS deal_title
@@ -551,6 +552,7 @@ export async function getAdminCustomerDetail(sql: Sql, customerId: string) {
       refundedCents: t.refunded_cents,
       paidAt: t.paid_at,
       createdAt: t.created_at,
+      vendorId: t.vendor_id,
       vendorName: t.vendor_name,
       claimStatus: t.claim_status,
       dealTitle: t.deal_title,
@@ -872,6 +874,96 @@ export async function isAdmin(sql: Sql, userId: string): Promise<boolean> {
     SELECT 1 AS one FROM public.admin_users WHERE user_id = ${userId} LIMIT 1
   `;
   return rows.length > 0;
+}
+
+/** The two roles an admin can hold. Mirrors the admin_users_role_check constraint. */
+export type AdminRole = 'owner' | 'moderator';
+
+/** This admin's role, or null if the user isn't an admin. */
+export async function getAdminRole(sql: Sql, userId: string): Promise<AdminRole | null> {
+  const rows = await sql<{ role: AdminRole }[]>`
+    SELECT role FROM public.admin_users WHERE user_id = ${userId} LIMIT 1
+  `;
+  return rows[0]?.role ?? null;
+}
+
+export interface AdminMember {
+  userId: string;
+  email: string | null;
+  clerkUserId: string | null;
+  role: AdminRole;
+  createdAt: string;
+  /** True for the row matching the caller — the UI disables self-removal. */
+  isYou: boolean;
+}
+
+/** Everyone with admin access, newest first. `callerUserId` flags the caller's row. */
+export async function listAdmins(sql: Sql, callerUserId: string): Promise<AdminMember[]> {
+  const rows = await sql<{
+    user_id: string;
+    email: string | null;
+    clerk_user_id: string | null;
+    role: AdminRole;
+    created_at: string;
+  }[]>`
+    SELECT a.user_id, u.email, u.clerk_user_id, a.role, a.created_at
+    FROM public.admin_users a
+    JOIN public.users u ON u.id = a.user_id
+    ORDER BY a.created_at ASC
+  `;
+  return rows.map((r) => ({
+    userId: r.user_id,
+    email: r.email,
+    clerkUserId: r.clerk_user_id,
+    role: r.role,
+    createdAt: r.created_at,
+    isYou: r.user_id === callerUserId,
+  }));
+}
+
+/** How many owners exist — used to block removing/demoting the last one. */
+export async function countOwners(sql: Sql): Promise<number> {
+  const rows = await sql<{ n: number }[]>`
+    SELECT COUNT(*)::int AS n FROM public.admin_users WHERE role = 'owner'
+  `;
+  return rows[0]?.n ?? 0;
+}
+
+/**
+ * Grant admin access by email. The person must already have a Gloē account
+ * (have signed in at least once) — we match on users.email. Returns the new
+ * member, or throws a tagged Error the router maps to a friendly message.
+ */
+export async function addAdminByEmail(
+  sql: Sql,
+  email: string,
+  role: AdminRole,
+): Promise<{ userId: string }> {
+  const users = await sql<{ id: string }[]>`
+    SELECT id FROM public.users WHERE lower(email) = lower(${email}) LIMIT 1
+  `;
+  const user = users[0];
+  if (!user) throw new Error('NO_SUCH_USER');
+
+  const existing = await sql<{ one: number }[]>`
+    SELECT 1 AS one FROM public.admin_users WHERE user_id = ${user.id} LIMIT 1
+  `;
+  if (existing.length > 0) throw new Error('ALREADY_ADMIN');
+
+  await sql`
+    INSERT INTO public.admin_users (user_id, role) VALUES (${user.id}, ${role})
+  `;
+  return { userId: user.id };
+}
+
+/** Revoke admin access. Caller must ensure last-owner / self guards upstream. */
+export async function removeAdmin(sql: Sql, userId: string): Promise<void> {
+  await sql`DELETE FROM public.admin_users WHERE user_id = ${userId}`;
+}
+
+/** Change an admin's role. Caller must ensure last-owner guard upstream. */
+export async function setAdminRole(sql: Sql, userId: string, role: AdminRole): Promise<void> {
+  await sql`UPDATE public.admin_users SET role = ${role} WHERE user_id = ${userId}`;
 }
 
 /** Platform-wide totals: gross volume, your income (fees), payouts, counts. */
@@ -1239,13 +1331,21 @@ export async function reviewDeal(
   sql: Sql,
   adminUserId: string,
   dealId: string,
-  decision: 'approve' | 'reject',
+  decision: 'approve' | 'reject' | 'request_changes',
   reason?: string | null,
 ) {
   if (decision === 'approve') {
     await sql`
       UPDATE public.deals
       SET status = 'active', approved_at = now(), rejection_reason = NULL
+      WHERE id = ${dealId} AND status = 'pending_review'
+    `;
+  } else if (decision === 'request_changes') {
+    // Soft bounce: send it back to the vendor as a draft with feedback so they
+    // can fix it and resubmit. Distinct from a hard reject (which kills it).
+    await sql`
+      UPDATE public.deals
+      SET status = 'draft', rejection_reason = ${reason ?? null}
       WHERE id = ${dealId} AND status = 'pending_review'
     `;
   } else {

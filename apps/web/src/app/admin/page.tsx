@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
 
 import { trpc } from '../../lib/trpc';
 import { AdminShell } from './console/AdminShell';
@@ -26,5 +26,9 @@ export default function AdminPage() {
     );
   }
 
-  return <AdminShell />;
+  return (
+    <Suspense fallback={null}>
+      <AdminShell />
+    </Suspense>
+  );
 }
