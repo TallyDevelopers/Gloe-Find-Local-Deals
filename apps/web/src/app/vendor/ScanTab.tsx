@@ -223,21 +223,35 @@ function ScannerCard({
 
   const stop = useCallback(async () => {
     const s = scannerRef.current;
-    if (!s) return;
-    try {
-      const state = s.getState();
-      // Html5QrcodeScannerState.SCANNING = 2
-      if (state === 2) await s.stop();
-    } catch {
-      // ignore
-    }
     scannerRef.current = null;
+    if (s) {
+      try {
+        const state = s.getState();
+        // Html5QrcodeScannerState.SCANNING = 2
+        if (state === 2) await s.stop();
+      } catch {
+        // ignore — camera may already be stopping
+      }
+      try {
+        // Let html5-qrcode remove its OWN injected <video>/<canvas> nodes.
+        // React never owns these (the scanner div has no React children),
+        // so this can't collide with React's reconciliation.
+        s.clear();
+      } catch {
+        // ignore
+      }
+    }
     setActive(false);
     onActiveChange(false);
   }, [onActiveChange]);
 
   const start = useCallback(async () => {
     setError(null);
+    // Guard against a double-start leaving an orphaned camera/video.
+    if (scannerRef.current) {
+      try { scannerRef.current.clear(); } catch { /* ignore */ }
+      scannerRef.current = null;
+    }
     try {
       const scanner = new Html5Qrcode(SCANNER_ELEMENT_ID, /* verbose */ false);
       scannerRef.current = scanner;
@@ -254,11 +268,23 @@ function ScannerCard({
       setActive(true);
       onActiveChange(true);
     } catch (e) {
-      setError(
-        e instanceof Error
-          ? (e.message.includes('Permission') ? 'Camera permission denied. You can still enter the code by hand below.' : e.message)
-          : 'Could not start camera.'
-      );
+      const name = e instanceof Error ? e.name : '';
+      const msg = e instanceof Error ? e.message : '';
+      let friendly: string;
+      if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+        // iOS Safari only exposes the camera API over HTTPS (or localhost).
+        friendly = 'Camera unavailable. Open this page over https:// (camera is blocked on insecure connections). You can still enter the code by hand below.';
+      } else if (name === 'NotAllowedError' || name === 'SecurityError' || /permission/i.test(msg)) {
+        friendly = 'Camera permission denied. Allow camera access in your browser, or enter the code by hand below.';
+      } else if (name === 'NotFoundError' || name === 'OverconstrainedError') {
+        friendly = 'No camera found. You can still enter the code by hand below.';
+      } else if (name === 'NotReadableError') {
+        friendly = 'Camera is in use by another app. Close it and try again, or enter the code by hand below.';
+      } else {
+        friendly = msg || 'Could not start camera. You can still enter the code by hand below.';
+      }
+      setError(friendly);
+      try { scannerRef.current?.clear(); } catch { /* ignore */ }
       scannerRef.current = null;
       setActive(false);
       onActiveChange(false);
@@ -272,9 +298,17 @@ function ScannerCard({
 
   return (
     <Card>
+      {/*
+        IMPORTANT: #gloe-qr-scanner must have NO React-rendered children.
+        html5-qrcode injects its own <video>/<canvas> here and wipes the
+        node's innerHTML on teardown. If React also owns a child inside it,
+        React's reconciler throws "removeChild: not a child of this node"
+        and the whole page crashes on every scan. Keep the placeholder as a
+        sibling overlay instead.
+      */}
       <div
-        id={SCANNER_ELEMENT_ID}
         style={{
+          position: 'relative',
           width: '100%',
           aspectRatio: '1 / 1',
           maxHeight: 420,
@@ -282,14 +316,25 @@ function ScannerCard({
           background: 'var(--surface-secondary)',
           borderRadius: 'var(--radius-md)',
           overflow: 'hidden',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: 'var(--text-tertiary)',
-          fontSize: 14,
         }}
       >
-        {!active ? <span>Camera off</span> : null}
+        <div id={SCANNER_ELEMENT_ID} style={{ width: '100%', height: '100%' }} />
+        {!active ? (
+          <span
+            style={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'var(--text-tertiary)',
+              fontSize: 14,
+              pointerEvents: 'none',
+            }}
+          >
+            Camera off
+          </span>
+        ) : null}
       </div>
       <div style={{ display: 'flex', gap: 10, marginTop: 14, justifyContent: 'center' }}>
         {!active ? (
