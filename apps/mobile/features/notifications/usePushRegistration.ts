@@ -101,5 +101,11 @@ export function usePushRegistration() {
     return () => {
       cancelled = true;
     };
-  }, [status, register]);
+    // NOTE: intentionally depend only on `status`. `register` is a tRPC mutation
+    // object whose identity changes on every render (its state updates as the
+    // mutation runs), so including it here caused an infinite re-registration
+    // loop — each register() → state change → re-render → effect re-fires. The
+    // mutation's `mutateAsync` is stable, so excluding it is safe.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
 }

@@ -18,7 +18,9 @@ import { Section } from '../../../features/deal-detail/Section';
 import { StickyActionBar } from '../../../features/deal-detail/StickyActionBar';
 import { StickyTopBar } from '../../../features/deal-detail/StickyTopBar';
 import { VariantPicker } from '../../../features/deal-detail/VariantPicker';
+import { formatProximity, milesBetween } from '../../../features/discover/cardMeta';
 import { formatPrice } from '../../../features/discover/format';
+import { useSelectedLocation } from '../../../features/discover-header/SelectedLocationProvider';
 import { useSavedDeals } from '../../../features/saved/SavedDealsProvider';
 
 export default function DealDetailScreen() {
@@ -28,11 +30,12 @@ export default function DealDetailScreen() {
   const { color: palette } = useTheme();
   const requireAuth = useRequireAuth();
   const prefetch = usePrefetch();
+  const { location } = useSelectedLocation();
   const { isSaved: getIsSaved, toggle: toggleSavedGlobal } = useSavedDeals();
 
   const dealQuery = trpc.deals.byId.useQuery({ id: id ?? '' }, { enabled: !!id });
   const reviewsQuery = trpc.reviews.listForVendor.useQuery(
-    { vendorId: dealQuery.data?.vendor.id ?? '', limit: 3 },
+    { vendorId: dealQuery.data?.vendor.id ?? '', limit: 5 },
     { enabled: !!dealQuery.data?.vendor.id },
   );
 
@@ -188,16 +191,22 @@ export default function DealDetailScreen() {
                   <Text variant="body-md" tone="primary" weight="semibold">
                     {deal.vendor.businessName}
                   </Text>
-                  {deal.vendor.ratingAvg !== null ? (
+                  {deal.vendor.combinedRating !== null && deal.vendor.combinedReviewCount > 0 ? (
                     <Text variant="body-sm" tone="secondary">
-                      ★ {deal.vendor.ratingAvg.toFixed(1)} ({deal.vendor.reviewCount})
+                      ★ {deal.vendor.combinedRating.toFixed(1)} · {deal.vendor.combinedReviewCount}{' '}
+                      {deal.vendor.combinedReviewCount === 1 ? 'review' : 'reviews'}
                     </Text>
                   ) : null}
-                  {deal.distanceMiles !== null ? (
-                    <Text variant="body-sm" tone="tertiary">
-                      · {deal.distanceMiles.toFixed(1)} mi
-                    </Text>
-                  ) : null}
+                  {(() => {
+                    const m =
+                      deal.vendor.lat != null && deal.vendor.lng != null
+                        ? milesBetween(location.latitude, location.longitude, deal.vendor.lat, deal.vendor.lng)
+                        : deal.distanceMiles;
+                    const prox = formatProximity(m, deal.driveSeconds);
+                    return prox ? (
+                      <Text variant="body-sm" tone="tertiary">· {prox}</Text>
+                    ) : null;
+                  })()}
                 </Stack>
               </Pressable>
             </Stack>
@@ -349,6 +358,7 @@ export default function DealDetailScreen() {
               googlePlaceId={deal.vendor.googlePlaceId}
               reviewCount={deal.vendor.reviewCount}
               internalReviews={reviewsQuery.data ?? []}
+              reviewsLoading={reviewsQuery.isLoading}
             />
 
             <Section title="The fine print">

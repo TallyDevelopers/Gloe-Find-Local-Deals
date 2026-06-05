@@ -190,7 +190,7 @@ export default function DiscoverScreen() {
             <Stack direction="row" gap={2} align="center" justify="center" style={{ paddingVertical: space[2] }}>
               <ActivityIndicator size="small" color={palette.brand[500]} />
               <Text variant="caption" tone="secondary">
-                Finding deals near {location.label}…
+                {location.label === 'Near you' ? 'Finding deals near you…' : `Finding deals near ${location.label}…`}
               </Text>
             </Stack>
           ) : null}

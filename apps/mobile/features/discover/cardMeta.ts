@@ -23,6 +23,32 @@ export function formatDriveTime(seconds: number | null): string | null {
   return `${h}h ${m}m`;
 }
 
+/** Great-circle miles between two lat/lng points (Haversine). */
+export function milesBetween(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const R = 3958.8;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+/**
+ * Human proximity: under a mile reads as a walk, otherwise a drive time
+ * (estimated at ~24 mph when there's no server estimate). Walking ≈ 3 mph.
+ */
+export function formatProximity(miles: number | null, driveSeconds: number | null): string | null {
+  if (miles === null) return null;
+  if (miles < 1) {
+    const walkMin = Math.max(1, Math.round(miles * 20));
+    return `${walkMin} min walk`;
+  }
+  const drive = formatDriveTime(driveSeconds ?? miles * 150);
+  return drive ? `${drive} drive` : formatDistance(miles);
+}
+
 /**
  * Combined Gloe + Google rating string, e.g. "★ 4.8 (127)". Falls back
  * gracefully when one source is missing; returns null when nobody's rated

@@ -1,6 +1,6 @@
 import { trpc, type RouterOutputs } from '@gloe/api-client';
 import { Stack, Text, radius, space, useTheme } from '@gloe/ui';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, View } from 'react-native';
 
 import { CachedImage } from '../image/CachedImage';
@@ -11,6 +11,7 @@ interface InternalReview {
   authorFirstName: string | null;
   rating: number;
   body: string | null;
+  photoUrls: string[];
 }
 
 interface ReviewsSectionProps {
@@ -18,6 +19,8 @@ interface ReviewsSectionProps {
   googlePlaceId: string | null;
   reviewCount: number;
   internalReviews: InternalReview[];
+  /** Whether the Gloē reviews are still loading (so auto-select waits for them). */
+  reviewsLoading?: boolean;
 }
 
 type Tab = 'gloe' | 'google';
@@ -28,9 +31,18 @@ type Tab = 'gloe' | 'google';
  * it, so there's no per-view cost. Google reviews are shown live with required
  * attribution, never cached.
  */
-export function ReviewsSection({ vendorId, googlePlaceId, reviewCount, internalReviews }: ReviewsSectionProps) {
+export function ReviewsSection({ vendorId, googlePlaceId, reviewCount, internalReviews, reviewsLoading = false }: ReviewsSectionProps) {
   const [tab, setTab] = useState<Tab>('gloe');
+  const [autoPicked, setAutoPicked] = useState(false);
   const hasGoogle = !!googlePlaceId;
+
+  // Once our reviews load, default to Google when we have fewer than 5 of our
+  // own (and Google is available) — lead with whichever side has substance.
+  useEffect(() => {
+    if (autoPicked || reviewsLoading) return;
+    if (hasGoogle && internalReviews.length < 5) setTab('google');
+    setAutoPicked(true);
+  }, [reviewsLoading, internalReviews.length, hasGoogle, autoPicked]);
 
   // Lazy: only fires once the Google tab is selected.
   const googleQuery = trpc.maps.googleReviews.useQuery(
@@ -56,7 +68,8 @@ export function ReviewsSection({ vendorId, googlePlaceId, reviewCount, internalR
   );
 }
 
-function GloeReviews({ reviews, reviewCount }: { reviews: InternalReview[]; reviewCount: number }) {
+function GloeReviews({ reviews }: { reviews: InternalReview[]; reviewCount: number }) {
+  const [showAll, setShowAll] = useState(false);
   if (reviews.length === 0) {
     return (
       <Text variant="body-sm" tone="tertiary">
@@ -64,20 +77,31 @@ function GloeReviews({ reviews, reviewCount }: { reviews: InternalReview[]; revi
       </Text>
     );
   }
+  // Collapse to the first review so long ones don't dominate; expand on tap.
+  const shown = showAll ? reviews : reviews.slice(0, 1);
   return (
     <Stack gap={4}>
-      {reviews.map((r) => (
-        <Stack key={r.id} gap={1}>
+      {shown.map((r) => (
+        <Stack key={r.id} gap={2}>
           <Stack direction="row" gap={2} align="baseline">
             <Text variant="body-md" tone="primary" weight="semibold">{r.authorFirstName ?? 'Member'}</Text>
             <Text variant="body-sm" tone="brand">{'★'.repeat(r.rating)}</Text>
           </Stack>
           {r.body ? <Text variant="body-md" tone="secondary">{r.body}</Text> : null}
+          {r.photoUrls.length > 0 ? (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space[2] }}>
+              {r.photoUrls.map((u, i) => (
+                <CachedImage key={i} uri={u} style={{ width: 76, height: 76, borderRadius: radius.md }} />
+              ))}
+            </View>
+          ) : null}
         </Stack>
       ))}
-      {reviewCount > reviews.length ? (
-        <Pressable hitSlop={8}>
-          <Text variant="body-sm" tone="link" weight="semibold">See all {reviewCount} →</Text>
+      {reviews.length > 1 ? (
+        <Pressable hitSlop={8} onPress={() => setShowAll((v) => !v)}>
+          <Text variant="body-sm" tone="link" weight="semibold">
+            {showAll ? 'Show less' : `Show ${reviews.length - 1} more review${reviews.length - 1 === 1 ? '' : 's'}`}
+          </Text>
         </Pressable>
       ) : null}
     </Stack>
@@ -109,13 +133,30 @@ function GoogleReviews({ data, loading }: { data: GoogleReviewsData | undefined;
       ) : null}
 
       {data.reviews.map((r, i) => (
-        <Stack key={`${r.authorName}-${i}`} gap={1}>
-          <Stack direction="row" gap={2} align="baseline">
-            <Text variant="body-md" tone="primary" weight="semibold">{r.authorName}</Text>
-            <Text variant="body-sm" tone="brand">{'★'.repeat(r.rating)}</Text>
-            <Text variant="caption" tone="tertiary">{r.relativeTime}</Text>
+        <Stack key={`${r.authorName}-${i}`} direction="row" gap={3} align="flex-start">
+          {r.photoUrl ? (
+            <CachedImage uri={r.photoUrl} style={{ width: 36, height: 36, borderRadius: 18 }} />
+          ) : (
+            <View
+              style={{
+                width: 36, height: 36, borderRadius: 18,
+                backgroundColor: palette.brand[100],
+                alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <Text variant="body-sm" weight="semibold" style={{ color: palette.brand[600] }}>
+                {r.authorName.charAt(0)}
+              </Text>
+            </View>
+          )}
+          <Stack gap={1} style={{ flex: 1 }}>
+            <Stack direction="row" gap={2} align="baseline">
+              <Text variant="body-md" tone="primary" weight="semibold">{r.authorName}</Text>
+              <Text variant="body-sm" tone="brand">{'★'.repeat(r.rating)}</Text>
+              <Text variant="caption" tone="tertiary">{r.relativeTime}</Text>
+            </Stack>
+            {r.text ? <Text variant="body-md" tone="secondary">{r.text}</Text> : null}
           </Stack>
-          {r.text ? <Text variant="body-md" tone="secondary">{r.text}</Text> : null}
         </Stack>
       ))}
 
@@ -130,7 +171,7 @@ function GoogleReviews({ data, loading }: { data: GoogleReviewsData | undefined;
             style={{ width: 60, height: 20 }}
             contentFit="contain"
           />
-          <Text variant="caption" tone="link">View on Google →</Text>
+          <Text variant="caption" tone="link">View more on Google →</Text>
         </Stack>
       </Pressable>
     </Stack>
