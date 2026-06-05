@@ -30,6 +30,9 @@ export interface VendorStorefront {
     logoUrl: string | null;
     hoursSummary: string | null;
     amenities: string[];
+    /** Editorial "Gloē's take" + perk chips, curated by admin. */
+    gloeTake: string | null;
+    gloePerks: string[];
     /** Vendor's own coordinates for "X miles away" math on the client. */
     lat: number | null;
     lng: number | null;
@@ -101,6 +104,8 @@ export async function getVendorStorefront(sql: Sql, vendorId: string): Promise<V
     logo_url: string | null;
     hours_summary: string | null;
     amenities: unknown;
+    gloe_take: string | null;
+    gloe_perks: unknown;
     lat: number | null;
     lng: number | null;
     rating_avg: number | null;
@@ -115,6 +120,7 @@ export async function getVendorStorefront(sql: Sql, vendorId: string): Promise<V
       v.address_line1, v.address_line2, v.city, v.region, v.postal_code,
       v.phone, v.website, v.instagram_handle,
       v.hero_image_url, v.logo_url, v.hours_summary, v.amenities,
+      v.gloe_take, v.gloe_perks,
       ST_Y(v.location::geometry) AS lat,
       ST_X(v.location::geometry) AS lng,
       v.rating_avg, v.review_count,
@@ -176,8 +182,8 @@ export async function getVendorStorefront(sql: Sql, vendorId: string): Promise<V
     `,
     sql<{ id: string; video_url: string; thumbnail_url: string; caption: string | null; duration_seconds: number | null }[]>`
       SELECT id, video_url, thumbnail_url, caption, duration_seconds
-      FROM public.deal_videos
-      WHERE deal_id IN (SELECT id FROM public.deals WHERE vendor_id = ${vendorId})
+      FROM public.vendor_videos
+      WHERE vendor_id = ${vendorId}
       ORDER BY display_order, created_at DESC
       LIMIT 12
     `,
@@ -237,12 +243,22 @@ export async function getVendorStorefront(sql: Sql, vendorId: string): Promise<V
       logoUrl: v.logo_url,
       hoursSummary: v.hours_summary,
       amenities: Array.isArray(v.amenities) ? (v.amenities as string[]) : [],
+      gloeTake: v.gloe_take,
+      gloePerks: Array.isArray(v.gloe_perks) ? (v.gloe_perks as string[]) : [],
       lat: v.lat,
       lng: v.lng,
-      ratingAvg: v.rating_avg,
-      reviewCount: v.review_count,
-      googleRating: freshAgg?.google_rating ?? v.google_rating,
-      googleReviewCount: freshAgg?.google_review_count ?? v.google_review_count,
+      // numeric() columns come back as strings from the pg driver — coerce so
+      // the declared `number` type is true at runtime (callers do .toFixed()).
+      ratingAvg: v.rating_avg == null ? null : Number(v.rating_avg),
+      reviewCount: Number(v.review_count) || 0,
+      googleRating: (() => {
+        const g = freshAgg?.google_rating ?? v.google_rating;
+        return g == null ? null : Number(g);
+      })(),
+      googleReviewCount: (() => {
+        const c = freshAgg?.google_review_count ?? v.google_review_count;
+        return c == null ? null : Number(c);
+      })(),
       googlePlaceId: v.google_place_id,
     },
     providers: providersRes.map((p) => ({

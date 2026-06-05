@@ -1,4 +1,5 @@
 import type { Sql } from '../db/client';
+import { cacheVendorMap } from './dealMap';
 
 export interface VendorSignupInput {
   /** Null for admin-created (unclaimed) vendors; the spa claims it later. */
@@ -83,6 +84,17 @@ export async function createVendor(sql: Sql, input: VendorSignupInput): Promise<
       WHERE c.slug = ANY(${sql.array(input.categorySlugs)})
       ON CONFLICT DO NOTHING
     `;
+  }
+
+  // Capture a cached map snapshot of the address now, so the profile + any deal
+  // always have a real map. Best-effort: a failure never blocks signup.
+  try {
+    const mapUrl = await cacheVendorMap(vendor.id, input.latitude, input.longitude);
+    if (mapUrl) {
+      await sql`UPDATE public.vendors SET map_url = ${mapUrl} WHERE id = ${vendor.id}`;
+    }
+  } catch {
+    /* non-fatal */
   }
 
   return {

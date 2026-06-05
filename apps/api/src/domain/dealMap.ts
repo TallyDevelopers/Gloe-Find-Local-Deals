@@ -21,3 +21,21 @@ export async function cacheStaticMap(dealId: string, lat: number, lng: number): 
     return null;
   }
 }
+
+/**
+ * Same as cacheStaticMap but keyed by vendor — captured when a vendor's address
+ * is set (signup / onboarding). The profile and any deal without its own map
+ * fall back to this. Best-effort: returns null on failure, never throws.
+ */
+export async function cacheVendorMap(vendorId: string, lat: number, lng: number): Promise<string | null> {
+  const googleUrl = staticMapUrl({ lat, lng });
+  if (!googleUrl) return null;
+  try {
+    const res = await fetch(googleUrl);
+    if (!res.ok) return null;
+    const bytes = await res.arrayBuffer();
+    return await uploadBytes(MAP_BUCKET, `vendor/${vendorId}.png`, bytes, 'image/png');
+  } catch {
+    return null;
+  }
+}

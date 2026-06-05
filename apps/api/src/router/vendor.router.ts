@@ -21,6 +21,7 @@ import {
 } from '../domain/claims';
 import { getInstantPayoutStatus, InstantPayoutError, triggerInstantPayout } from '../domain/payouts';
 import { createVendor, getSetupStatus, getVendorForOwner, type VendorRecord } from '../domain/vendorSignup';
+import { addVendorVideo, deleteVendorVideo, listVendorVideos } from '../domain/vendorMedia';
 import { getVendorDashboardLink, startVendorOnboarding } from '../domain/vendorStripe';
 import {
   getStripeMoneyForVendor,
@@ -299,6 +300,31 @@ export const vendorRouter = router({
     .mutation(async ({ ctx, input }) => {
       const vendor = await requireVendor(ctx);
       return createSignedUpload(vendor.id, input.fileExt, input.kind);
+    }),
+
+  /** Vendor-level profile videos (the storefront "Inside the spa" reel). */
+  listVideos: protectedProcedure.query(async ({ ctx }) => {
+    const vendor = await requireVendor(ctx);
+    return listVendorVideos(ctx.sql, vendor.id);
+  }),
+
+  addVideo: protectedProcedure
+    .input(videoInput)
+    .mutation(async ({ ctx, input }) => {
+      const vendor = await requireVendor(ctx);
+      try {
+        return await addVendorVideo(ctx.sql, vendor.id, input);
+      } catch (e) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: (e as Error).message });
+      }
+    }),
+
+  deleteVideo: protectedProcedure
+    .input(z.object({ videoId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const vendor = await requireVendor(ctx);
+      await deleteVendorVideo(ctx.sql, vendor.id, input.videoId);
+      return { ok: true };
     }),
 
   /** Create a deal (or draft) with variants + photos + videos. */

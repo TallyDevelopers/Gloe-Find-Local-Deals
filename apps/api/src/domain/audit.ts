@@ -48,6 +48,7 @@ export type AuditAction =
   | 'vendor.auto_release.set'
   | 'vendor.stripe_onboarding.started'
   | 'vendor.admin_bypass.set'
+  | 'vendor.google_place_linked'
   // Refunds
   | 'refund.issued'    // full refund of a transaction
   | 'refund.partial'   // partial refund (voucher stays alive)

@@ -36,6 +36,8 @@ import {
 import { writeAudit } from '../domain/audit';
 import { getCustomerOrdersForTicket, getSupportTicketCustomer } from '../domain/supportTickets';
 import { createSignedUpload } from '../db/storage';
+import { addVendorVideo, deleteVendorVideo, listVendorVideos } from '../domain/vendorMedia';
+import { findPlaceId, isMapsConfigured } from '../domain/googleMaps';
 import { createDeal, getDealForReview, replaceDealPhotos, updateDeal } from '../domain/dealCreate';
 import { cacheStaticMap } from '../domain/dealMap';
 import {
@@ -204,6 +206,80 @@ export const adminRouter = router({
       perks: z.array(z.string().max(60)).max(6),
     }))
     .mutation(({ ctx, input }) => setVendorTake(ctx.sql, input.vendorId, input.take, input.perks)),
+
+  /** Sign an upload URL for a specific vendor's profile media (admin onboarding). */
+  signVendorUpload: adminProcedure
+    .input(z.object({ vendorId: z.string().uuid(), fileExt: z.string().max(8), kind: z.enum(['photo', 'video']).default('photo') }))
+    .mutation(({ input }) => createSignedUpload(input.vendorId, input.fileExt, input.kind)),
+
+  /** Vendor profile videos — admin can curate them on the spa's behalf at signup. */
+  listVendorVideos: adminProcedure
+    .input(z.object({ vendorId: z.string().uuid() }))
+    .query(({ ctx, input }) => listVendorVideos(ctx.sql, input.vendorId)),
+
+  addVendorVideo: adminProcedure
+    .input(z.object({
+      vendorId: z.string().uuid(),
+      videoUrl: z.string().url(),
+      thumbnailUrl: z.string().url(),
+      caption: z.string().max(140).nullable().optional(),
+      durationSeconds: z.number().int().positive().nullable().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await addVendorVideo(ctx.sql, input.vendorId, input);
+      } catch (e) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: (e as Error).message });
+      }
+    }),
+
+  deleteVendorVideo: adminProcedure
+    .input(z.object({ vendorId: z.string().uuid(), videoId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      await deleteVendorVideo(ctx.sql, input.vendorId, input.videoId);
+      return { ok: true };
+    }),
+
+  /**
+   * Auto-resolve a vendor's Google place_id from its name + address and store
+   * it. Clearing google_reviews_fetched_at forces the storefront to pull fresh
+   * Google reviews on next view. Returns whether a match was found.
+   */
+  linkGooglePlace: adminProcedure
+    .input(z.object({ vendorId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      if (!isMapsConfigured()) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Google Maps API key is not configured on the server.' });
+      }
+      const rows = await ctx.sql<{ business_name: string; address_line1: string; city: string; region: string; postal_code: string }[]>`
+        SELECT business_name, address_line1, city, region, postal_code
+        FROM public.vendors WHERE id = ${input.vendorId} LIMIT 1
+      `;
+      const v = rows[0];
+      if (!v) throw new TRPCError({ code: 'NOT_FOUND', message: 'Vendor not found.' });
+
+      const query = [v.business_name, v.address_line1, v.city, v.region, v.postal_code].filter(Boolean).join(', ');
+      let placeId: string | null;
+      try {
+        placeId = await findPlaceId(query);
+      } catch (e) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: `Google lookup failed: ${(e as Error).message}` });
+      }
+      if (!placeId) return { linked: false, placeId: null as string | null };
+
+      await ctx.sql`
+        UPDATE public.vendors
+        SET google_place_id = ${placeId}, google_reviews_fetched_at = NULL, updated_at = now()
+        WHERE id = ${input.vendorId}
+      `;
+      void writeAudit(ctx.sql, {
+        action: 'vendor.google_place_linked',
+        actorUserId: ctx.auth.userId,
+        vendorId: input.vendorId,
+        meta: { placeId },
+      });
+      return { linked: true, placeId };
+    }),
 
   /** Transaction drill-in: tx + vendor + customer + claims + audit. */
   transactionDetail: adminProcedure

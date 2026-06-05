@@ -635,6 +635,7 @@ export async function getDeal(sql: Sql, dealId: string): Promise<DealDetail | nu
       ST_Y(v.location::geometry) AS vendor_lat,
       ST_X(v.location::geometry) AS vendor_lng,
       v.google_place_id AS vendor_google_place_id,
+      v.map_url       AS vendor_map_url,
       v.region        AS vendor_region,
       v.postal_code   AS vendor_postal_code,
       v.gloe_take     AS vendor_gloe_take,
@@ -795,7 +796,8 @@ function resolveRedemption(deal: DealDetailRow) {
     latitude: lat,
     longitude: lng,
     isCustom: hasCustom,
-    mapUrl: deal.redemption_map_url,
+    // Deal-specific cached map, else the vendor's address map captured at signup.
+    mapUrl: deal.redemption_map_url ?? deal.vendor_map_url,
   };
 }
 
@@ -857,6 +859,7 @@ interface DealDetailRow extends Omit<DealListRow, 'primary_photo_url' | 'distanc
   redemption_lng: number | null;
   redemption_map_url: string | null;
   vendor_google_place_id: string | null;
+  vendor_map_url: string | null;
   vendor_region: string | null;
   vendor_postal_code: string | null;
   vendor_lat: number | null;

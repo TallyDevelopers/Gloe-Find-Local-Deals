@@ -128,6 +128,32 @@ export async function autocompleteAddress(query: string): Promise<PlacePredictio
   return data.predictions.map((p) => ({ description: p.description, placeId: p.place_id }));
 }
 
+interface FindPlaceResponse {
+  status: string;
+  error_message?: string;
+  candidates?: { place_id: string }[];
+}
+
+/**
+ * Resolve a business to its Google place_id from a free-text query (typically
+ * "{business name}, {full address}"). Returns null when Google has no confident
+ * match. Lets us auto-link a vendor for Google reviews from data we already
+ * store — no manual Place ID lookup.
+ */
+export async function findPlaceId(query: string): Promise<string | null> {
+  const url = new URL(`${BASE}/place/findplacefromtext/json`);
+  url.searchParams.set('input', query);
+  url.searchParams.set('inputtype', 'textquery');
+  url.searchParams.set('fields', 'place_id');
+  url.searchParams.set('key', key());
+
+  const res = await fetch(url);
+  const data = (await res.json()) as FindPlaceResponse;
+  if (data.status === 'ZERO_RESULTS') return null;
+  if (data.status !== 'OK') throw new Error(data.error_message ?? data.status);
+  return data.candidates?.[0]?.place_id ?? null;
+}
+
 /** Resolve a place_id to full address parts + coordinates. Null if not found. */
 export async function resolvePlace(placeId: string): Promise<ResolvedPlace | null> {
   const url = new URL(`${BASE}/place/details/json`);
