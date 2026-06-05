@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
 import { BlurImage } from '../../components/consumer/BlurImage';
+import { Carousel } from '../../components/consumer/Carousel';
 import { DealCard } from '../../components/consumer/DealCard';
 import { GetTheApp } from '../../components/consumer/GetTheApp';
 import { useMediaQuery } from '../../components/consumer/useMediaQuery';
@@ -67,7 +68,7 @@ export default function HomePage() {
             starts here.
           </h1>
           <p className="hero-sub">
-            Book vetted, top-rated medspas near you — botox, fillers &amp; facials, up to 60% off.
+            Discover vetted med-spas near you for Botox, fillers, facials, and more.
           </p>
 
           <form className="hero-search" onSubmit={submitSearch}>
@@ -85,9 +86,9 @@ export default function HomePage() {
       <div className="consumer-container" style={{ paddingTop: 20 }}>
         <div className="trust-strip">
           <TrustItem icon={<ShieldCheck size={22} color="var(--brand-600)" />} title="Vetted med-spas" body="Every provider licensed & reviewed" />
-          <TrustItem icon={<Wallet size={22} color="var(--brand-600)" />} title="Money-back guarantee" body="Full refund if it’s not as described" />
-          <TrustItem icon={<Zap size={22} color="var(--brand-600)" />} title="Instant voucher" body="QR in your wallet the second you pay" />
-          <TrustItem icon={<Lock size={22} color="var(--brand-600)" />} title="Secure checkout" body="Encrypted Stripe payments, no membership" />
+          <TrustItem icon={<Wallet size={22} color="var(--brand-600)" />} title="Booking protection" body="Support if the offer isn’t as described" />
+          <TrustItem icon={<Zap size={22} color="var(--brand-600)" />} title="Instant voucher" body="Voucher saved to your wallet the second you pay" />
+          <TrustItem icon={<Lock size={22} color="var(--brand-600)" />} title="Protected checkout" body="Secure payments through Stripe" />
         </div>
       </div>
 
@@ -104,13 +105,13 @@ export default function HomePage() {
           <div className="section-head">
             <h2>Browse by treatment</h2>
           </div>
-          <div className="cat-card-grid">
+          <Carousel ariaLabel="Browse by treatment">
             {populated.map((c) => {
               const deals = byCat.get(c.slug) ?? [];
               // Prefer a curated static tile image; fall back to a real deal photo.
               const img = TREATMENT_TILE_IMAGES[c.slug] ?? deals.find((d) => d.primaryPhotoUrl)?.primaryPhotoUrl ?? null;
               return (
-                <Link key={c.slug} href={`/treatments/${c.slug}`} className="cat-card">
+                <Link key={c.slug} href={`/treatments/${c.slug}`} className="cat-card cat-card--carousel">
                   {img ? <BlurImage src={img} alt={c.displayName} /> : null}
                   <span className="cat-card-label">
                     <span className="name">{c.displayName}</span>
@@ -119,7 +120,7 @@ export default function HomePage() {
                 </Link>
               );
             })}
-          </div>
+          </Carousel>
         </div>
       ) : null}
 
@@ -139,12 +140,12 @@ export default function HomePage() {
                     <h2 style={{ margin: 0 }}>{c.displayName}</h2>
                   </Link>
                 </div>
-              </div>
-              <div className="rail hide-scrollbar">
-                {deals.slice(0, 12).map((deal) => (
-                  <DealCard key={deal.id} deal={deal} width={railCardW} />
-                ))}
-                <ViewMoreCard slug={c.slug} label={c.displayName} count={deals.length} />
+                <Carousel ariaLabel={c.displayName}>
+                  {deals.slice(0, 12).map((deal) => (
+                    <DealCard key={deal.id} deal={deal} width={railCardW} />
+                  ))}
+                  <ViewMoreCard slug={c.slug} label={c.displayName} count={deals.length} />
+                </Carousel>
               </div>
             </div>
           );
@@ -185,20 +186,6 @@ export default function HomePage() {
           </div>
         </div>
       </section>
-
-      {/* Closing CTA */}
-      <section className="cta-band">
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--gold)', marginBottom: 12 }}>
-          {[0, 1, 2, 3, 4].map((i) => <Star key={i} size={18} color="var(--gold)" fill="var(--gold)" strokeWidth={0} />)}
-        </div>
-        <h2 style={{ fontSize: 32, maxWidth: 560, margin: '0 auto' }}>Your next glow is minutes away</h2>
-        <p style={{ color: 'var(--text-secondary)', marginTop: 12, fontSize: 17, maxWidth: 480, marginInline: 'auto' }}>
-          Join thousands booking vetted beauty &amp; wellness near them — no membership, no catch.
-        </p>
-        <Link href="/search" style={{ display: 'inline-block', marginTop: 24, background: 'var(--brand-500)', color: 'var(--text-inverse)', padding: '15px 34px', borderRadius: 'var(--radius-pill)', fontSize: 16, fontWeight: 700 }}>
-          Find a deal near you
-        </Link>
-      </section>
     </div>
   );
 }
@@ -210,6 +197,7 @@ export default function HomePage() {
  */
 const TREATMENT_TILE_IMAGES: Record<string, string> = {
   injectables: '/treatments/injectables.jpg',
+  'hormones-peptides': '/treatments/peptides.jpg',
 };
 
 /** Terminal card at the end of a category rail — the "view all" affordance. */

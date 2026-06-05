@@ -121,6 +121,12 @@ export const ChevronRight = (p: IconProps) => (
   </svg>
 );
 
+export const ChevronLeft = (p: IconProps) => (
+  <svg {...svgProps(p)}>
+    <path d="m15 18-6-6 6-6" />
+  </svg>
+);
+
 export const ArrowRight = (p: IconProps) => (
   <svg {...svgProps(p)}>
     <path d="M5 12h14" />

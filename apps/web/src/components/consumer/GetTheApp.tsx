@@ -1,5 +1,4 @@
-import { Wordmark } from '../Wordmark';
-import { Bookmark, Check, Clock, Heart, MapPin, Search, Sparkles, Star, User, Wallet } from './icons';
+import { Bookmark, Check, ChevronDown, Clock, Heart, MapPin, Search, Sparkles, Star, User, Wallet } from './icons';
 
 /**
  * "Get the app" marketing band: value copy + App Store / Google Play badges on
@@ -82,6 +81,9 @@ function PhoneMock() {
           overflow: 'hidden',
           display: 'flex',
           flexDirection: 'column',
+          // The marketing band centers its text; a real screen is left-aligned.
+          // Reset here so the location pill, pills, and card text all sit left.
+          textAlign: 'left',
         }}
       >
         {/* Dynamic island */}
@@ -97,30 +99,26 @@ function PhoneMock() {
           </span>
         </div>
 
-        {/* App header */}
-        <div style={{ padding: '4px 14px 0' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Wordmark size={17} tone="gold" />
-            <span style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--brand-100)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-              <User size={14} color="var(--brand-600)" />
-            </span>
-          </div>
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 8, color: 'var(--text-secondary)', fontSize: 11.5, fontWeight: 600 }}>
-            <MapPin size={12} color="var(--brand-600)" /> Encinitas, CA
-          </div>
+        {/* App header — mirrors the real Discover screen: a "Near you" location
+            pill, search, and filter pills. (The app shows no wordmark/avatar here.) */}
+        <div style={{ padding: '6px 14px 0' }}>
+          {/* Location pill */}
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 999, background: 'var(--surface-elevated)', border: '1px solid var(--border-subtle)', fontSize: 11.5, fontWeight: 600, color: 'var(--text-primary)' }}>
+            <MapPin size={12} color="var(--text-primary)" /> Near you <ChevronDown size={11} color="var(--text-tertiary)" />
+          </span>
 
           {/* Search */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 8, padding: '8px 12px', borderRadius: 999, background: 'var(--surface-elevated)', border: '1px solid var(--border-subtle)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 10, padding: '9px 13px', borderRadius: 999, background: 'var(--surface-elevated)', border: '1px solid var(--border-subtle)' }}>
             <Search size={13} color="var(--text-tertiary)" />
-            <span style={{ fontSize: 11.5, color: 'var(--text-tertiary)' }}>Search treatments</span>
+            <span style={{ fontSize: 11.5, color: 'var(--text-tertiary)' }}>Search Botox, filler, lasers…</span>
           </div>
 
-          {/* Category pills */}
+          {/* Category pills — active is dark-filled, like the app */}
           <div style={{ display: 'flex', gap: 6, marginTop: 10, overflow: 'hidden' }}>
             {[
-              { label: 'All', active: true },
-              { label: 'Botox', active: false },
-              { label: 'Skin', active: false },
+              { label: 'All', active: false },
+              { label: 'Injectables', active: false },
+              { label: 'Hormones & Peptides', active: true },
               { label: 'Laser', active: false },
             ].map((p) => (
               <span
@@ -129,9 +127,10 @@ function PhoneMock() {
                   flexShrink: 0,
                   fontSize: 10.5,
                   fontWeight: 700,
-                  padding: '5px 11px',
+                  padding: '6px 12px',
                   borderRadius: 999,
-                  background: p.active ? 'var(--brand-500)' : 'var(--surface-elevated)',
+                  whiteSpace: 'nowrap',
+                  background: p.active ? 'var(--text-primary)' : 'var(--surface-elevated)',
                   color: p.active ? 'var(--text-inverse)' : 'var(--text-secondary)',
                   border: p.active ? 'none' : '1px solid var(--border-subtle)',
                 }}
@@ -142,34 +141,37 @@ function PhoneMock() {
           </div>
         </div>
 
-        {/* Deal cards */}
-        <div style={{ flex: 1, overflow: 'hidden', padding: '12px 14px 0', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <MiniDeal
-            photo="https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?auto=format&fit=crop&w=400&q=70"
+        {/* Deal feed — one full-width hero card like the real DealCardLarge, with
+            the next card peeking below (the app's centered, scrollable feel). */}
+        <div style={{ flex: 1, overflow: 'hidden', padding: '12px 14px 0', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <LargeDeal
+            photo="https://xmjwrjvyiblinlnoszeh.supabase.co/storage/v1/object/public/deal-photos/samples/peptides-sermorelin.jpg"
+            fallback="linear-gradient(135deg,#f3e7e0,#e3c3b4)"
+            treatment="HORMONES & PEPTIDES"
+            title="Sermorelin Peptide Therapy — recovery & anti‑aging"
+            price="$249"
+            was="$399"
+            unit="1 month"
+            vendor="Glow House Wellness"
+            rating="4.9"
+            reviews="188"
+            time="12 min"
+            miles="4.9 mi"
+            off="38%"
+          />
+          <LargeDeal
+            photo="https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?auto=format&fit=crop&w=600&q=70"
             fallback="linear-gradient(135deg,#f6e4de,#e8b4ab)"
-            treatment="BOTOX"
+            treatment="INJECTABLES"
             title="Botox — 20, 40 or 60 units"
             price="$169"
             was="$260"
+            unit="20 units"
             vendor="Encinitas Glow Co"
             rating="4.9"
             reviews="142"
             time="12 min"
             miles="2.3 mi"
-            off="35%"
-          />
-          <MiniDeal
-            photo="https://images.unsplash.com/photo-1570172619644-dfd03ed5d881?auto=format&fit=crop&w=400&q=70"
-            fallback="linear-gradient(135deg,#efe7df,#d9c3b6)"
-            treatment="HYDRAFACIAL"
-            title="Signature Hydrafacial glow"
-            price="$129"
-            was="$199"
-            vendor="The Skin Lounge"
-            rating="4.8"
-            reviews="86"
-            time="9 min"
-            miles="1.4 mi"
             off="35%"
           />
         </div>
@@ -188,38 +190,37 @@ function PhoneMock() {
   );
 }
 
-function MiniDeal({ photo, fallback, treatment, title, price, was, vendor, rating, reviews, time, miles, off }: { photo: string; fallback: string; treatment: string; title: string; price: string; was: string; vendor: string; rating: string; reviews: string; time: string; miles: string; off: string }) {
+/** Faithful mini of the app's full-width DealCardLarge: big image, discount
+ *  badge + heart, then category / title / price / vendor / rating row. */
+function LargeDeal({ photo, fallback, treatment, title, price, was, unit, vendor, rating, reviews, time, miles, off }: { photo: string; fallback: string; treatment: string; title: string; price: string; was: string; unit: string; vendor: string; rating: string; reviews: string; time: string; miles: string; off: string }) {
   return (
-    <div style={{ background: 'var(--surface-elevated)', borderRadius: 14, overflow: 'hidden', border: '1px solid var(--border-subtle)', boxShadow: '0 1px 3px rgba(43,32,25,0.06)' }}>
+    <div style={{ flexShrink: 0, background: 'var(--surface-elevated)', borderRadius: 18, overflow: 'hidden', border: '1px solid var(--border-subtle)', boxShadow: '0 2px 10px rgba(43,32,25,0.08)' }}>
       {/* Real photo with a brand gradient underneath as a graceful fallback */}
-      <div style={{ position: 'relative', height: 84, backgroundImage: `url(${photo}), ${fallback}`, backgroundSize: 'cover', backgroundPosition: 'center' }}>
-        <span style={{ position: 'absolute', top: 7, left: 7, background: 'var(--brand-500)', color: 'var(--text-inverse)', fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 999 }}>{off} off</span>
-        <span style={{ position: 'absolute', top: 6, right: 6, width: 22, height: 22, borderRadius: '50%', background: 'var(--surface-elevated)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 4px rgba(43,32,25,0.18)' }}>
-          <Heart size={12} color="var(--text-primary)" />
+      <div style={{ position: 'relative', height: 168, backgroundImage: `url(${photo}), ${fallback}`, backgroundSize: 'cover', backgroundPosition: 'center' }}>
+        <span style={{ position: 'absolute', top: 10, left: 10, background: 'var(--brand-500)', color: 'var(--text-inverse)', fontSize: 10.5, fontWeight: 600, padding: '3px 9px', borderRadius: 999 }}>{off} off</span>
+        <span style={{ position: 'absolute', top: 9, right: 9, width: 30, height: 30, borderRadius: '50%', background: 'var(--surface-elevated)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 5px rgba(43,32,25,0.2)' }}>
+          <Heart size={15} color="var(--text-primary)" />
         </span>
       </div>
-      <div style={{ padding: '8px 10px 10px' }}>
-        <div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: '0.05em', color: 'var(--text-tertiary)' }}>{treatment}</div>
-        <div style={{ fontFamily: 'var(--font-display)', fontSize: 12.5, color: 'var(--text-primary)', marginTop: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, marginTop: 3 }}>
-          <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-primary)' }}>{price}</span>
-          <span style={{ fontSize: 10, color: 'var(--text-tertiary)', textDecoration: 'line-through' }}>{was}</span>
+      <div style={{ padding: '12px 13px 13px' }}>
+        <div style={{ fontSize: 9, fontWeight: 600, letterSpacing: '0.06em', color: 'var(--text-tertiary)' }}>{treatment}</div>
+        <div style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 500, lineHeight: 1.15, color: 'var(--text-primary)', marginTop: 3, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{title}</div>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, marginTop: 6 }}>
+          <span style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 700, color: 'var(--text-primary)' }}>{price}</span>
+          <span style={{ fontSize: 12, color: 'var(--text-tertiary)', textDecoration: 'line-through' }}>{was}</span>
+          <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>· {unit}</span>
         </div>
-        <div style={{ fontSize: 9.5, fontWeight: 600, color: 'var(--text-secondary)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{vendor}</div>
-        {/* Reviews + distance + drive time, like the real card */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2, fontSize: 9, color: 'var(--text-tertiary)' }}>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-            <Star size={9} color="var(--gold)" fill="var(--gold)" strokeWidth={0} />
-            {rating} ({reviews})
-          </span>
+        <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-primary)', marginTop: 6 }}>{vendor}</div>
+        {/* Reviews · drive time · distance, like the real card */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 4, fontSize: 10.5, color: 'var(--text-secondary)' }}>
+          <Star size={10} color="var(--gold)" fill="var(--gold)" strokeWidth={0} />
+          <span>{rating} ({reviews})</span>
           <span>·</span>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-            <Clock size={9} color="var(--text-tertiary)" /> {time}
-          </span>
+          <Clock size={10} color="var(--text-secondary)" />
+          <span>{time}</span>
           <span>·</span>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2 }}>
-            <MapPin size={9} color="var(--text-tertiary)" /> {miles}
-          </span>
+          <MapPin size={10} color="var(--text-secondary)" />
+          <span>{miles}</span>
         </div>
       </div>
     </div>

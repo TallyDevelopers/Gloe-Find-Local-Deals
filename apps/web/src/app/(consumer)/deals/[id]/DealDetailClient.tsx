@@ -9,11 +9,13 @@ import { PurchasePanel } from '../../../../components/consumer/PurchasePanel';
 import { SaveButton } from '../../../../components/consumer/SaveButton';
 import { Stars } from '../../../../components/consumer/Stars';
 import { Check, ChevronRight, MapPin } from '../../../../components/consumer/icons';
-import { formatDistance, formatRating } from '../../../../components/consumer/format';
+import { formatProximity, formatReviewCount, milesBetween } from '../../../../components/consumer/format';
+import { useLocation } from '../../../../lib/location';
 import { trpc } from '../../../../lib/trpc';
 
 export function DealDetailClient({ id }: { id: string }) {
   const router = useRouter();
+  const { location } = useLocation();
   const deal = trpc.deals.byId.useQuery({ id }, { enabled: !!id });
 
   const [photoIdx, setPhotoIdx] = useState(0);
@@ -32,6 +34,20 @@ export function DealDetailClient({ id }: { id: string }) {
 
   const d = deal.data;
   const vid = variantId || d.variants[0]?.id || '';
+
+  // Proximity is computed client-side: the detail endpoint doesn't carry the
+  // viewer's distance, but we have the vendor's coords + the user's location.
+  const proximityMiles =
+    location && d.vendor.lat != null && d.vendor.lng != null
+      ? milesBetween(location.lat, location.lng, d.vendor.lat, d.vendor.lng)
+      : d.distanceMiles;
+  const proximity = formatProximity(proximityMiles, d.driveSeconds);
+  const reviewLabel = formatReviewCount(d.vendor);
+  const rating = d.vendor.combinedRating;
+  const scrollToReviews = (e: React.MouseEvent) => {
+    e.preventDefault();
+    document.getElementById('reviews')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   return (
     <div className="consumer-container" style={{ paddingTop: 16 }}>
@@ -54,44 +70,32 @@ export function DealDetailClient({ id }: { id: string }) {
               </span>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8, flexWrap: 'wrap' }}>
-              {formatRating(d.vendor) ? (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--text-secondary)', fontSize: 14 }}>
-                  <Stars value={d.vendor.combinedRating ?? 0} /> {formatRating(d.vendor)}
+            <div className="deal-meta">
+              {rating != null && d.vendor.combinedReviewCount > 0 ? (
+                <span className="deal-meta-rating">
+                  <Stars value={rating} /> <strong>{rating.toFixed(1)}</strong>
                 </span>
               ) : null}
-              {formatDistance(d.distanceMiles) ? (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--text-tertiary)', fontSize: 14 }}>
-                  <MapPin size={13} /> {formatDistance(d.distanceMiles)}
-                </span>
+              {reviewLabel ? (
+                <>
+                  <span className="deal-meta-sep" aria-hidden>·</span>
+                  <a href="#reviews" className="deal-meta-link" onClick={scrollToReviews}>{reviewLabel}</a>
+                </>
+              ) : null}
+              {proximity ? (
+                <>
+                  <span className="deal-meta-sep" aria-hidden>·</span>
+                  <span className="deal-meta-prox"><MapPin size={13} /> {proximity}</span>
+                </>
               ) : null}
             </div>
 
-            {/* Tappable business profile row — opens the spa storefront */}
+            {/* Compact, tappable link to the spa storefront */}
             <Link href={`/spa/${d.vendor.id}`} className="biz-row">
-              <span
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: '50%',
-                  background: 'var(--brand-100)',
-                  color: 'var(--brand-600)',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontFamily: 'var(--font-display)',
-                  fontSize: 19,
-                  fontWeight: 600,
-                  flexShrink: 0,
-                }}
-              >
-                {d.vendor.businessName.charAt(0)}
-              </span>
-              <span style={{ flex: 1, minWidth: 0 }}>
-                <span style={{ display: 'block', fontWeight: 600, fontSize: 15.5, color: 'var(--text-primary)' }}>{d.vendor.businessName}</span>
-                <span style={{ display: 'block', fontSize: 13, color: 'var(--text-tertiary)' }}>{d.vendor.city} · View business profile</span>
-              </span>
-              <ChevronRight size={18} color="var(--text-tertiary)" />
+              <span className="biz-row-avatar">{d.vendor.businessName.charAt(0)}</span>
+              <span className="biz-row-name">{d.vendor.businessName}</span>
+              <span className="biz-row-cta">View profile</span>
+              <ChevronRight size={16} color="var(--text-tertiary)" />
             </Link>
           </div>
 
@@ -151,7 +155,7 @@ export function DealDetailClient({ id }: { id: string }) {
 
           <WhereSection deal={d} />
 
-          <ReviewsSection vendorId={d.vendor.id} />
+          <ReviewsSection vendorId={d.vendor.id} googlePlaceId={d.vendor.googlePlaceId} />
 
           {d.restrictions.length > 0 || d.finePrint ? (
             <section className="deal-section">
@@ -258,23 +262,106 @@ function GloeTake({ take, perks }: { take: string | null; perks: string[] }) {
   );
 }
 
-function ReviewsSection({ vendorId }: { vendorId: string }) {
-  const reviews = trpc.reviews.listForVendor.useQuery({ vendorId, limit: 3 }, { enabled: !!vendorId });
-  if (!reviews.data || reviews.data.length === 0) return null;
+/**
+ * Reviews with a Gloē / Google toggle (parity with the mobile app). Gloē
+ * verified-booking reviews show by default; the Google tab lazy-loads live
+ * Google reviews (with profile photos + required attribution) only when tapped.
+ */
+function ReviewsSection({ vendorId, googlePlaceId }: { vendorId: string; googlePlaceId: string | null }) {
+  const [tab, setTab] = useState<'gloe' | 'google'>('gloe');
+  const [autoPicked, setAutoPicked] = useState(false);
+  const [showAllGloe, setShowAllGloe] = useState(false);
+  const hasGoogle = !!googlePlaceId;
+  const gloe = trpc.reviews.listForVendor.useQuery({ vendorId, limit: 5 }, { enabled: !!vendorId });
+  const google = trpc.maps.googleReviews.useQuery(
+    { placeId: googlePlaceId ?? '' },
+    { enabled: tab === 'google' && hasGoogle, staleTime: 10 * 60_000 },
+  );
+  const gloeReviews = gloe.data ?? [];
+
+  // Once Gloē reviews load, default to the Google tab when there are fewer than
+  // 5 of ours (and Google is available) — lead with whichever has substance.
+  useEffect(() => {
+    if (autoPicked || !gloe.data) return;
+    if (hasGoogle && gloe.data.length < 5) setTab('google');
+    setAutoPicked(true);
+  }, [gloe.data, hasGoogle, autoPicked]);
+
   return (
-    <section className="deal-section">
-      <h3>What guests say</h3>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        {reviews.data.map((r) => (
-          <div key={r.id}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Stars value={r.rating} size={14} />
-              <span style={{ fontSize: 13, fontWeight: 600 }}>{r.authorFirstName ?? 'Guest'}</span>
-            </div>
-            {r.body ? <p style={{ color: 'var(--text-secondary)', marginTop: 6, lineHeight: 1.55 }}>{r.body}</p> : null}
+    <section className="deal-section" id="reviews">
+      <h3>Reviews</h3>
+      {hasGoogle ? (
+        <div className="rev-tabs" role="tablist">
+          <button type="button" role="tab" aria-selected={tab === 'gloe'} className={`rev-tab${tab === 'gloe' ? ' is-active' : ''}`} onClick={() => setTab('gloe')}>Gloē</button>
+          <button type="button" role="tab" aria-selected={tab === 'google'} className={`rev-tab${tab === 'google' ? ' is-active' : ''}`} onClick={() => setTab('google')}>Google</button>
+        </div>
+      ) : null}
+
+      {tab === 'gloe' ? (
+        gloeReviews.length === 0 ? (
+          <p className="spa-empty">No reviews yet — be the first after your appointment.</p>
+        ) : (
+          <div className="rev-list">
+            {(showAllGloe ? gloeReviews : gloeReviews.slice(0, 1)).map((r) => (
+              <div key={r.id} className="rev-item">
+                <div className="rev-head">
+                  <span className="rev-avatar rev-avatar--ph">{(r.authorFirstName ?? 'G').charAt(0)}</span>
+                  <div>
+                    <div className="rev-name">{r.authorFirstName ?? 'Guest'}</div>
+                    <Stars value={r.rating} size={13} />
+                  </div>
+                </div>
+                {r.body ? <p className="rev-text">{r.body}</p> : null}
+                {r.photoUrls.length > 0 ? (
+                  <div className="rev-photos">
+                    {r.photoUrls.map((u, i) => (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img key={i} className="rev-photo" src={u} alt="" loading="lazy" />
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ))}
+            {gloeReviews.length > 1 ? (
+              <button type="button" className="rev-more" onClick={() => setShowAllGloe((v) => !v)}>
+                {showAllGloe ? 'Show less' : `Show ${gloeReviews.length - 1} more review${gloeReviews.length - 1 === 1 ? '' : 's'}`}
+              </button>
+            ) : null}
           </div>
-        ))}
-      </div>
+        )
+      ) : google.isLoading ? (
+        <p className="spa-empty">Loading Google reviews…</p>
+      ) : !google.data || !google.data.available || google.data.reviews.length === 0 ? (
+        <p className="spa-empty">No Google reviews available.</p>
+      ) : (
+        <div className="rev-list">
+          {google.data.rating != null ? (
+            <div className="rev-google-summary">
+              {google.data.rating.toFixed(1)} ★ on Google{google.data.totalRatings ? ` · ${google.data.totalRatings} ratings` : ''}
+            </div>
+          ) : null}
+          {google.data.reviews.map((r, i) => (
+            <div key={`${r.authorName}-${i}`} className="rev-item">
+              <div className="rev-head">
+                {r.photoUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img className="rev-avatar" src={r.photoUrl} alt="" />
+                ) : (
+                  <span className="rev-avatar rev-avatar--ph">{r.authorName.charAt(0)}</span>
+                )}
+                <div>
+                  <div className="rev-name">{r.authorName}</div>
+                  <div className="rev-sub"><Stars value={r.rating} size={13} /> <span className="rev-when">· {r.relativeTime}</span></div>
+                </div>
+              </div>
+              {r.text ? <p className="rev-text">{r.text}</p> : null}
+            </div>
+          ))}
+          {google.data.attributionUrl ? (
+            <a className="rev-google-link" href={google.data.attributionUrl} target="_blank" rel="noreferrer">View more on Google →</a>
+          ) : null}
+        </div>
+      )}
     </section>
   );
 }

@@ -7,6 +7,7 @@ import { Button, Card } from '../../../../components/ui';
 import { trpc } from '../../../../lib/trpc';
 import { AdminChrome } from '../../console/AdminChrome';
 import { PhotoUploader } from '../../../vendor/post/PhotoUploader';
+import { VendorVideosManager } from '../../../../components/vendor/VendorVideosManager';
 import { CopyableId } from '../../components/CopyableId';
 import { FeeTiersEditor } from '../../components/FeeTiersEditor';
 
@@ -83,6 +84,7 @@ export default function VendorDetailPage() {
                   <Tag ok={data.vendor.stripeConnected} label={data.vendor.stripeConnected ? 'Stripe connected' : 'Stripe NOT connected'} />
                   {data.vendor.adminBypass ? <Tag ok={true} label="gates open" /> : null}
                   <Tag ok={data.vendor.hasGoogle} label={data.vendor.hasGoogle ? 'google linked' : 'no google'} />
+                  <GoogleLinkButton vendorId={id} linked={data.vendor.hasGoogle} />
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -195,6 +197,8 @@ export default function VendorDetailPage() {
               initialPerks={data.vendor.gloePerks}
               onSaved={() => utils.admin.vendorDetail.invalidate({ vendorId: id })}
             />
+
+            <VendorVideosCard vendorId={id} />
 
             {/* Listings */}
             <Card>
@@ -953,6 +957,72 @@ function GloeTakeEditor({
         {saved ? <span style={{ fontSize: 13, color: 'var(--success)', fontWeight: 600 }}>Saved ✓</span> : null}
       </div>
     </Card>
+  );
+}
+
+/**
+ * Admin-curated profile videos for a spa — load clips on their behalf at
+ * onboarding. Same reel the vendor can manage themselves; persists immediately.
+ */
+function VendorVideosCard({ vendorId }: { vendorId: string }) {
+  const utils = trpc.useUtils();
+  const videosQ = trpc.admin.listVendorVideos.useQuery({ vendorId });
+  const sign = trpc.admin.signVendorUpload.useMutation();
+  const add = trpc.admin.addVendorVideo.useMutation();
+  const del = trpc.admin.deleteVendorVideo.useMutation();
+
+  return (
+    <Card>
+      <h2 style={{ fontSize: 19, marginBottom: 6 }}>Profile videos</h2>
+      <p style={{ fontSize: 13, color: 'var(--text-tertiary)', marginBottom: 14 }}>
+        Clips for the &ldquo;Inside the spa&rdquo; reel on their storefront. Upload on their behalf at signup — the
+        vendor can manage these too from their own dashboard.
+      </p>
+      <VendorVideosManager
+        videos={videosQ.data ?? []}
+        busy={videosQ.isLoading}
+        sign={(args) => sign.mutateAsync({ vendorId, ...args })}
+        onAdd={async (draft) => {
+          await add.mutateAsync({ vendorId, ...draft });
+          await utils.admin.listVendorVideos.invalidate({ vendorId });
+        }}
+        onDelete={async (id) => {
+          await del.mutateAsync({ vendorId, videoId: id });
+          await utils.admin.listVendorVideos.invalidate({ vendorId });
+        }}
+      />
+    </Card>
+  );
+}
+
+/**
+ * One-click Google linking: resolves the vendor's place_id from its name +
+ * address (Find Place from Text) and stores it, so Google reviews auto-populate.
+ */
+function GoogleLinkButton({ vendorId, linked }: { vendorId: string; linked: boolean }) {
+  const utils = trpc.useUtils();
+  const [msg, setMsg] = useState<string | null>(null);
+  const link = trpc.admin.linkGooglePlace.useMutation({
+    onSuccess: (r) => {
+      setMsg(r.linked ? 'Linked ✓ — reviews load on next view' : 'No Google match found — check the address');
+      void utils.admin.vendorDetail.invalidate({ vendorId });
+    },
+    onError: (e) => setMsg(e.message),
+  });
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+      <button
+        onClick={() => { setMsg(null); link.mutate({ vendorId }); }}
+        disabled={link.isPending}
+        style={{
+          fontSize: 12, fontWeight: 700, padding: '4px 10px', borderRadius: 999,
+          border: '1px solid var(--brand-500)', background: 'var(--surface-elevated)', color: 'var(--brand-600)', cursor: 'pointer',
+        }}
+      >
+        {link.isPending ? 'Linking…' : linked ? 'Re-link Google' : 'Link Google reviews'}
+      </button>
+      {msg ? <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>{msg}</span> : null}
+    </span>
   );
 }
 

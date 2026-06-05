@@ -36,6 +36,45 @@ export function formatRating(vendor: DealSummary['vendor']): string | null {
   return `${rating.toFixed(1)} (${count})`;
 }
 
+/** Combined review count, labeled. e.g. "188 reviews" / "1 review". Null if none. */
+export function formatReviewCount(vendor: DealSummary['vendor']): string | null {
+  const count = vendor.combinedReviewCount;
+  if (!count) return null;
+  return `${count} ${count === 1 ? 'review' : 'reviews'}`;
+}
+
+/**
+ * Human proximity for a listing: under a mile reads as a walk, otherwise a
+ * drive time (falling back to raw distance if there's no drive estimate).
+ * Walking pace ≈ 3 mph (20 min/mile).
+ */
+export function formatProximity(
+  miles: number | null | undefined,
+  driveSeconds: number | null | undefined,
+): string | null {
+  if (miles == null) return null;
+  if (miles < 1) {
+    const walkMin = Math.max(1, Math.round(miles * 20));
+    return `${walkMin} min walk`;
+  }
+  // Use a real drive estimate when we have one; otherwise approximate at city
+  // speed (~24 mph = 150 s/mile) so we always show a time, not raw distance.
+  const drive = formatDriveTime(driveSeconds ?? miles * 150);
+  return drive ? `${drive} drive` : formatDistance(miles);
+}
+
+/** Great-circle miles between two lat/lng points (Haversine). */
+export function milesBetween(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const R = 3958.8; // earth radius, miles
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
 /** "Expires in 3 days" / "Ends today" from an ISO timestamp. */
 export function formatExpiry(iso: string): string | null {
   const ms = new Date(iso).getTime() - Date.now();

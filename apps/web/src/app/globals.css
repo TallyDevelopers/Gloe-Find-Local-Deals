@@ -444,25 +444,6 @@ textarea {
   box-shadow: 0 16px 40px rgba(43, 32, 25, 0.14);
 }
 
-/* --- Horizontal rails (category carousels) --- */
-.rail {
-  display: flex;
-  gap: 18px;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  padding: 4px 40px 8px;
-  max-width: 1600px;
-  margin: 0 auto;
-}
-.rail > * {
-  scroll-snap-align: start;
-  /* Hold their width and let the rail scroll horizontally. Without this, the
-     flex rail SHRINKS cards to fit the viewport — fine on desktop (they already
-     fit) but on mobile it crams them into unreadable ~90px slivers (truncated
-     text, badge colliding with the heart). Desktop is unaffected: it was never
-     shrinking. */
-  flex-shrink: 0;
-}
 .hide-scrollbar {
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -593,10 +574,6 @@ textarea {
 
   .consumer-container {
     padding: 16px 16px 0;
-  }
-  .rail {
-    padding: 4px 16px 8px;
-    gap: 14px;
   }
   .deal-grid {
     grid-template-columns: repeat(2, 1fr);
@@ -764,15 +741,6 @@ textarea {
 @keyframes mh-slide {
   from { transform: translateX(-100%); }
   to { transform: translateX(0); }
-}
-@media (max-width: 760px) {
-  /* Edge-to-edge rails: snap-align cards to the 16px gutter so they read as a
-     clean swipeable shelf (ResortPass/DoorDash). */
-  .rail {
-    scroll-padding-left: 16px;
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior-x: contain;
-  }
 }
 
 /* --- 2026 tactile polish: press-to-shrink + blur-up image reveal ---
@@ -1087,22 +1055,55 @@ textarea {
   border-color: var(--brand-500);
 }
 /* Tappable business-profile row on the deal page */
+/* Compact single-line link to the spa storefront (pill, low real estate). */
 .biz-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   margin-top: 16px;
-  padding: 12px 14px;
+  padding: 8px 10px 8px 8px;
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-pill);
   background: var(--surface-elevated);
   color: inherit;
-  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+  transition: border-color 0.15s, background 0.15s;
 }
 .biz-row:hover {
   border-color: var(--brand-500);
-  box-shadow: 0 8px 22px rgba(43, 32, 25, 0.08);
-  transform: translateY(-1px);
+  background: var(--brand-50);
+}
+.biz-row-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--brand-100);
+  color: var(--brand-600);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+}
+.biz-row-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  font-size: 14.5px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.biz-row-cta {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--brand-600);
+}
+@media (max-width: 460px) {
+  .biz-row-cta { display: none; }
 }
 
 .deal-section {
@@ -1198,10 +1199,72 @@ textarea {
 }
 
 /* Photo-forward "browse by treatment" cards (ResortPass-style collections) */
-.cat-card-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+/* --- Browse-by-treatment carousel (swipe on touch, arrows on desktop) --- */
+.carousel {
+  position: relative;
+}
+.carousel-track {
+  display: flex;
   gap: 16px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scroll-behavior: smooth;
+  scroll-padding-left: 2px;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  padding-bottom: 4px;
+}
+.carousel-track > * {
+  scroll-snap-align: start;
+  flex: 0 0 auto;
+}
+.cat-card--carousel {
+  width: 260px;
+}
+.carousel-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 3;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 2px 10px rgba(43, 32, 25, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: opacity 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+.carousel-arrow:hover {
+  transform: translateY(-50%) scale(1.07);
+  box-shadow: 0 4px 14px rgba(43, 32, 25, 0.26);
+}
+.carousel-arrow.left {
+  left: -18px;
+}
+.carousel-arrow.right {
+  right: -18px;
+}
+.carousel-arrow[data-show='false'] {
+  opacity: 0;
+  pointer-events: none;
+}
+/* Touch / phones: swipe instead of arrows, and let cards peek so it reads as
+   "scroll me" (ResortPass/Airbnb on mobile). */
+@media (hover: none), (max-width: 760px) {
+  .carousel-arrow {
+    display: none;
+  }
+}
+@media (max-width: 760px) {
+  .cat-card--carousel {
+    width: 62vw;
+    max-width: 240px;
+  }
 }
 .cat-card {
   position: relative;
@@ -1381,10 +1444,6 @@ textarea {
 }
 
 @media (max-width: 760px) {
-  .cat-card-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 12px;
-  }
   .cat-card-label .name {
     font-size: 18px;
   }
@@ -1839,3 +1898,281 @@ textarea {
     background-position: -200% 0;
   }
 }
+
+/* ===================================================================
+   Vendor storefront (/spa/[id]) — premium, responsive profile
+   =================================================================== */
+.spa { background: var(--surface-primary); }
+
+/* Hero — full-bleed image with scrim + overlaid identity */
+.spa-hero {
+  position: relative;
+  width: 100%;
+  height: clamp(200px, 30vw, 360px);
+  overflow: hidden;
+  background: var(--surface-secondary);
+}
+.spa-hero--loading { background: var(--surface-secondary); }
+.spa-hero-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.spa-hero-fallback {
+  background:
+    radial-gradient(700px 300px at 30% 20%, var(--accent-500), transparent 70%),
+    linear-gradient(135deg, var(--brand-500), var(--gold-deep));
+}
+.spa-hero-scrim {
+  position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(180deg, rgba(20,14,10,0.28) 0%, transparent 28%, transparent 50%, rgba(20,14,10,0.74) 100%);
+}
+.spa-round-btn {
+  width: 42px; height: 42px; border-radius: 50%;
+  background: var(--surface-elevated); border: none;
+  box-shadow: 0 2px 12px rgba(43,32,25,0.2);
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; font-size: 18px; color: var(--text-primary);
+}
+.spa-hero-back { position: absolute; top: 16px; left: 16px; z-index: 3; }
+.spa-hero-save { position: absolute; top: 16px; right: 16px; z-index: 3; }
+.spa-hero-overlay {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 2;
+  display: flex; align-items: flex-end; gap: 16px;
+  padding: 24px clamp(16px, 5vw, 56px);
+  max-width: 1240px; margin: 0 auto;
+}
+.spa-logo {
+  width: 76px; height: 76px; border-radius: 18px; object-fit: cover; flex-shrink: 0;
+  border: 3px solid var(--surface-elevated); background: var(--surface-elevated);
+  box-shadow: 0 6px 20px rgba(43,32,25,0.28);
+}
+.spa-title {
+  font-family: var(--font-display);
+  font-size: clamp(26px, 5vw, 44px); line-height: 1.05; margin: 0; color: #fff;
+  text-shadow: 0 1px 12px rgba(20,14,10,0.4);
+}
+.spa-meta {
+  display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 8px;
+  color: rgba(255,255,255,0.94); font-size: 14px; text-shadow: 0 1px 8px rgba(20,14,10,0.5);
+}
+.spa-meta-item { display: inline-flex; align-items: center; gap: 6px; }
+
+/* Body */
+.spa-body { max-width: 1180px; margin: 0 auto; width: 100%; padding: 24px clamp(16px, 5vw, 40px) 64px; }
+
+/* Two-column storefront: main content + sticky info panel.
+   Mobile (default): single column. The info panel is FIRST in the DOM so on
+   mobile it sits right under the hero (actions/hours/location up top); on
+   desktop explicit grid placement puts it in the right column. */
+.spa-layout { display: grid; grid-template-columns: 1fr; gap: 28px; }
+.spa-main { min-width: 0; }
+.spa-main > *:first-child { margin-top: 0; }
+.spa-main > .spa-section:first-child { border-top: none; padding-top: 0; }
+
+.spa-panel {
+  background: var(--surface-elevated); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg); padding: 20px; box-shadow: 0 4px 18px rgba(43,32,25,0.06);
+  display: flex; flex-direction: column; gap: 16px;
+}
+.spa-panel-block { padding-top: 16px; border-top: 1px solid var(--border-subtle); }
+
+@media (min-width: 920px) {
+  .spa-layout { grid-template-columns: minmax(0, 1fr) 340px; column-gap: 48px; align-items: start; }
+  .spa-main { grid-column: 1; grid-row: 1; }
+  .spa-aside { grid-column: 2; grid-row: 1; position: sticky; top: 88px; }
+}
+
+/* Quick actions */
+.spa-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.spa-action {
+  display: inline-flex; align-items: center; gap: 7px; padding: 10px 18px;
+  border-radius: var(--radius-pill); border: 1px solid var(--border-default);
+  background: var(--surface-elevated); color: var(--text-primary); font-size: 14px; font-weight: 600;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.spa-action:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(43,32,25,0.1); }
+
+/* Gloē's take */
+.spa-take {
+  margin-top: 24px; padding: 22px 24px; border-radius: var(--radius-lg);
+  background: var(--brand-50); border: 1px solid var(--border-subtle);
+}
+.spa-take-label {
+  display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--brand-600); margin-bottom: 8px;
+}
+.spa-take-body { color: var(--text-secondary); line-height: 1.65; font-size: 16px; margin: 0 0 12px; }
+.spa-take .spa-chips { margin-top: 4px; }
+.spa-take-body:last-child { margin-bottom: 0; }
+
+/* Sections */
+.spa-section { padding-top: 28px; margin-top: 28px; border-top: 1px solid var(--border-subtle); }
+.spa-section-title { font-size: 22px; margin: 0 0 14px; }
+.spa-prose { color: var(--text-secondary); line-height: 1.65; white-space: pre-wrap; margin: 0; }
+.spa-empty { color: var(--text-tertiary); }
+
+/* Chips */
+.spa-chips { display: flex; flex-wrap: wrap; gap: 9px; }
+.spa-chip {
+  font-size: 13.5px; font-weight: 500; padding: 8px 14px; border-radius: var(--radius-pill);
+  background: var(--surface-secondary); color: var(--text-secondary);
+}
+.spa-chip--brand { background: var(--surface-elevated); border: 1px solid var(--border-subtle); color: var(--text-primary); }
+
+/* Video reel */
+.spa-video {
+  position: relative; width: 190px; aspect-ratio: 4 / 5; border: none; padding: 0;
+  border-radius: var(--radius-md); overflow: hidden; cursor: pointer; background: var(--surface-secondary); display: block;
+}
+.spa-video img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.4s ease; }
+.spa-video:hover img { transform: scale(1.05); }
+.spa-video-play {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 48px; height: 48px; border-radius: 50%; padding-left: 3px;
+  background: rgba(255,255,255,0.92); color: var(--text-primary);
+  display: flex; align-items: center; justify-content: center; font-size: 16px;
+  box-shadow: 0 4px 14px rgba(20,14,10,0.3);
+}
+.spa-video-dur {
+  position: absolute; top: 8px; right: 8px; background: rgba(20,14,10,0.7); color: #fff;
+  font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 999px;
+}
+.spa-video-cap {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 18px 10px 9px; text-align: left;
+  color: #fff; font-size: 12.5px; line-height: 1.3; background: linear-gradient(transparent, rgba(20,14,10,0.78));
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+/* Lightbox player */
+.spa-lightbox {
+  position: fixed; inset: 0; z-index: 1000; background: rgba(12,8,6,0.86);
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.spa-lightbox-video {
+  max-width: min(440px, 92vw); max-height: 88vh; width: auto; border-radius: 14px;
+  background: #000; box-shadow: 0 24px 70px rgba(0,0,0,0.5);
+}
+.spa-lightbox-close {
+  position: absolute; top: 18px; right: 18px; width: 42px; height: 42px; border-radius: 50%;
+  background: rgba(255,255,255,0.14); border: none; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+
+/* Providers */
+.spa-provider { width: 132px; text-align: center; }
+.spa-provider img, .spa-provider-ph { width: 92px; height: 92px; border-radius: 50%; object-fit: cover; margin: 0 auto; display: block; }
+.spa-provider-ph { background: var(--brand-100); }
+.spa-provider-name { font-weight: 600; font-size: 14px; margin-top: 8px; }
+.spa-provider-title { font-size: 12.5px; color: var(--text-tertiary); }
+
+/* Visit (hours + location) */
+.spa-visit { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.spa-info-card { background: var(--surface-elevated); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: 18px 20px; }
+.spa-info-head { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; margin-bottom: 8px; }
+.spa-info-body { color: var(--text-secondary); line-height: 1.6; margin: 0; }
+.spa-info-link { display: inline-block; margin-top: 10px; color: var(--brand-600); font-weight: 600; font-size: 14px; }
+
+/* Reviews */
+.spa-reviews { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.spa-review { background: var(--surface-elevated); border: 1px solid var(--border-subtle); border-radius: var(--radius-lg); padding: 18px 20px; }
+.spa-review-head { display: flex; align-items: center; gap: 12px; }
+.spa-review-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+.spa-review-avatar--ph { display: inline-flex; align-items: center; justify-content: center; background: var(--brand-100); color: var(--brand-600); font-weight: 700; font-size: 16px; }
+.spa-review-name { font-weight: 600; font-size: 14px; }
+.spa-review-sub { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+.spa-review-when { font-size: 12px; color: var(--text-tertiary); }
+.spa-review-text { color: var(--text-secondary); line-height: 1.55; margin: 10px 0 0; }
+
+/* Skeleton */
+.spa-skel { background: var(--surface-secondary); border-radius: 8px; }
+
+/* Mobile */
+@media (max-width: 760px) {
+  .spa-hero-overlay { padding: 18px 16px; gap: 12px; }
+  .spa-logo { width: 60px; height: 60px; border-radius: 14px; }
+  .spa-visit, .spa-reviews { grid-template-columns: 1fr; }
+  .spa-section { padding-top: 22px; margin-top: 22px; }
+  .spa-section-title { font-size: 19px; }
+}
+
+/* Save = labeled pill on desktop, round icon on mobile. The round back button
+   is a mobile affordance — hidden on desktop, where browser back / the logo do the job. */
+.spa-save-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  height: 42px; width: 42px; padding: 0; border-radius: 999px; border: none; cursor: pointer;
+  background: var(--surface-elevated); color: var(--text-primary);
+  box-shadow: 0 2px 12px rgba(43,32,25,0.2); font-size: 14px; font-weight: 600;
+}
+.spa-save-label { display: none; }
+@media (min-width: 920px) {
+  .spa-hero-back { display: none; }
+  .spa-save-btn { width: auto; padding: 0 18px; }
+  .spa-save-label { display: inline; }
+}
+
+/* Profile: larger deal-card images + video thumbs in the content column. */
+.spa-main .deal-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 20px; }
+.spa-main .spa-video { width: 212px; }
+
+/* Sticky section nav — mobile only. ResortPass-style underlined text tabs that
+   scroll-jump to sections (scroll-spy moves the underline). Nothing is hidden,
+   unlike content-swap tabs. */
+.spa-subnav { display: none; }
+.spa-section, .spa-anchor { scroll-margin-top: 112px; }
+@media (max-width: 919px) {
+  .spa-subnav {
+    display: flex; justify-content: space-between; gap: 10px; overflow-x: auto;
+    position: sticky; top: 46px; z-index: 20;
+    margin: 0 calc(-1 * clamp(16px, 5vw, 40px)) 16px;
+    padding: 0 clamp(16px, 5vw, 40px);
+    background: rgba(250, 245, 242, 0.95);
+    backdrop-filter: saturate(140%) blur(12px);
+    -webkit-backdrop-filter: saturate(140%) blur(12px);
+    border-bottom: 1px solid var(--border-subtle);
+    scrollbar-width: none; -ms-overflow-style: none;
+  }
+  .spa-subnav::-webkit-scrollbar { display: none; }
+}
+.spa-subnav-tab {
+  flex: 0 0 auto; padding: 14px 2px; font-size: 14px; font-weight: 600; white-space: nowrap;
+  color: var(--text-tertiary); border-bottom: 2px solid transparent; margin-bottom: -1px;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+.spa-subnav-tab.is-active { color: var(--text-primary); border-bottom-color: var(--text-primary); }
+
+/* Deal detail meta line: rating · reviews (tappable) · proximity */
+.deal-meta { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: wrap; font-size: 14px; }
+.deal-meta-rating { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); }
+.deal-meta-rating strong { font-weight: 600; color: var(--text-primary); }
+.deal-meta-sep { color: var(--text-tertiary); }
+.deal-meta-link { color: var(--text-secondary); font-weight: 600; text-decoration: underline; text-decoration-color: var(--border-default); text-underline-offset: 2px; }
+.deal-meta-link:hover { color: var(--brand-600); text-decoration-color: var(--brand-500); }
+.deal-meta-prox { display: inline-flex; align-items: center; gap: 4px; color: var(--text-tertiary); }
+
+/* Reviews: Gloē / Google tabs + cards (web parity with mobile) */
+.rev-tabs { display: inline-flex; gap: 6px; margin-bottom: 16px; }
+.rev-tab {
+  font-size: 13.5px; font-weight: 600; padding: 7px 16px; border-radius: var(--radius-pill);
+  border: 1px solid var(--border-subtle); background: var(--surface-elevated); color: var(--text-secondary); cursor: pointer;
+}
+.rev-tab.is-active { background: var(--text-primary); color: var(--text-inverse); border-color: var(--text-primary); }
+.rev-list { display: flex; flex-direction: column; gap: 18px; }
+.rev-item { }
+.rev-head { display: flex; align-items: center; gap: 10px; }
+.rev-avatar { width: 38px; height: 38px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+.rev-avatar--ph { display: inline-flex; align-items: center; justify-content: center; background: var(--brand-100); color: var(--brand-600); font-weight: 700; font-size: 15px; }
+.rev-name { font-weight: 600; font-size: 14px; }
+.rev-sub { display: flex; align-items: center; gap: 6px; }
+.rev-when { font-size: 12px; color: var(--text-tertiary); }
+.rev-text { color: var(--text-secondary); line-height: 1.55; margin: 8px 0 0; }
+.rev-google-summary { font-size: 13.5px; color: var(--text-secondary); font-weight: 600; }
+.rev-google-link { display: inline-block; margin-top: 4px; color: var(--brand-600); font-weight: 600; font-size: 13.5px; }
+
+/* Gloē review photos (customer-uploaded) */
+.rev-photos { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.rev-photo { width: 72px; height: 72px; border-radius: 10px; object-fit: cover; border: 1px solid var(--border-subtle); }
+
+/* "Show more reviews" toggle */
+.rev-more {
+  align-self: flex-start; margin-top: 2px; padding: 0; background: none; border: none; cursor: pointer;
+  font-size: 14px; font-weight: 600; color: var(--brand-600); text-decoration: underline;
+  text-decoration-color: var(--brand-500); text-underline-offset: 2px;
+}
+.rev-more:hover { color: var(--brand-500); }

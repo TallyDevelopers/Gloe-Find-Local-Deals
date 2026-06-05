@@ -8,6 +8,7 @@ import type { RouterOutputs } from '@gloe/api-client';
 
 import { Button, Card } from '../../components/ui';
 import { Wordmark } from '../../components/Wordmark';
+import { VendorVideosManager } from '../../components/vendor/VendorVideosManager';
 import { trpc } from '../../lib/trpc';
 import { ScanTab } from './ScanTab';
 
@@ -140,7 +141,44 @@ function HubTab({
       />
       <VouchersCard />
       <ProfileEditorCard />
+      <ProfileVideosCard />
     </>
+  );
+}
+
+/**
+ * Self-service profile video reel. Vendors upload short clips that show in the
+ * "Inside the spa" section of their public storefront. Persists immediately
+ * (vendor-level, independent of any deal).
+ */
+function ProfileVideosCard() {
+  const utils = trpc.useUtils();
+  const videosQ = trpc.vendor.listVideos.useQuery();
+  const sign = trpc.vendor.signPhotoUpload.useMutation();
+  const add = trpc.vendor.addVideo.useMutation();
+  const del = trpc.vendor.deleteVideo.useMutation();
+
+  return (
+    <Card>
+      <CardTitle>Profile videos</CardTitle>
+      <p style={{ fontSize: 13, color: 'var(--text-tertiary)', margin: '4px 0 14px' }}>
+        Short clips of your space, treatments, or results. They play in the &ldquo;Inside the spa&rdquo; reel on your
+        storefront — a great way to build trust before someone books.
+      </p>
+      <VendorVideosManager
+        videos={videosQ.data ?? []}
+        busy={videosQ.isLoading}
+        sign={(args) => sign.mutateAsync(args)}
+        onAdd={async (draft) => {
+          await add.mutateAsync(draft);
+          await utils.vendor.listVideos.invalidate();
+        }}
+        onDelete={async (id) => {
+          await del.mutateAsync({ videoId: id });
+          await utils.vendor.listVideos.invalidate();
+        }}
+      />
+    </Card>
   );
 }
 
