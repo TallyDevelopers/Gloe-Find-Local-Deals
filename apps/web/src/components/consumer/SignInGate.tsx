@@ -1,15 +1,14 @@
 'use client';
 
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { useSignInModal } from './useSignInModal';
 
 /**
  * Friendly sign-in prompt for account-gated consumer pages (saved, wallet,
- * account). Returns the shopper to the current page after auth.
+ * account). Opens Clerk's slide-in modal and returns the shopper to the current
+ * page after auth.
  */
 export function SignInGate({ title, subtitle }: { title: string; subtitle: string }) {
-  const pathname = usePathname();
-  const href = `/sign-in?redirect_url=${encodeURIComponent(pathname)}`;
+  const openSignIn = useSignInModal();
   return (
     <div className="consumer-container" style={{ maxWidth: 520, paddingTop: 64 }}>
       <div
@@ -25,18 +24,13 @@ export function SignInGate({ title, subtitle }: { title: string; subtitle: strin
         <h1 style={{ fontSize: 26 }}>{title}</h1>
         <p style={{ color: 'var(--text-secondary)', marginTop: 10, lineHeight: 1.5 }}>{subtitle}</p>
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 24, flexWrap: 'wrap' }}>
-          <Link
-            href={href}
-            style={{ background: 'var(--brand-500)', color: 'var(--text-inverse)', padding: '13px 28px', borderRadius: 'var(--radius-pill)', fontWeight: 700, fontSize: 15 }}
+          <button
+            type="button"
+            onClick={() => openSignIn()}
+            style={{ background: 'var(--brand-500)', color: 'var(--text-inverse)', padding: '13px 28px', borderRadius: 'var(--radius-pill)', fontWeight: 700, fontSize: 15, border: 'none', cursor: 'pointer' }}
           >
             Sign in
-          </Link>
-          <Link
-            href={`/sign-up?redirect_url=${encodeURIComponent(pathname)}`}
-            style={{ background: 'var(--surface-elevated)', color: 'var(--text-primary)', border: '1px solid var(--border-default)', padding: '13px 28px', borderRadius: 'var(--radius-pill)', fontWeight: 600, fontSize: 15 }}
-          >
-            Create account
-          </Link>
+          </button>
         </div>
       </div>
     </div>

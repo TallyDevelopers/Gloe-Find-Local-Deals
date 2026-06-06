@@ -48,16 +48,42 @@ export function useSocialAuth(): SocialAuthFlow {
       setError(null);
       setPending(provider);
       try {
-        const { createdSessionId, setActive } = await startSSOFlow({
+        const { createdSessionId, setActive, signUp, authSessionResult } = await startSSOFlow({
           strategy: STRATEGY[provider],
           // Redirect back into the app (scheme `gloe`) after the OAuth round-trip.
           redirectUrl: Linking.createURL('/sso-callback'),
         });
+
+        // User dismissed the Apple/Google sheet — silent no-op, no error.
+        if (authSessionResult?.type === 'cancel' || authSessionResult?.type === 'dismiss') {
+          return { success: false };
+        }
+
+        // Happy path: existing user, or new user whose transfer-signup completed.
         if (createdSessionId && setActive) {
           await setActive({ session: createdSessionId });
           return { success: true };
         }
-        // No session = user cancelled, or the flow needs extra steps (rare).
+
+        // New user where the transfer signup didn't finish — usually a missing
+        // required field. Our Clerk instance may require a username, which Apple
+        // doesn't provide, so set one and complete the signup ourselves.
+        if (signUp && setActive && (signUp.status === 'missing_requirements' || signUp.id)) {
+          try {
+            if (signUp.missingFields?.includes('username')) {
+              await signUp.update({ username: deriveUsername(signUp.emailAddress ?? `user${signUp.id}`) });
+            }
+            if (signUp.createdSessionId) {
+              await setActive({ session: signUp.createdSessionId });
+              return { success: true };
+            }
+          } catch (inner) {
+            setError({ code: 'social_failed', message: extractMessage(inner, provider) });
+            return { success: false };
+          }
+        }
+
+        setError({ code: 'social_incomplete', message: `Couldn't finish ${provider} sign-in. Please try again.` });
         return { success: false };
       } catch (e: unknown) {
         setError({ code: 'social_failed', message: extractMessage(e, provider) });
@@ -70,6 +96,12 @@ export function useSocialAuth(): SocialAuthFlow {
   );
 
   return { signInWithSocial, pending, error, reset: () => setError(null) };
+}
+
+/** Hidden unique username from an email (some Clerk instances require one; Apple doesn't provide it). */
+function deriveUsername(seed: string): string {
+  const base = (seed.split('@')[0] ?? 'user').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 16) || 'user';
+  return `${base}${Math.random().toString(36).slice(2, 7)}`;
 }
 
 function extractMessage(e: unknown, provider: SocialProvider): string {

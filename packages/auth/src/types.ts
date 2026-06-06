@@ -26,6 +26,9 @@ export interface SignUpWithPasswordInput {
   password: string;
   firstName?: string;
   lastName?: string;
+  /** Pass true when the user accepted Terms/Privacy (required if Clerk's
+   *  "require legal consent" is enabled in the Dashboard). */
+  legalAccepted?: boolean;
 }
 
 export type SocialProvider = 'apple' | 'google' | 'facebook' | 'tiktok';

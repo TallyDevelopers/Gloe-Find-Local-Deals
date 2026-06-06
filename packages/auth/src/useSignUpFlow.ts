@@ -25,7 +25,7 @@ export function useSignUpFlow(): SignUpFlow {
   const [error, setError] = useState<AuthError | null>(null);
 
   const submit = useCallback(
-    async ({ email, password, firstName, lastName }: SignUpWithPasswordInput) => {
+    async ({ email, password, firstName, lastName, legalAccepted }: SignUpWithPasswordInput) => {
       if (!isLoaded || !signUp) {
         return { needsVerification: false };
       }
@@ -38,6 +38,8 @@ export function useSignUpFlow(): SignUpFlow {
           password,
           firstName,
           lastName,
+          // Only sent when the Dashboard requires consent; Clerk ignores it otherwise.
+          ...(legalAccepted ? { legalAccepted: true } : {}),
           // Some Clerk instances require a username. Consumers never see/pick
           // one, so auto-derive a unique handle from the email. Harmless if the
           // instance doesn't require it (Clerk ignores extra fields it allows).
@@ -47,6 +49,21 @@ export function useSignUpFlow(): SignUpFlow {
         setStage('awaiting-verification');
         return { needsVerification: true };
       } catch (e: unknown) {
+        // Clerk-Expo intermittently throws "unable to complete a GET request for
+        // this Client / no sign up attempt was found" on flaky connectivity —
+        // but the sign-up attempt often DID get created. If so, recover: prepare
+        // verification and continue instead of surfacing a scary error.
+        if (signUp.id && signUp.status === 'missing_requirements') {
+          try {
+            if (!signUp.unverifiedFields || signUp.unverifiedFields.includes('email_address')) {
+              await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
+            }
+            setStage('awaiting-verification');
+            return { needsVerification: true };
+          } catch {
+            /* fall through to the error below */
+          }
+        }
         setError({ code: 'sign_up_failed', message: extractClerkErrorMessage(e) });
         return { needsVerification: false };
       } finally {

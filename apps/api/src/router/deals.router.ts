@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
-import { detectSubtypeForText, getCategoryTreatments, getDeal, getTrendingTreatments, listDeals, suggestSearchTerms } from '../domain/deals';
+import { detectSubtypeForText, getCategoryTreatments, getDeal, getDiscoverFeed, getTrendingTreatments, listDeals, suggestSearchTerms } from '../domain/deals';
 import { publicProcedure, router } from './trpc';
 
 const sortEnum = z.enum(['relevance', 'distance', 'price', 'rating', 'discount']);
@@ -39,6 +39,31 @@ export const dealsRouter = router({
       // produce a deterministic-per-viewer-per-day jitter.
       const viewerSeed = ctx.auth?.userId ?? input?.anonSeed;
       return listDeals(ctx.sql, { ...(input ?? {}), viewerSeed });
+    }),
+
+  /**
+   * The Discover "All" view — featured carousel + every category rail — in ONE
+   * request. Replaces the old fan-out (one `list` call per rail) that drained
+   * the DB pool. Runs all rails concurrently server-side.
+   */
+  discoverFeed: publicProcedure
+    .input(
+      z
+        .object({
+          userLat: z.number().optional(),
+          userLng: z.number().optional(),
+          maxDistanceMiles: z.number().positive().optional(),
+          minPriceCents: z.number().int().min(0).optional(),
+          maxPriceCents: z.number().int().min(0).optional(),
+          minDiscountPct: z.number().int().min(0).max(100).optional(),
+          railLimit: z.number().int().positive().max(20).optional(),
+          anonSeed: z.string().max(64).optional(),
+        })
+        .optional(),
+    )
+    .query(({ ctx, input }) => {
+      const viewerSeed = ctx.auth?.userId ?? input?.anonSeed;
+      return getDiscoverFeed(ctx.sql, { ...(input ?? {}), viewerSeed });
     }),
 
   /**

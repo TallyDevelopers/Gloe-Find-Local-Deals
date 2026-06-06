@@ -16,7 +16,7 @@ import { CategoryRail } from '../../../features/discover/CategoryRail';
 import { ComingSoon } from '../../../features/discover/ComingSoon';
 import { DealCardLarge } from '../../../features/discover/DealCardLarge';
 import { FeaturedCarousel } from '../../../features/discover/FeaturedCarousel';
-import { FilterPills, useCategoryOptions } from '../../../features/discover-header/FilterPills';
+import { FilterPills } from '../../../features/discover-header/FilterPills';
 import { TreatmentPills } from '../../../features/discover-header/TreatmentPills';
 import { FilterSheet, type DiscoverFilters } from '../../../features/discover-header/FilterSheet';
 import { LocationPill } from '../../../features/discover-header/LocationPill';
@@ -30,7 +30,7 @@ export default function DiscoverScreen() {
   const { status } = useAuth();
   const requireAuth = useRequireAuth();
   const { savedIds, toggle } = useSavedDeals();
-  const { location, gpsResolved } = useSelectedLocation();
+  const { location, gpsResolved, gpsDenied } = useSelectedLocation();
   const { color: palette } = useTheme();
   const anonSeed = useAnonSeed();
 
@@ -46,7 +46,6 @@ export default function DiscoverScreen() {
     setSubtypeSlug(null);
   };
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
-  const categoryOptions = useCategoryOptions();
 
   // Count of non-default filter sections, for the "Filters · 2" affordance.
   const activeFilterCount =
@@ -54,8 +53,34 @@ export default function DiscoverScreen() {
     (filters.minPriceCents !== undefined || filters.maxPriceCents !== undefined ? 1 : 0) +
     (filters.minDiscountPct !== undefined ? 1 : 0);
 
-  // Featured (sponsored) carousel + the filtered grid both read this query.
-  // When "All" is selected the body shows category rails instead of the grid.
+  const isAllView = categorySlug === null;
+  const isSignedIn = status === 'signed-in';
+
+  // Don't fire deal queries until the inputs have SETTLED. On cold start the
+  // location flips (fallback → GPS) and the anon seed flips (null → UUID); each
+  // flip is a new query key, so firing eagerly meant 2-3 stacked feed requests
+  // that piled up. Gate on: location resolved (GPS done or denied) AND identity
+  // ready (signed-in users use their id; anon users wait for the seed).
+  const identityReady = isSignedIn || anonSeed !== null;
+  const inputsReady = (gpsResolved || gpsDenied) && identityReady;
+
+  // ── "All" view: the WHOLE screen (featured + every rail) in ONE request.
+  // Replaces the old fan-out of one deals.list per rail that drained the pool.
+  const feedQuery = trpc.deals.discoverFeed.useQuery(
+    {
+      userLat: location.latitude,
+      userLng: location.longitude,
+      maxDistanceMiles: filters.maxDistanceMiles ?? 50,
+      ...(filters.minPriceCents !== undefined ? { minPriceCents: filters.minPriceCents } : {}),
+      ...(filters.maxPriceCents !== undefined ? { maxPriceCents: filters.maxPriceCents } : {}),
+      ...(filters.minDiscountPct !== undefined ? { minDiscountPct: filters.minDiscountPct } : {}),
+      ...(anonSeed ? { anonSeed } : {}),
+    },
+    { placeholderData: keepPreviousData, enabled: isAllView && inputsReady },
+  );
+
+  // ── Filtered view (a category/treatment selected): the full vertical grid,
+  // a single deals.list call.
   const dealsQuery = trpc.deals.list.useQuery(
     {
       userLat: location.latitude,
@@ -69,24 +94,30 @@ export default function DiscoverScreen() {
       ...(filters.minDiscountPct !== undefined ? { minDiscountPct: filters.minDiscountPct } : {}),
       ...(anonSeed ? { anonSeed } : {}),
     },
-    // Keep the previous location's deals on screen (dimmed) while the new ones
-    // load, instead of blanking the whole feed to a spinner on every location/
-    // filter change. isLoading is now only true on genuine cold start.
-    { placeholderData: keepPreviousData },
+    { placeholderData: keepPreviousData, enabled: !isAllView && inputsReady },
   );
-  const isSwitching = dealsQuery.isPlaceholderData;
 
-  const isSignedIn = status === 'signed-in';
-  const allDeals = dealsQuery.data?.deals ?? [];
-  const featured = allDeals.filter((d) => d.isSponsored);
-  const rest = allDeals;
+  // All-view data comes from the feed; filtered-view from deals.list.
+  const featured = feedQuery.data?.featured ?? [];
+  const rails = feedQuery.data?.rails ?? [];
+  const rest = dealsQuery.data?.deals ?? [];
 
-  // Warm the deal photos into the image cache as soon as the feed data lands,
-  // so cards paint instantly instead of streaming in one by one as you scroll.
+  // The active query for loading/error/empty gating, by view.
+  const activeQuery = isAllView ? feedQuery : dealsQuery;
+  const isSwitching = activeQuery.isPlaceholderData;
+  // Show the spinner both while fetching AND while inputs are still settling
+  // (queries disabled until then), so we never flash an empty/out-of-area state.
+  const showLoading = activeQuery.isLoading || (!inputsReady && !activeQuery.data);
+
+  // Warm the deal photos into the image cache as soon as data lands, so cards
+  // paint instantly instead of streaming in one by one as you scroll.
   const prefetch = usePrefetch();
   useEffect(() => {
-    if (allDeals.length) prefetch.images(allDeals.map((d) => d.primaryPhotoUrl));
-  }, [allDeals, prefetch]);
+    const photos = isAllView
+      ? [...featured, ...rails.flatMap((r) => r.deals)].map((d) => d.primaryPhotoUrl)
+      : rest.map((d) => d.primaryPhotoUrl);
+    if (photos.length) prefetch.images(photos);
+  }, [isAllView, featured, rails, rest, prefetch]);
 
   // Out-of-area: the feed loaded successfully with ZERO deals near a real,
   // resolved location AND the user hasn't chosen to browse SoCal anyway. We
@@ -96,26 +127,28 @@ export default function DiscoverScreen() {
   // it's still a deliberate location with no deals → also show coming-soon.
   const [browseAnyway, setBrowseAnyway] = useState(false);
   const outOfArea =
-    !dealsQuery.isLoading &&
-    !dealsQuery.isError &&
+    isAllView &&
+    !feedQuery.isLoading &&
+    !feedQuery.isError &&
     gpsResolved &&
-    allDeals.length === 0 &&
-    categorySlug === null &&
+    featured.length === 0 &&
+    rails.length === 0 &&
     activeFilterCount === 0 &&
     !browseAnyway;
 
   const toggleSave = requireAuth('save', (dealId: string) => toggle(dealId));
 
-  // Refresh the main grid AND every CategoryRail's query in parallel — each
-  // rail mounts its own `deals.list` query, so invalidating the whole tree
-  // is the only way the spinner reflects actual refetch completion.
+  // Refresh both the single feed (All view) and the grid (filtered view).
   const utils = trpc.useUtils();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const onRefresh = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     setIsRefreshing(true);
     try {
-      await utils.deals.list.invalidate();
+      await Promise.all([
+        utils.deals.discoverFeed.invalidate(),
+        utils.deals.list.invalidate(),
+      ]);
     } finally {
       setIsRefreshing(false);
     }
@@ -201,11 +234,11 @@ export default function DiscoverScreen() {
             style={{ opacity: isSwitching ? 0.45 : 1 }}
             pointerEvents={isSwitching ? 'none' : 'auto'}
           >
-          {dealsQuery.isLoading ? (
+          {showLoading ? (
             <View style={{ paddingVertical: space[10], alignItems: 'center' }}>
               <ActivityIndicator color={palette.brand[500]} />
             </View>
-          ) : dealsQuery.isError ? (
+          ) : activeQuery.isError ? (
             <View style={{ paddingHorizontal: space[5] }}>
               <Text variant="body-md" tone="error">
                 Couldn't load deals. Pull to refresh.
@@ -218,8 +251,9 @@ export default function DiscoverScreen() {
               lng={location.longitude}
               onBrowseAnyway={() => setBrowseAnyway(true)}
             />
-          ) : categorySlug === null ? (
-            /* "All" view — Featured carousel + a horizontal rail per category. */
+          ) : isAllView ? (
+            /* "All" view — Featured carousel + a rail per category, ALL from the
+               single discoverFeed response (one round-trip). */
             <Stack gap={8} style={{ marginTop: space[2] }}>
               {featured.length > 0 ? (
                 <View style={{ paddingLeft: space[5] }}>
@@ -227,21 +261,14 @@ export default function DiscoverScreen() {
                 </View>
               ) : null}
 
-              {categoryOptions.filter((c) => c.slug !== null).map((c) => (
+              {rails.map((rail) => (
                 <CategoryRail
-                  key={c.slug}
-                  categorySlug={c.slug as string}
-                  label={c.label}
-                  userLat={location.latitude}
-                  userLng={location.longitude}
+                  key={rail.slug}
+                  label={rail.displayName}
+                  deals={rail.deals}
                   savedIds={savedIds}
                   onSave={toggleSave}
-                  onSeeAll={(slug) => setCategorySlug(slug)}
-                  maxDistanceMiles={filters.maxDistanceMiles}
-                  minPriceCents={filters.minPriceCents}
-                  maxPriceCents={filters.maxPriceCents}
-                  minDiscountPct={filters.minDiscountPct}
-                  anonSeed={anonSeed}
+                  onSeeAll={() => setCategorySlug(rail.slug)}
                 />
               ))}
             </Stack>

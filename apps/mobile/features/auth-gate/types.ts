@@ -9,27 +9,27 @@ export interface AuthGatePrompt {
 export const authGatePrompts: Record<AuthGateReason, AuthGatePrompt> = {
   redeem: {
     reason: 'redeem',
-    title: 'Sign in to get this deal',
-    description: 'Create a free account to grab deals and track them in Your Deals.',
+    title: 'Your glow, unlocked',
+    description: 'Sign in to grab this deal and track it in Your Deals.',
   },
   save: {
     reason: 'save',
-    title: 'Sign in to save deals',
-    description: 'Create a free account to bookmark deals and come back later.',
+    title: 'Save your favorites',
+    description: 'Sign in to bookmark deals and come back anytime.',
   },
   review: {
     reason: 'review',
-    title: 'Sign in to leave a review',
-    description: 'Only verified Gloe members can review providers.',
+    title: 'Share your experience',
+    description: 'Sign in to leave a review — only verified Gloē members can.',
   },
   notify: {
     reason: 'notify',
-    title: 'Sign in for deal alerts',
-    description: 'Get notified the moment a deal drops near you.',
+    title: 'Never miss a glow-up',
+    description: 'Sign in to get notified the moment a deal drops near you.',
   },
   generic: {
     reason: 'generic',
-    title: 'Sign in to continue',
-    description: 'Create a free account to unlock the full Gloe experience.',
+    title: 'Welcome to Gloē',
+    description: 'Sign in to unlock the full experience.',
   },
 };

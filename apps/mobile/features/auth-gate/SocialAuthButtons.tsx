@@ -1,13 +1,15 @@
 import type { SocialProvider } from '@gloe/auth';
-import { Button, Stack, Text, space, useTheme } from '@gloe/ui';
-import { View } from 'react-native';
+import { Text, radius, space, useTheme } from '@gloe/ui';
+import { ActivityIndicator, Pressable, View } from 'react-native';
 
-/** Providers we offer, in display order. Must be enabled in the Clerk dashboard. */
-const PROVIDERS: { key: SocialProvider; label: string }[] = [
-  { key: 'google', label: 'Continue with Google' },
-  { key: 'facebook', label: 'Continue with Facebook' },
-  { key: 'tiktok', label: 'Continue with TikTok' },
-];
+import { AppleIcon, FacebookIcon, GoogleIcon, TikTokIcon } from './SocialIcons';
+
+/**
+ * Social providers, in display order (ResortPass format = icon-only squares in a
+ * row). Apple is required on iOS whenever any social login exists (App Store
+ * 4.8). Each must be enabled in the Clerk dashboard.
+ */
+const PROVIDERS: SocialProvider[] = ['apple', 'google', 'facebook'];
 
 interface Props {
   onPress: (provider: SocialProvider) => void;
@@ -15,40 +17,53 @@ interface Props {
   error: string | null;
 }
 
+/** A row of icon-only social buttons (Apple · Google · Facebook), ResortPass-style. */
 export function SocialAuthButtons({ onPress, pending, error }: Props) {
+  const { color: palette } = useTheme();
+  const mono = palette.text.primary;
+
+  const icon = (p: SocialProvider) => {
+    switch (p) {
+      case 'apple':
+        return <AppleIcon size={24} color={mono} />;
+      case 'google':
+        return <GoogleIcon size={24} />;
+      case 'facebook':
+        return <FacebookIcon size={24} />;
+      case 'tiktok':
+        return <TikTokIcon size={24} color={mono} />;
+    }
+  };
+
   return (
-    <Stack gap={3}>
-      <Divider />
-      {PROVIDERS.map((p) => (
-        <Button
-          key={p.key}
-          label={p.label}
-          variant="secondary"
-          size="lg"
-          fullWidth
-          loading={pending === p.key}
-          disabled={pending !== null}
-          onPress={() => onPress(p.key)}
-        />
-      ))}
+    <View style={{ gap: space[3] }}>
+      <View style={{ flexDirection: 'row', gap: space[3] }}>
+        {PROVIDERS.map((p) => (
+          <Pressable
+            key={p}
+            onPress={() => onPress(p)}
+            disabled={pending !== null}
+            style={({ pressed }) => ({
+              flex: 1,
+              height: 58,
+              borderRadius: radius.lg,
+              borderWidth: 1,
+              borderColor: palette.border.subtle,
+              backgroundColor: pressed ? palette.surface.secondary : palette.surface.elevated,
+              alignItems: 'center',
+              justifyContent: 'center',
+              opacity: pending !== null && pending !== p ? 0.5 : 1,
+            })}
+          >
+            {pending === p ? <ActivityIndicator size="small" color={mono} /> : icon(p)}
+          </Pressable>
+        ))}
+      </View>
       {error ? (
         <Text variant="body-sm" tone="error" align="center">
           {error}
         </Text>
       ) : null}
-    </Stack>
-  );
-}
-
-function Divider() {
-  const { color: palette } = useTheme();
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[3], marginVertical: space[1] }}>
-      <View style={{ flex: 1, height: 1, backgroundColor: palette.border.subtle }} />
-      <Text variant="body-sm" tone="tertiary">
-        or
-      </Text>
-      <View style={{ flex: 1, height: 1, backgroundColor: palette.border.subtle }} />
     </View>
   );
 }

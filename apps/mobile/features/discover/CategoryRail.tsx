@@ -1,120 +1,32 @@
-import { trpc, type DealSummary } from '@gloe/api-client';
-import { Stack, Text, space, useTheme } from '@gloe/ui';
-import { keepPreviousData } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Dimensions, FlatList, Pressable, View } from 'react-native';
+import { type DealSummary } from '@gloe/api-client';
+import { Stack, Text, space } from '@gloe/ui';
+import { Dimensions, FlatList, Pressable } from 'react-native';
 
 import { DealCard } from './DealCard';
 
-const PAGE = 8;
 const CARD_WIDTH = Math.round(Dimensions.get('window').width * 0.62);
 
 interface CategoryRailProps {
-  categorySlug: string;
   label: string;
-  userLat: number;
-  userLng: number;
+  /** Deals for this rail — supplied by the parent's single discoverFeed query
+   *  (the rail no longer fetches its own data; that fan-out drained the pool). */
+  deals: DealSummary[];
   savedIds: Set<string>;
   onSave: (dealId: string) => void;
-  onSeeAll: (slug: string) => void;
-  /** Optional filter overrides from the FilterSheet. Each rail honors the
-   *  same constraints as the main grid so a 5-mi filter actually means 5 mi. */
-  maxDistanceMiles?: number;
-  minPriceCents?: number;
-  maxPriceCents?: number;
-  minDiscountPct?: number;
-  /** Per-install seed for ranking jitter — keeps every rail in sync. */
-  anonSeed?: string | null;
+  onSeeAll: () => void;
 }
 
 /**
- * One horizontal category row on the Discover "All" view. Loads a page of that
- * category's deals and fetches the next page as the user swipes toward the end
- * (infinite horizontal scroll). Hides itself entirely if the category is empty.
+ * One horizontal category row on the Discover "All" view. Purely
+ * presentational: it renders the deals handed to it. Tap "See all" to open the
+ * full category view (which paginates). Hides itself if empty.
  */
-export function CategoryRail({
-  categorySlug,
-  label,
-  userLat,
-  userLng,
-  savedIds,
-  onSave,
-  onSeeAll,
-  maxDistanceMiles,
-  minPriceCents,
-  maxPriceCents,
-  minDiscountPct,
-  anonSeed,
-}: CategoryRailProps) {
-  const { color: palette } = useTheme();
-  const [offset, setOffset] = useState(0);
-
-  // Paging by offset; accumulate each fetched page into a local map.
-  const [pages, setPages] = useState<Record<number, DealSummary[]>>({});
-  const [hasMore, setHasMore] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-
-  // When the filter set changes, reset paging — otherwise we'd append pages
-  // from one filter onto pages from another (e.g. the user goes from 50 mi to
-  // 5 mi and we'd still show the old 23-mi cards from the previous page 0).
-  // Include the resolved location (4dp = ~11m, avoids GPS jitter thrash). Without
-  // it, switching cities did NOT reset paging — the rail kept old-city cards and
-  // merged the new city's page N onto the old city's pages, showing mixed-location
-  // results. This is a correctness bug at any latency.
-  const filterKey = `${userLat.toFixed(4)},${userLng.toFixed(4)}|${maxDistanceMiles ?? 'd'}|${minPriceCents ?? 'p'}|${maxPriceCents ?? 'P'}|${minDiscountPct ?? 'g'}|${anonSeed ?? ''}`;
-  useEffect(() => {
-    setPages({});
-    setHasMore(true);
-    setOffset(0);
-  }, [filterKey]);
-
-  const query = trpc.deals.list.useQuery(
-    {
-      userLat,
-      userLng,
-      maxDistanceMiles: maxDistanceMiles ?? 50,
-      category: categorySlug,
-      limit: PAGE,
-      offset,
-      ...(minPriceCents !== undefined ? { minPriceCents } : {}),
-      ...(maxPriceCents !== undefined ? { maxPriceCents } : {}),
-      ...(minDiscountPct !== undefined ? { minDiscountPct } : {}),
-      ...(anonSeed ? { anonSeed } : {}),
-    },
-    { placeholderData: keepPreviousData },
-  );
-
-  // RQ v5 has no onSuccess — append whenever the current offset's data arrives.
-  useEffect(() => {
-    if (!query.data) return;
-    setPages((prev) => ({ ...prev, [offset]: query.data.deals }));
-    setHasMore(query.data.hasMore);
-    setLoadingMore(false);
-  }, [query.data, offset]);
-
-  const deals = useMemo(
-    () =>
-      Object.keys(pages)
-        .map(Number)
-        .sort((a, b) => a - b)
-        .flatMap((k) => pages[k] ?? []),
-    [pages],
-  );
-
-  const loadMore = () => {
-    if (!hasMore || loadingMore) return;
-    setLoadingMore(true);
-    setOffset((o) => o + PAGE);
-  };
-
-  // Don't render the header until we actually have cards to show — avoids the
-  // bare "Skin   See all →" rows when a category is empty, still loading, or the
-  // fetch errored. The rail simply appears once its first deals arrive.
+export function CategoryRail({ label, deals, savedIds, onSave, onSeeAll }: CategoryRailProps) {
   if (deals.length === 0) return null;
 
   return (
     <Stack gap={3}>
-      <Pressable onPress={() => onSeeAll(categorySlug)} style={{ paddingHorizontal: space[5] }}>
+      <Pressable onPress={onSeeAll} style={{ paddingHorizontal: space[5] }}>
         <Stack direction="row" justify="space-between" align="center">
           <Text variant="display-sm" tone="primary" weight="medium">
             {label}
@@ -131,8 +43,6 @@ export function CategoryRail({
         showsHorizontalScrollIndicator={false}
         keyExtractor={(d) => d.id}
         contentContainerStyle={{ paddingHorizontal: space[5], gap: space[3] }}
-        onEndReached={loadMore}
-        onEndReachedThreshold={0.5}
         renderItem={({ item }) => (
           <DealCard
             deal={item}
@@ -141,13 +51,6 @@ export function CategoryRail({
             onSave={() => onSave(item.id)}
           />
         )}
-        ListFooterComponent={
-          loadingMore ? (
-            <View style={{ width: 60, alignItems: 'center', justifyContent: 'center' }}>
-              <ActivityIndicator color={palette.brand[500]} />
-            </View>
-          ) : null
-        }
       />
     </Stack>
   );

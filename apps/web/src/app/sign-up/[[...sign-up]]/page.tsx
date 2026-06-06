@@ -1,14 +1,6 @@
 import { SignUp } from '@clerk/nextjs';
 
-const CLERK_APPEARANCE = {
-  variables: {
-    colorPrimary: '#b8806f',
-    colorBackground: '#ffffff',
-    colorText: '#2b2019',
-    borderRadius: '12px',
-    fontFamily: 'Inter, sans-serif',
-  },
-} as const;
+import { CLERK_APPEARANCE } from '../../../components/consumer/clerkAppearance';
 
 /**
  * Sign-up. Honors a `redirect_url` query param (default `/` for shoppers;

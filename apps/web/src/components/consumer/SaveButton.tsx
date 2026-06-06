@@ -1,11 +1,11 @@
 'use client';
 
 import { useAuth } from '@clerk/nextjs';
-import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 import { trpc } from '../../lib/trpc';
 import { Heart } from './icons';
+import { useSignInModal } from './useSignInModal';
 
 /**
  * Heart toggle for deals. Signed-in users toggle saved state (one shared
@@ -22,8 +22,7 @@ export function SaveButton({
   variant?: 'floating' | 'bare';
 }) {
   const { isSignedIn } = useAuth();
-  const router = useRouter();
-  const pathname = usePathname();
+  const openSignIn = useSignInModal();
   const utils = trpc.useUtils();
   const savedIds = trpc.saved.listIds.useQuery(undefined, { enabled: !!isSignedIn });
   const [optimistic, setOptimistic] = useState<boolean | null>(null);
@@ -45,7 +44,7 @@ export function SaveButton({
     e.preventDefault();
     e.stopPropagation();
     if (!isSignedIn) {
-      router.push(`/sign-in?redirect_url=${encodeURIComponent(pathname)}`);
+      openSignIn();
       return;
     }
     setOptimistic(!isSaved);

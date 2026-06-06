@@ -23,7 +23,9 @@ export function useRequireAuth() {
         if (status === 'signed-in') {
           action(...args);
         } else {
-          prompt(reason);
+          // Open the inline sign-in sheet and resume this action once authed
+          // (e.g. continue straight to checkout after "Buy now").
+          prompt(reason, () => action(...args));
         }
       };
     },

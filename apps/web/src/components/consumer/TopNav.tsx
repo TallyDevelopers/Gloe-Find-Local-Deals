@@ -7,6 +7,7 @@ import { Wordmark } from '../Wordmark';
 import { LocationPill } from './LocationPill';
 import { NavSearch } from './NavSearch';
 import { useHeroHeader } from './useHeroHeader';
+import { useSignInModal } from './useSignInModal';
 import { Bookmark, Wallet } from './icons';
 
 /**
@@ -16,6 +17,7 @@ import { Bookmark, Wallet } from './icons';
  */
 export function TopNav() {
   const overHero = useHeroHeader();
+  const openSignIn = useSignInModal();
 
   return (
     <header className={`topnav show-desktop${overHero ? ' over-hero' : ''}`}>
@@ -31,9 +33,9 @@ export function TopNav() {
         <nav className="topnav-links">
           <LocationPill />
           <SignedOut>
-            <Link href="/sign-in" className="topnav-signin">
+            <button type="button" className="topnav-signin" onClick={() => openSignIn()}>
               Sign in
-            </Link>
+            </button>
           </SignedOut>
           <SignedIn>
             {/* Saved + Wallet live inside the avatar menu now — keeps the header

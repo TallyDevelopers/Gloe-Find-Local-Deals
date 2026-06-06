@@ -33,7 +33,11 @@ Last consolidated: 2026-05-29. Last updated: 2026-06-01 (search & discovery engi
 | **Saved** | Heart deals to come back to | §6 Consumer app | ✅ |
 | **Concierge support** | In-app chat with Gloē, photo/video, god-mode reply | §6 · §8 Admin | ✅ |
 | **Bottom navigation** | Discover · Saved · Wallet · Profile | §6E App shell | ✅ |
-| **Credit / loyalty** | Earned credit balance | §9 Credit | 🟡 stub |
+| **Loyalty points** | Members earn points (purchases + actions) and redeem them toward bookings | §9 Credit · Linear GLO-24 | 🟡 planned |
+| **Reviews** | Gloē reviews + live Google reviews (with reviewer photos) on each deal; leads with whichever has more | §6 Consumer | ✅ |
+| **Vendor storefront** | Public spa profile — hero, logo, "Gloē's take", hours, amenities, providers, deals, video reel, reviews, map | §7 Vendor · WEB.md | ✅ |
+| **Vendor profile videos** | Spas upload short "Inside the spa" clips (vendor-level, shown on the profile) | §7 Vendor | ✅ |
+| **Location maps** | Cached static map of each spa, auto-captured when their address is set | §5 · §7 | ✅ |
 | **Vendor — post a deal** | Vendors list a treatment; we auto-tag it (Botox/Dysport) | §7 Vendor · §6A | ✅ |
 | **Vendor — scan & redeem** | Vendor scans the customer's QR to mark redeemed | §7 Vendor portal | ✅ |
 | **Vendor — get paid** | Stripe Connect payout when a deal is redeemed; instant payout option | §4 Money · §7 | ✅ |
@@ -42,9 +46,11 @@ Last consolidated: 2026-05-29. Last updated: 2026-06-01 (search & discovery engi
 
 ### Status board (the honest state)
 
-- **✅ Shipped & working:** the full buy→redeem→get-paid loop, search & discovery, refunds, support, Apple Wallet passes, push.
-- **🟡 In progress / stub:** credit & loyalty (stub), Apple Wallet live status updates, search/click logging.
-- **❌ Launch blockers (do before App Store):** Sign in with Apple, dispute/chargeback webhook, transactional receipts. Full ranked list in **§10**.
+- **✅ Shipped & working:** the full buy→redeem→get-paid loop, search & discovery, refunds, support, Apple Wallet passes, push, Gloē + Google reviews on deals, the redesigned vendor storefront (profile + "Inside the spa" video reel), cached location maps.
+- **🟡 In progress / planned:** loyalty points (planned — earn + redeem, see Linear GLO-24), Apple Wallet live status updates, search/click logging.
+- **❌ Launch blockers (do before App Store):** Sign in with Apple, dispute/chargeback webhook, ATT prompt, counsel-reviewed Terms/Privacy, provider license verification. **The canonical, living backlog now lives in Linear → "Gloē" project** (filter the `launch-blocker` label); §10 is the in-doc snapshot.
+
+> **Where work is tracked:** **Linear** (Gloē project, `GLO-*`) is the roadmap — what's next & why. **This doc** is what *exists* today. When a Linear ticket ships, it gets reflected here.
 
 ### Where everything lives (full nav)
 

@@ -32,8 +32,12 @@ Design north star: **gorgeous, editorial, premium.** Light mode only (v1).
 - **Data**: `trpc` (already wired in `src/lib/TrpcProvider.tsx`, Clerk token
   attached). Public procedures for browsing, protected (Clerk) for
   saved/wallet/account. Full reuse — see API map below.
-- **Auth**: Clerk. Consumer sign-in returns the shopper to where they were
-  (default `/`); business sign-in still lands on `/vendor`.
+- **Auth**: Clerk. Consumer sign-in opens Clerk's **slide-in modal** over the
+  current page (`useSignInModal` → `openSignIn`) — no full-page redirect. Used
+  by the header/hamburger "Sign in", buy/save actions, and the account-gated
+  page prompts; each keeps a return path (e.g. hamburger → Wallet lands on
+  Wallet). The `/sign-in` route still exists for deep links / business sign-in
+  (→ `/vendor`).
 - **Payments**: Stripe-hosted Checkout via `checkout.createHostedCheckout`
   (added for web). "Share to pay" reuses `checkout.createGiftLink`.
 

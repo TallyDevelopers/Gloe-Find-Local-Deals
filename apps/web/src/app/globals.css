@@ -400,6 +400,9 @@ textarea {
   padding: 9px 20px;
   border-radius: var(--radius-pill);
   transition: opacity 0.15s;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
 }
 .topnav-signin:hover {
   opacity: 0.9;
@@ -675,6 +678,9 @@ textarea {
   background: var(--brand-500);
   padding: 8px 16px;
   border-radius: var(--radius-pill);
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
 }
 .mh-drawer-backdrop {
   position: fixed;
@@ -715,6 +721,14 @@ textarea {
   font-weight: 600;
   color: var(--text-primary);
   border-radius: var(--radius-md);
+  /* Some drawer links render as <button> (account-gated, signed-out) — reset
+     the UA chrome so they match the anchor links exactly. */
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
 }
 .mh-drawer-link:active {
   background: var(--brand-50);
@@ -726,6 +740,7 @@ textarea {
 }
 .mh-drawer-cta {
   margin-top: 8px;
+  width: 100%;
   text-align: center;
   background: var(--brand-500);
   color: var(--text-inverse);
@@ -733,6 +748,9 @@ textarea {
   font-size: 15px;
   padding: 13px;
   border-radius: var(--radius-pill);
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
 }
 @keyframes mh-fade {
   from { opacity: 0; }

@@ -57,7 +57,11 @@ export function TrpcProvider({ apiUrl, getToken, children }: TrpcProviderProps) 
         httpBatchLink({
           url: `${apiUrl}/trpc`,
           async headers() {
-            const token = await getToken();
+            // Don't let a slow/hanging Clerk token fetch block the request
+            // forever — public queries (deals, categories) must still load. If
+            // the token isn't ready within 4s, send the request unauthenticated
+            // rather than spinning indefinitely.
+            const token = await withTimeout(getToken(), 4000);
             return token ? { Authorization: `Bearer ${token}` } : {};
           },
         }),
@@ -70,6 +74,14 @@ export function TrpcProvider({ apiUrl, getToken, children }: TrpcProviderProps) 
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
     </trpc.Provider>
   );
+}
+
+/** Resolve `promise`, or `null` if it doesn't settle within `ms`. */
+async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  return Promise.race([
+    promise.catch(() => null),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+  ]);
 }
 
 // React Native global flag — declared here so the package doesn't need RN as a dep

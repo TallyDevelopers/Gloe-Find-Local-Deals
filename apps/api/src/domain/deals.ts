@@ -1,6 +1,6 @@
 import { detectTreatment, expandQuery, type DetectedTreatment } from './aestheticSynonyms';
 import type { Sql } from '../db/client';
-import { getTrendingConfig } from './platformSettings';
+import { getTrendingConfig, type TrendingConfig } from './platformSettings';
 
 /** Sort modes for the deal list / search. Default = relevance-blended ranking. */
 export type DealSort = 'relevance' | 'distance' | 'price' | 'rating' | 'discount';
@@ -209,6 +209,13 @@ interface ListParams {
   /** Result ordering. Defaults to relevance-blended ranking. */
   sort?: DealSort;
   /**
+   * Pre-fetched trending config. When omitted, `listDeals` fetches it itself.
+   * `getDiscoverFeed` fetches it ONCE and passes it to all rails so a single
+   * feed request doesn't fire N identical settings queries (which drained the
+   * DB pool). No caching — always a live read, just shared within one request.
+   */
+  trending?: TrendingConfig;
+  /**
    * Seed for per-user-per-day jitter in the ranking. Pass the user id when
    * signed in, the device id (or any stable per-anon string) when not. Same
    * seed + same day = stable order; same seed next day = fresh order. Optional —
@@ -231,8 +238,9 @@ export async function listDeals(sql: Sql, params: ListParams = {}): Promise<Deal
   } = params;
   const hasUserLocation = typeof userLat === 'number' && typeof userLng === 'number';
   const radiusMeters = maxDistanceMiles * 1609.344;
-  // Auto-"Trending" threshold (admin-tunable in god-mode).
-  const trending = await getTrendingConfig(sql);
+  // Auto-"Trending" threshold (admin-tunable in god-mode). Use the caller's
+  // pre-fetched config when provided (discoverFeed shares one across all rails).
+  const trending = params.trending ?? await getTrendingConfig(sql);
   // Each of the three filters becomes part of a single EXISTS subquery so
   // we only require ONE matching variant (the cheapest) per deal — not all of them.
   const hasPriceMin = typeof minPriceCents === 'number';
@@ -420,6 +428,83 @@ export async function listDeals(sql: Sql, params: ListParams = {}): Promise<Deal
   });
 
   return { deals, hasMore, nextOffset: offset + deals.length };
+}
+
+// ============================================================
+// Discover feed — the whole "All" screen in ONE call
+// ============================================================
+
+export interface DiscoverRail {
+  slug: string;
+  displayName: string;
+  deals: DealSummary[];
+  hasMore: boolean;
+}
+
+export interface DiscoverFeed {
+  /** Sponsored deals for the top carousel. */
+  featured: DealSummary[];
+  /** One rail per category that has deals (empty rails are omitted). */
+  rails: DiscoverRail[];
+}
+
+interface DiscoverFeedParams {
+  userLat?: number;
+  userLng?: number;
+  maxDistanceMiles?: number;
+  minPriceCents?: number;
+  maxPriceCents?: number;
+  minDiscountPct?: number;
+  viewerSeed?: string;
+  /** Deals per rail (the horizontal page size). */
+  railLimit?: number;
+}
+
+/**
+ * The Discover "All" view in a single round-trip. Previously the app fired one
+ * `deals.list` per category rail (8+) plus a featured query — a fan-out that
+ * drained the DB pool. This runs them all server-side concurrently and returns
+ * the whole screen at once, so the client makes ONE request. Reuses `listDeals`
+ * for identical ranking/shaping per rail.
+ *
+ * Cache-ready: the result is a pure function of (location bucket, filters,
+ * viewerSeed, day) — a cache layer can wrap this later with no client change.
+ */
+export async function getDiscoverFeed(sql: Sql, params: DiscoverFeedParams = {}): Promise<DiscoverFeed> {
+  const { railLimit = 8, ...shared } = params;
+
+  // Fetch shared inputs ONCE, up front, so the rails don't each re-query them
+  // (that fan-out — 9 rails × their own trending-config query — drained the
+  // pool). No caching: a live read, just shared within this single request.
+  const [cats, trending] = await Promise.all([
+    sql<{ slug: string; display_name: string }[]>`
+      SELECT slug, display_name
+      FROM public.service_categories
+      WHERE active = true
+      ORDER BY display_order
+    `,
+    getTrendingConfig(sql),
+  ]);
+
+  // Fire featured + every category rail concurrently, each reusing the shared
+  // trending config. The warm pool absorbs the burst.
+  const [featuredPage, ...railPages] = await Promise.all([
+    listDeals(sql, { ...shared, trending, limit: 10 }).then((p) => p.deals.filter((d) => d.isSponsored)),
+    ...cats.map((c) =>
+      listDeals(sql, { ...shared, trending, category: c.slug, limit: railLimit }).then((page) => ({
+        slug: c.slug,
+        displayName: c.display_name,
+        deals: page.deals,
+        hasMore: page.hasMore,
+      })),
+    ),
+  ]);
+
+  return {
+    featured: featuredPage,
+    // Drop empty rails so the client doesn't render bare headers.
+    rails: (railPages as DiscoverRail[]).filter((r) => r.deals.length > 0),
+  };
 }
 
 export interface SearchSuggestion {

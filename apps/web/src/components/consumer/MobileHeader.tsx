@@ -1,12 +1,13 @@
 'use client';
 
-import { SignedIn, SignedOut, UserButton } from '@clerk/nextjs';
+import { SignedIn, SignedOut, UserButton, useAuth } from '@clerk/nextjs';
 import Link from 'next/link';
 import { useState } from 'react';
 
 import { Wordmark } from '../Wordmark';
 import { Bookmark, Search, Sparkles, User, Wallet, X } from './icons';
 import { useHeroHeader } from './useHeroHeader';
+import { useSignInModal } from './useSignInModal';
 
 /**
  * Website-style mobile top header (≤760px) — replaces the app-like bottom tab
@@ -18,6 +19,8 @@ export function MobileHeader() {
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
   const overHero = useHeroHeader();
+  const { isSignedIn } = useAuth();
+  const openSignIn = useSignInModal();
   // Over the hero image everything goes white to blend; after scroll it reverts
   // to the normal solid header (dark icons, gold wordmark).
   const iconColor = overHero ? '#fff' : 'var(--text-primary)';
@@ -33,7 +36,7 @@ export function MobileHeader() {
 
         <div className="mh-right">
           <SignedOut>
-            <Link href="/sign-in" className="mh-signin">Sign in</Link>
+            <button type="button" className="mh-signin" onClick={() => openSignIn()}>Sign in</button>
           </SignedOut>
           <SignedIn>
             <UserButton afterSignOutUrl="/" appearance={{ elements: { avatarBox: { width: 30, height: 30 } } }} />
@@ -56,9 +59,9 @@ export function MobileHeader() {
 
             <MenuLink href="/" label="Discover" Icon={Sparkles} onNavigate={close} />
             <MenuLink href="/search" label="Search" Icon={Search} onNavigate={close} />
-            <MenuLink href="/saved" label="Saved" Icon={Bookmark} onNavigate={close} />
-            <MenuLink href="/wallet" label="Wallet" Icon={Wallet} onNavigate={close} />
-            <MenuLink href="/account" label="Account" Icon={User} onNavigate={close} />
+            <MenuLink href="/saved" label="Saved" Icon={Bookmark} onNavigate={close} gated={!isSignedIn} onGated={openSignIn} />
+            <MenuLink href="/wallet" label="Wallet" Icon={Wallet} onNavigate={close} gated={!isSignedIn} onGated={openSignIn} />
+            <MenuLink href="/account" label="Account" Icon={User} onNavigate={close} gated={!isSignedIn} onGated={openSignIn} />
 
             <div className="mh-drawer-sep" />
 
@@ -66,9 +69,9 @@ export function MobileHeader() {
               For Businesses
             </Link>
             <SignedOut>
-              <Link href="/sign-in" className="mh-drawer-cta" onClick={close}>
+              <button type="button" className="mh-drawer-cta" onClick={() => { close(); openSignIn(); }}>
                 Sign in
-              </Link>
+              </button>
             </SignedOut>
           </nav>
         </div>
@@ -77,7 +80,38 @@ export function MobileHeader() {
   );
 }
 
-function MenuLink({ href, label, Icon, onNavigate }: { href: string; label: string; Icon: typeof Sparkles; onNavigate: () => void }) {
+function MenuLink({
+  href,
+  label,
+  Icon,
+  onNavigate,
+  gated = false,
+  onGated,
+}: {
+  href: string;
+  label: string;
+  Icon: typeof Sparkles;
+  onNavigate: () => void;
+  /** When true (signed-out + account-gated link), open sign-in instead of navigating. */
+  gated?: boolean;
+  /** Opens the sign-in modal, returning to `href` after auth. */
+  onGated?: (redirectTo: string) => void;
+}) {
+  if (gated && onGated) {
+    return (
+      <button
+        type="button"
+        className="mh-drawer-link"
+        onClick={() => {
+          onNavigate();
+          onGated(href);
+        }}
+      >
+        <Icon size={20} color="var(--brand-600)" />
+        {label}
+      </button>
+    );
+  }
   return (
     <Link href={href} className="mh-drawer-link" onClick={onNavigate}>
       <Icon size={20} color="var(--brand-600)" />

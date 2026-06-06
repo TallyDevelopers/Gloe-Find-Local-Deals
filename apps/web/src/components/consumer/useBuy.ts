@@ -1,10 +1,10 @@
 'use client';
 
 import { useAuth } from '@clerk/nextjs';
-import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 import { trpc } from '../../lib/trpc';
+import { useSignInModal } from './useSignInModal';
 
 /**
  * Shared checkout actions for the deal page. "Buy now" → EMBEDDED Stripe
@@ -15,8 +15,7 @@ import { trpc } from '../../lib/trpc';
  */
 export function useBuy() {
   const { isSignedIn } = useAuth();
-  const router = useRouter();
-  const pathname = usePathname();
+  const openSignIn = useSignInModal();
   const embedded = trpc.checkout.createEmbeddedCheckout.useMutation();
   const gift = trpc.checkout.createGiftLink.useMutation();
   const [shareUrl, setShareUrl] = useState<string | null>(null);
@@ -24,7 +23,7 @@ export function useBuy() {
 
   function requireAuth(): boolean {
     if (isSignedIn) return true;
-    router.push(`/sign-in?redirect_url=${encodeURIComponent(pathname)}`);
+    openSignIn();
     return false;
   }
 
