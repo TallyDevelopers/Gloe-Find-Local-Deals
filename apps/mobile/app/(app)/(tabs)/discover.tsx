@@ -19,7 +19,6 @@ import { BrowseByCategory } from '../../../features/discover/BrowseByCategory';
 import { FilterPills } from '../../../features/discover-header/FilterPills';
 import { TreatmentPills } from '../../../features/discover-header/TreatmentPills';
 import { FilterSheet, type DiscoverFilters } from '../../../features/discover-header/FilterSheet';
-import { LocationPill } from '../../../features/discover-header/LocationPill';
 import { MapButton } from '../../../features/discover-header/MapButton';
 import { SearchBar } from '../../../features/discover-header/SearchBar';
 import { useSelectedLocation } from '../../../features/discover-header/SelectedLocationProvider';
@@ -172,15 +171,10 @@ export default function DiscoverScreen() {
         }
       >
         <Stack gap={4}>
-          {/* Header row: location pill (left) + auth link (right) */}
-          <Stack
-            direction="row"
-            justify="space-between"
-            align="center"
-            paddingX={5}
-          >
-            <LocationPill />
-            {!isSignedIn ? (
+          {/* Header row: auth link (right). Only rendered for signed-out users;
+              signed-in users skip it so there's no empty gap. */}
+          {!isSignedIn ? (
+            <Stack direction="row" justify="flex-end" align="center" paddingX={5}>
               <Link href="/(auth)/login" asChild>
                 <Pressable hitSlop={8}>
                   <Text variant="body-md" tone="link" weight="semibold">
@@ -188,8 +182,8 @@ export default function DiscoverScreen() {
                   </Text>
                 </Pressable>
               </Link>
-            ) : null}
-          </Stack>
+            </Stack>
+          ) : null}
 
           {/* Search bar + square map-view button (ResortPass pattern) */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[3], paddingHorizontal: space[5] }}>
