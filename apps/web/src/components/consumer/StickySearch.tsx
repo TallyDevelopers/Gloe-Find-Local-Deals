@@ -4,8 +4,9 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { useLocation } from '../../lib/location';
+import { LocationSheet } from './LocationSheet';
 import { SearchOverlay } from './SearchOverlay';
-import { MapPin, Search } from './icons';
+import { ChevronDown, MapPin, Search } from './icons';
 
 /**
  * Mobile-only sticky search bar. Hidden until you scroll past the hero, then it
@@ -18,6 +19,7 @@ export function StickySearch() {
   const isHome = usePathname() === '/';
   const [shown, setShown] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [locOpen, setLocOpen] = useState(false);
 
   useEffect(() => {
     // On home, reveal only once the hero (with its own search) has scrolled
@@ -33,23 +35,31 @@ export function StickySearch() {
   return (
     <>
       <div className={`sticky-search${shown ? ' is-shown' : ''}`} aria-hidden={!shown}>
-        <button
-          type="button"
-          className="sticky-search-inner"
-          onClick={() => setSearchOpen(true)}
-          tabIndex={shown ? 0 : -1}
-        >
-          <Search size={18} color="var(--text-tertiary)" />
-          <span>Search botox, facials, laser…</span>
-          {location?.label ? (
-            <span className="sticky-search-loc">
-              <MapPin size={13} color="var(--brand-600)" />
-              {location.label}
-            </span>
-          ) : null}
-        </button>
+        <div className="sticky-search-row">
+          <button
+            type="button"
+            className="sticky-search-inner"
+            onClick={() => setSearchOpen(true)}
+            tabIndex={shown ? 0 : -1}
+          >
+            <Search size={18} color="var(--text-tertiary)" />
+            <span>Search botox, facials, laser…</span>
+          </button>
+          <button
+            type="button"
+            className="sticky-search-loc-btn"
+            onClick={() => setLocOpen(true)}
+            tabIndex={shown ? 0 : -1}
+            aria-label="Set your location"
+          >
+            <MapPin size={15} color="var(--brand-600)" />
+            <span>{location?.label ?? 'Set location'}</span>
+            <ChevronDown size={13} color="var(--text-tertiary)" />
+          </button>
+        </div>
       </div>
       <SearchOverlay open={searchOpen} onClose={() => setSearchOpen(false)} />
+      <LocationSheet open={locOpen} onClose={() => setLocOpen(false)} />
     </>
   );
 }
