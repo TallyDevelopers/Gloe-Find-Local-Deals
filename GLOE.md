@@ -568,6 +568,17 @@ Pills are the **7 categories** by default. Tap one → an optional second row of
 
 Debounced (180ms) instant results · autocomplete suggestion chips while typing · idle state = recent searches (SecureStore) + "popular near you" · **zero results never dead-ends** (suggests popular nearby treatments) · compact result rows (resized thumbs, price/discount, vendor·rating·distance) with save + prefetch tap-through.
 
+### Map discovery (`apps/mobile/app/(app)/map.tsx`, GLO-25)
+
+ResortPass-style full-screen map, reached via the **square brand-colored map button** to the right of the discover search bar (`features/discover-header/MapButton.tsx`; the search bar itself is now square-cornered to match). iOS-first — Android is a deliberate fast-follow.
+
+- Opens centered on the user's current browse location ("Near you") from `SelectedLocationProvider`.
+- **Category tabs** across the top reuse `FilterPills` / `useCategoryOptions` (same DB-driven taxonomy as discover).
+- **One teal pin per spa** (`groupDealsBySpa` collapses the deal list to vendors; GLO-25 decision = card-per-spa, not per-deal). Pins **cluster** when zoomed out via a dependency-free grid bucketer (`clustering.ts`) — no supercluster lib. The active spa's pin darkens to ink.
+- **Swipeable bottom card carousel** (`MapDealCard.tsx`) two-way synced to the pins: swiping a card centers + highlights its pin; tapping a pin scrolls its card into view. A card shows the spa's headline deal plus "+N more experiences" (routes to the vendor storefront when the spa has several).
+- **"Search this area"** pill appears after panning and re-queries `deals.list` using the visible map center + a radius derived from the region span — **no backend change** (vendor lat/lng already ride on every deal).
+- A floating "N spas found" chip sits above the cards.
+
 ### Why it scales (and won't hurt us later)
 
 Everything is **data-driven + adaptive + human-confirmed**, nothing cemented to "4 deals in San Diego":

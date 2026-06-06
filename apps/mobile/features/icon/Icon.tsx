@@ -9,6 +9,7 @@ import {
   Image as ImageIcon,
   Instagram,
   type LucideProps,
+  Map,
   MapPin,
   MessageSquare,
   Phone,
@@ -35,6 +36,7 @@ const ICONS = {
   chevronLeft: ChevronLeft,
   chevronRight: ChevronRight,
   filters: SlidersHorizontal,
+  map: Map,
   close: X,
 
   // Actions

@@ -51,7 +51,7 @@ export function SearchBar({ onPress }: SearchBarProps) {
         alignItems: 'center',
         gap: space[2],
         backgroundColor: palette.surface.elevated,
-        borderRadius: radius.pill,
+        borderRadius: radius.md,
         paddingHorizontal: space[4],
         paddingVertical: space[3],
         ...shadow.sm,

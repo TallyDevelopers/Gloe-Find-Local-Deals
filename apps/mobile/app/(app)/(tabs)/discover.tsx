@@ -20,6 +20,7 @@ import { FilterPills } from '../../../features/discover-header/FilterPills';
 import { TreatmentPills } from '../../../features/discover-header/TreatmentPills';
 import { FilterSheet, type DiscoverFilters } from '../../../features/discover-header/FilterSheet';
 import { LocationPill } from '../../../features/discover-header/LocationPill';
+import { MapButton } from '../../../features/discover-header/MapButton';
 import { SearchBar } from '../../../features/discover-header/SearchBar';
 import { useSelectedLocation } from '../../../features/discover-header/SelectedLocationProvider';
 import { useSavedDeals } from '../../../features/saved/SavedDealsProvider';
@@ -190,9 +191,12 @@ export default function DiscoverScreen() {
             ) : null}
           </Stack>
 
-          {/* Search bar */}
-          <View style={{ paddingHorizontal: space[5] }}>
-            <SearchBar onPress={() => router.push('/(app)/search')} />
+          {/* Search bar + square map-view button (ResortPass pattern) */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[3], paddingHorizontal: space[5] }}>
+            <View style={{ flex: 1 }}>
+              <SearchBar onPress={() => router.push('/(app)/search')} />
+            </View>
+            <MapButton onPress={() => router.push('/(app)/map')} />
           </View>
 
           {/* On "All" the Browse-by-category tiles handle navigation, so the
