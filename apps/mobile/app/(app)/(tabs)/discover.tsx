@@ -15,7 +15,7 @@ import { useAnonSeed } from '../../../features/discover/anonSeed';
 import { CategoryRail } from '../../../features/discover/CategoryRail';
 import { ComingSoon } from '../../../features/discover/ComingSoon';
 import { DealCardLarge } from '../../../features/discover/DealCardLarge';
-import { FeaturedCarousel } from '../../../features/discover/FeaturedCarousel';
+import { BrowseByCategory } from '../../../features/discover/BrowseByCategory';
 import { FilterPills } from '../../../features/discover-header/FilterPills';
 import { TreatmentPills } from '../../../features/discover-header/TreatmentPills';
 import { FilterSheet, type DiscoverFilters } from '../../../features/discover-header/FilterSheet';
@@ -252,14 +252,15 @@ export default function DiscoverScreen() {
               onBrowseAnyway={() => setBrowseAnyway(true)}
             />
           ) : isAllView ? (
-            /* "All" view — Featured carousel + a rail per category, ALL from the
-               single discoverFeed response (one round-trip). */
+            /* "All" view — "Browse by category" tiles + a rail per category, all
+               from the single discoverFeed response (one round-trip). Featured
+               is intentionally omitted for now; it returns when sponsored is a
+               paid placement. */
             <Stack gap={8} style={{ marginTop: space[2] }}>
-              {featured.length > 0 ? (
-                <View style={{ paddingLeft: space[5] }}>
-                  <FeaturedCarousel deals={featured} onSave={toggleSave} savedIds={savedIds} />
-                </View>
-              ) : null}
+              <BrowseByCategory
+                categories={rails.map((r) => ({ slug: r.slug, displayName: r.displayName, deals: r.deals }))}
+                onSelect={(slug) => setCategorySlug(slug)}
+              />
 
               {rails.map((rail) => (
                 <CategoryRail
