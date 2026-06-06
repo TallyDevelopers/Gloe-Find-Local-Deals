@@ -16,7 +16,8 @@ import { CategoryRail } from '../../../features/discover/CategoryRail';
 import { ComingSoon } from '../../../features/discover/ComingSoon';
 import { DealCardLarge } from '../../../features/discover/DealCardLarge';
 import { BrowseByCategory } from '../../../features/discover/BrowseByCategory';
-import { FilterPills } from '../../../features/discover-header/FilterPills';
+import { CategoryTabs } from '../../../features/discover-header/CategoryTabs';
+import { Icon } from '../../../features/icon/Icon';
 import { TreatmentPills } from '../../../features/discover-header/TreatmentPills';
 import { FilterSheet, type DiscoverFilters } from '../../../features/discover-header/FilterSheet';
 import { LocationPill } from '../../../features/discover-header/LocationPill';
@@ -199,19 +200,41 @@ export default function DiscoverScreen() {
             <MapButton onPress={() => router.push('/(app)/map')} />
           </View>
 
-          {/* On "All" the Browse-by-category tiles handle navigation, so the
-              pill row is hidden (and filtering the whole feed isn't meaningful).
-              Inside a category we show the pills (incl. the "All" pill to go
-              back), the treatment drill-down, and the Filters button — where
-              refining a list actually matters. */}
+          {/* Category tabs — always visible, the primary "what am I browsing"
+              switch (ResortPass-style underline tabs). On "All" the Browse-by-
+              category tiles below give a richer landing; inside a category we
+              add the treatment drill-down + Filters button under the tabs. */}
+          <CategoryTabs selectedSlug={categorySlug} onSelect={selectCategory} />
+
           {!isAllView ? (
             <View style={{ paddingLeft: space[5], paddingRight: space[3] }}>
-              <FilterPills
-                selectedSlug={categorySlug}
-                onSelect={selectCategory}
-                onOpenFilters={() => setFilterSheetOpen(true)}
-                activeFilterCount={activeFilterCount}
-              />
+              <Stack direction="row" align="center" justify="flex-start" gap={2}>
+                <Pressable
+                  onPress={() => setFilterSheetOpen(true)}
+                  hitSlop={6}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: space[1],
+                    paddingHorizontal: space[4],
+                    paddingVertical: space[2],
+                    borderRadius: 999,
+                    backgroundColor: activeFilterCount > 0 ? palette.text.primary : palette.surface.elevated,
+                    borderWidth: 1,
+                    borderColor: activeFilterCount > 0 ? palette.text.primary : palette.border.subtle,
+                  }}
+                >
+                  <Icon
+                    name="filters"
+                    size={14}
+                    color={activeFilterCount > 0 ? '#fff' : palette.text.primary}
+                    strokeWidth={2.25}
+                  />
+                  <Text variant="body-sm" weight="semibold" tone={activeFilterCount > 0 ? 'inverse' : 'primary'}>
+                    {activeFilterCount > 0 ? `Filters · ${activeFilterCount}` : 'Filters'}
+                  </Text>
+                </Pressable>
+              </Stack>
               {categorySlug ? (
                 <TreatmentPills
                   categorySlug={categorySlug}

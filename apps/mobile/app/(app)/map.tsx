@@ -18,7 +18,7 @@ import MapView, { Marker, PROVIDER_DEFAULT, type Region } from 'react-native-map
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAnonSeed } from '../../features/discover/anonSeed';
-import { FilterPills } from '../../features/discover-header/FilterPills';
+import { CategoryTabs } from '../../features/discover-header/CategoryTabs';
 import { useSelectedLocation } from '../../features/discover-header/SelectedLocationProvider';
 import { Icon } from '../../features/icon/Icon';
 import { ClusterMarker, SpaMarker } from '../../features/map-discovery/MapPin';
@@ -259,13 +259,11 @@ export default function MapScreen() {
           </Text>
         </Stack>
 
-        {/* Row 2 — scrollable service pills (All / Injectables / Skin / …). */}
-        <View style={{ paddingLeft: space[4], paddingRight: space[3], paddingBottom: space[2] }}>
-          <FilterPills selectedSlug={categorySlug} onSelect={selectCategory} />
-        </View>
+        {/* Row 2 — category tabs (All · Injectables · Skin · …), underline style. */}
+        <CategoryTabs selectedSlug={categorySlug} onSelect={selectCategory} />
 
-        {/* Row 3 — static filter chip row (Filter · Vibe · Price · Rating · Sort). */}
-        <View style={{ paddingLeft: space[4] }}>
+        {/* Row 3 — filter pills that refine the category (Filter · Vibe · …). */}
+        <View style={{ paddingLeft: space[4], paddingTop: space[2] }}>
           <MapFilterChips filters={filters} onOpen={setFilterFocus} />
         </View>
       </View>
