@@ -5,10 +5,15 @@ import { Dimensions, FlatList, Pressable, View } from 'react-native';
 import { Icon } from '../icon/Icon';
 import { DealCard } from './DealCard';
 
-const CARD_WIDTH = Math.round(Dimensions.get('window').width * 0.62);
-// The "See all" end tile is narrower than a card — it's a CTA, not content —
-// and matches the card's square image area so it lines up with the photo row.
-const END_TILE_WIDTH = Math.round(CARD_WIDTH * 0.5);
+const CARD_WIDTH = Math.round(Dimensions.get('window').width * 0.56);
+// Rail cards use a 4:3 image (not a full square) so they're shorter — a browse
+// rail should show more at a glance, not one billboard per item.
+const RAIL_IMAGE_RATIO = 4 / 3;
+// The "See all" end tile is narrower than a card — it's a CTA, not content.
+const END_TILE_WIDTH = Math.round(CARD_WIDTH * 0.52);
+// Approx full card height (4:3 image + the text block) so the end tile centers
+// against the WHOLE card, not just the image — keeps it from floating high.
+const CARD_HEIGHT = Math.round(CARD_WIDTH / RAIL_IMAGE_RATIO) + 96;
 
 interface CategoryRailProps {
   label: string;
@@ -49,6 +54,7 @@ export function CategoryRail({ label, deals, savedIds, onSave, onSeeAll }: Categ
           <DealCard
             deal={item}
             width={CARD_WIDTH}
+            imageAspectRatio={RAIL_IMAGE_RATIO}
             isSaved={savedIds.has(item.id)}
             onSave={() => onSave(item.id)}
           />
@@ -71,7 +77,7 @@ function SeeAllTile({ onPress }: { onPress: () => void }) {
   return (
     <Pressable
       onPress={onPress}
-      style={{ width: END_TILE_WIDTH, height: CARD_WIDTH, alignItems: 'center', justifyContent: 'center', gap: space[2] }}
+      style={{ width: END_TILE_WIDTH, height: CARD_HEIGHT, alignItems: 'center', justifyContent: 'center', gap: space[2] }}
     >
       <View
         style={{

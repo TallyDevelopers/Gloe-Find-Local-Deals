@@ -15,13 +15,19 @@ interface DealCardProps {
   isSaved?: boolean;
   /** Fixed width for horizontal rails; omit to fill its column in the grid. */
   width?: number;
+  /**
+   * Image aspect ratio (width / height). Default 1 (square) for the 2-up grid;
+   * rails pass a wider ratio (e.g. 4/3) so the card isn't so tall — a browse
+   * rail wants to show more at a glance, not a billboard per item.
+   */
+  imageAspectRatio?: number;
 }
 
 /**
  * Compact image-dominant card. Fills its column in the 2-up grid, or takes a
  * fixed width inside a horizontal category rail. Tap → deal detail; heart → save.
  */
-export function DealCard({ deal, onSave, isSaved = false, width }: DealCardProps) {
+export function DealCard({ deal, onSave, isSaved = false, width, imageAspectRatio = 1 }: DealCardProps) {
   const router = useRouter();
   const { color: palette } = useTheme();
   const prefetch = usePrefetch();
@@ -51,7 +57,7 @@ export function DealCard({ deal, onSave, isSaved = false, width }: DealCardProps
         ...shadow.sm,
       }}
     >
-      <View style={{ width: '100%', aspectRatio: 1, position: 'relative' }}>
+      <View style={{ width: '100%', aspectRatio: imageAspectRatio, position: 'relative' }}>
         {deal.primaryPhotoUrl ? (
           <CachedImage
             uri={deal.primaryPhotoUrl}
