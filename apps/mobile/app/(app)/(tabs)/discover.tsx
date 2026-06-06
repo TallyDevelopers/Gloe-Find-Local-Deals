@@ -5,7 +5,7 @@ import { keepPreviousData } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Dimensions, RefreshControl, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useRequireAuth } from '../../../features/auth-gate/useRequireAuth';
@@ -14,7 +14,7 @@ import { usePrefetch } from '../../../features/prefetch/usePrefetch';
 import { useAnonSeed } from '../../../features/discover/anonSeed';
 import { CategoryRail } from '../../../features/discover/CategoryRail';
 import { ComingSoon } from '../../../features/discover/ComingSoon';
-import { DealCardLarge } from '../../../features/discover/DealCardLarge';
+import { DealCard } from '../../../features/discover/DealCard';
 import { LocationGate } from '../../../features/discover/LocationGate';
 import { BrowseByCategory } from '../../../features/discover/BrowseByCategory';
 import { FilterPills } from '../../../features/discover-header/FilterPills';
@@ -24,6 +24,11 @@ import { MapButton } from '../../../features/discover-header/MapButton';
 import { SearchBar } from '../../../features/discover-header/SearchBar';
 import { useSelectedLocation } from '../../../features/discover-header/SelectedLocationProvider';
 import { useSavedDeals } from '../../../features/saved/SavedDealsProvider';
+
+// 2-up grid geometry for the filtered/See-all view. screen − horizontal
+// padding (space[5] × 2 = 40) − the gap between the two columns, halved.
+const GRID_GAP = 12;
+const gridCardWidth = Math.floor((Dimensions.get('window').width - 40 - GRID_GAP) / 2);
 
 export default function DiscoverScreen() {
   const insets = useSafeAreaInsets();
@@ -278,23 +283,29 @@ export default function DiscoverScreen() {
               ))}
             </Stack>
           ) : (
-            /* Filtered view — big full-width cards, vertical scroll. */
-            <Stack gap={4} paddingX={5} style={{ marginTop: space[2] }}>
+            /* Filtered view — 2-up grid of compact square cards. Same square
+               photos as the rails (no cropping), just half-width so ~6 listings
+               fit per screen instead of one giant card — much better on small
+               phones. */
+            <View style={{ paddingHorizontal: space[5], marginTop: space[2] }}>
               {rest.length === 0 ? (
                 <Text variant="body-md" tone="secondary">
                   No deals match your filters in {location.label}.
                 </Text>
               ) : (
-                rest.map((deal) => (
-                  <DealCardLarge
-                    key={deal.id}
-                    deal={deal}
-                    isSaved={savedIds.has(deal.id)}
-                    onSave={() => toggleSave(deal.id)}
-                  />
-                ))
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: GRID_GAP }}>
+                  {rest.map((deal) => (
+                    <DealCard
+                      key={deal.id}
+                      deal={deal}
+                      width={gridCardWidth}
+                      isSaved={savedIds.has(deal.id)}
+                      onSave={() => toggleSave(deal.id)}
+                    />
+                  ))}
+                </View>
               )}
-            </Stack>
+            </View>
           )}
           </View>
           </>
