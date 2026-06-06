@@ -10,6 +10,7 @@ import { Carousel } from '../../../../components/consumer/Carousel';
 import { Stars } from '../../../../components/consumer/Stars';
 import { Clock, Globe, Heart, Instagram, MapPin, Navigation, Phone, X } from '../../../../components/consumer/icons';
 import { formatPrice } from '../../../../components/consumer/format';
+import { VIBE_META } from '../../../../components/consumer/vibes';
 import { trpc } from '../../../../lib/trpc';
 
 type Storefront = RouterOutputs['vendors']['storefront'];
@@ -124,6 +125,22 @@ export function SpaStorefrontClient({ id }: { id: string }) {
                   <div className="spa-info-head"><MapPin size={16} color="var(--brand-600)" /> Location</div>
                   <p className="spa-info-body">{fullAddress}</p>
                   <a className="spa-info-link" href={directionsHref} target="_blank" rel="noreferrer">Get directions →</a>
+                </div>
+              ) : null}
+
+              {vendor.vibes.length > 0 ? (
+                <div className="spa-panel-block">
+                  <div className="spa-info-head">Vibe</div>
+                  <div className="spa-chips">
+                    {vendor.vibes.map((v) => {
+                      const meta = VIBE_META[v];
+                      return (
+                        <span key={v} className="spa-chip spa-chip--brand">
+                          {meta ? `${meta.icon} ${meta.label}` : v}
+                        </span>
+                      );
+                    })}
+                  </div>
                 </div>
               ) : null}
 

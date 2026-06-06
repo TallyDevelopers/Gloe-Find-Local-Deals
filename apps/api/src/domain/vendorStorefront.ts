@@ -30,6 +30,8 @@ export interface VendorStorefront {
     logoUrl: string | null;
     hoursSummary: string | null;
     amenities: string[];
+    /** The spa's vibe slugs (clinical/luxe/…). */
+    vibes: string[];
     /** Editorial "Gloē's take" + perk chips, curated by admin. */
     gloeTake: string | null;
     gloePerks: string[];
@@ -104,6 +106,7 @@ export async function getVendorStorefront(sql: Sql, vendorId: string): Promise<V
     logo_url: string | null;
     hours_summary: string | null;
     amenities: unknown;
+    vibes: unknown;
     gloe_take: string | null;
     gloe_perks: unknown;
     lat: number | null;
@@ -119,7 +122,7 @@ export async function getVendorStorefront(sql: Sql, vendorId: string): Promise<V
       v.id, v.display_id, v.business_name, v.description,
       v.address_line1, v.address_line2, v.city, v.region, v.postal_code,
       v.phone, v.website, v.instagram_handle,
-      v.hero_image_url, v.logo_url, v.hours_summary, v.amenities,
+      v.hero_image_url, v.logo_url, v.hours_summary, v.amenities, v.vibes,
       v.gloe_take, v.gloe_perks,
       ST_Y(v.location::geometry) AS lat,
       ST_X(v.location::geometry) AS lng,
@@ -243,6 +246,7 @@ export async function getVendorStorefront(sql: Sql, vendorId: string): Promise<V
       logoUrl: v.logo_url,
       hoursSummary: v.hours_summary,
       amenities: Array.isArray(v.amenities) ? (v.amenities as string[]) : [],
+      vibes: Array.isArray(v.vibes) ? (v.vibes as string[]) : [],
       gloeTake: v.gloe_take,
       gloePerks: Array.isArray(v.gloe_perks) ? (v.gloe_perks as string[]) : [],
       lat: v.lat,

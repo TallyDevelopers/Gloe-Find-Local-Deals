@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { Sql } from '../db/client';
 import { createSignedUpload } from '../db/storage';
 import { sanitizeAmenities } from '../domain/amenities';
+import { sanitizeVibes } from '../domain/vibes';
 import {
   createDeal,
   expireElapsedDeals,
@@ -229,6 +230,26 @@ export const vendorRouter = router({
         UPDATE public.vendors SET amenities = ${ctx.sql.json(clean)} WHERE id = ${vendor.id}
       `;
       return { amenities: clean };
+    }),
+
+  /** The current vendor's vibes (the spa's "feel" — clinical / luxe / trendy …). */
+  vibes: protectedProcedure.query(async ({ ctx }) => {
+    const rows = await ctx.sql<{ vibes: string[] }[]>`
+      SELECT vibes FROM public.vendors WHERE owner_user_id = ${ctx.auth.userId} LIMIT 1
+    `;
+    return rows[0]?.vibes ?? [];
+  }),
+
+  /** Update the vendor's vibes (capped at 3 known slugs). */
+  updateVibes: protectedProcedure
+    .input(z.object({ vibes: z.array(z.string()).max(8) }))
+    .mutation(async ({ ctx, input }) => {
+      const vendor = await requireVendor(ctx);
+      const clean = sanitizeVibes(input.vibes);
+      await ctx.sql`
+        UPDATE public.vendors SET vibes = ${ctx.sql.json(clean)} WHERE id = ${vendor.id}
+      `;
+      return { vibes: clean };
     }),
 
   /**

@@ -7,6 +7,7 @@ import { Button, Card, Field, TextInput } from '../../../components/ui';
 import { Wordmark } from '../../../components/Wordmark';
 import { trpc } from '../../../lib/trpc';
 import { AMENITY_LIST } from './amenities';
+import { VIBE_LIST, MAX_VIBES } from './vibes';
 import { DealPreview } from './DealPreview';
 import { PhotoUploader } from './PhotoUploader';
 import { RedemptionLocation, type RedemptionValue } from './RedemptionLocation';
@@ -488,6 +489,19 @@ export function PostDealForm({ mode }: { mode: PostDealMode }) {
           </Card>
         ) : null}
 
+        {/* Vibes (business-level, set once). The spa's "feel" — powers the
+            consumer vibe filter on the map. Same set-once-per-business model
+            as amenities, so hidden in admin/on-behalf mode. */}
+        {!isAdmin ? (
+          <Card>
+            <h2 style={{ fontSize: 20, marginBottom: 4 }}>Vibe</h2>
+            <p style={{ color: 'var(--text-tertiary)', fontSize: 14, marginBottom: 16 }}>
+              How does your spa feel? Pick up to {MAX_VIBES} — shoppers filter by vibe on the map.
+            </p>
+            <VibePicker />
+          </Card>
+        ) : null}
+
         {/* Redemption location */}
         <Card>
           <h2 style={{ fontSize: 20, marginBottom: 4 }}>Where do they redeem?</h2>
@@ -634,6 +648,61 @@ function AmenityPicker() {
             }}
           >
             <span>{a.icon}</span> {a.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function VibePicker() {
+  const utils = trpc.useUtils();
+  const vibesQuery = trpc.vendor.vibes.useQuery();
+  const selected = new Set(vibesQuery.data ?? []);
+  const update = trpc.vendor.updateVibes.useMutation({
+    onSuccess: () => utils.vendor.vibes.invalidate(),
+  });
+
+  const atCap = selected.size >= MAX_VIBES;
+
+  const toggle = (slug: string) => {
+    const next = new Set(selected);
+    if (next.has(slug)) next.delete(slug);
+    else {
+      if (next.size >= MAX_VIBES) return; // cap reached — ignore extra picks
+      next.add(slug);
+    }
+    update.mutate({ vibes: [...next] });
+  };
+
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+      {VIBE_LIST.map((v) => {
+        const on = selected.has(v.slug);
+        const locked = !on && atCap;
+        return (
+          <button
+            key={v.slug}
+            type="button"
+            onClick={() => toggle(v.slug)}
+            disabled={locked}
+            title={v.blurb}
+            style={{
+              padding: '8px 14px',
+              borderRadius: 999,
+              border: `1px solid ${on ? 'var(--brand-500)' : 'var(--border-default)'}`,
+              background: on ? 'var(--brand-500)' : 'var(--surface-elevated)',
+              color: on ? 'var(--text-inverse)' : 'var(--text-primary)',
+              fontSize: 14,
+              fontWeight: 600,
+              display: 'flex',
+              gap: 6,
+              alignItems: 'center',
+              opacity: locked ? 0.4 : 1,
+              cursor: locked ? 'not-allowed' : 'pointer',
+            }}
+          >
+            <span>{v.icon}</span> {v.label}
           </button>
         );
       })}

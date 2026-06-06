@@ -1,6 +1,10 @@
+import { VIBES } from '../domain/vibes';
 import { publicProcedure, router } from './trpc';
 
 export const categoriesRouter = router({
+  /** The canonical vibe list (slug/label/icon/blurb) for the consumer filter UI. */
+  vibes: publicProcedure.query(() => VIBES.map((v) => ({ ...v }))),
+
   /** All active categories with their subtypes — powers the deal form + filters. */
   list: publicProcedure.query(async ({ ctx }) => {
     const cats = await ctx.sql<{ id: string; slug: string; display_name: string; is_unit_based: boolean }[]>`

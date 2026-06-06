@@ -18,11 +18,14 @@ import MapView, { Marker, PROVIDER_DEFAULT, type Region } from 'react-native-map
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAnonSeed } from '../../features/discover/anonSeed';
-import { FilterPills, useCategoryOptions } from '../../features/discover-header/FilterPills';
+import { FilterPills } from '../../features/discover-header/FilterPills';
 import { useSelectedLocation } from '../../features/discover-header/SelectedLocationProvider';
 import { Icon } from '../../features/icon/Icon';
 import { ClusterMarker, SpaMarker } from '../../features/map-discovery/MapPin';
-import { MapBrowseSheet } from '../../features/map-discovery/MapBrowseSheet';
+import { MapBrowseSheet, type MapBrowseSheetHandle } from '../../features/map-discovery/MapBrowseSheet';
+import { MapFilterChips } from '../../features/map-discovery/MapFilterChips';
+import { MapFilterSheet, type FilterFocus } from '../../features/map-discovery/MapFilterSheet';
+import { EMPTY_MAP_FILTERS, type MapFilters } from '../../features/map-discovery/mapFilters';
 import { clusterPins, zoomInto } from '../../features/map-discovery/clustering';
 import { groupDealsBySpa, type SpaPin } from '../../features/map-discovery/spaGrouping';
 import { useSavedDeals } from '../../features/saved/SavedDealsProvider';
@@ -67,13 +70,21 @@ export default function MapScreen() {
   const { location } = useSelectedLocation();
   const anonSeed = useAnonSeed();
   const { savedIds, toggle } = useSavedDeals();
-  const categoryOptions = useCategoryOptions();
 
   const mapRef = useRef<MapView>(null);
   const listRef = useRef<FlatList<SpaPin>>(null);
+  const sheetRef = useRef<MapBrowseSheetHandle>(null);
 
   const [categorySlug, setCategorySlug] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
+
+  // The map's full filter state (vibe/price/rating/sort/distance) — maps 1:1
+  // onto deals.list inputs. Opened from the chip row via `filterFocus`.
+  const [filters, setFilters] = useState<MapFilters>(EMPTY_MAP_FILTERS);
+  const [filterFocus, setFilterFocus] = useState<FilterFocus | null>(null);
+
+  // Y where the static header ends — the full sheet detent stops just below it.
+  const [headerBottom, setHeaderBottom] = useState(insets.top + 132);
 
   // The region we LOOK at vs. the center we QUERY for. We only re-query when the
   // user taps "Search this area" — panning the map shouldn't spam the backend.
@@ -97,9 +108,16 @@ export default function MapScreen() {
     {
       userLat: queryCenter.lat,
       userLng: queryCenter.lng,
-      maxDistanceMiles: queryCenter.radiusMiles,
+      // A filter-set distance overrides the visible-area radius.
+      maxDistanceMiles: filters.maxDistanceMiles ?? queryCenter.radiusMiles,
       limit: 100,
       ...(categorySlug ? { category: categorySlug } : {}),
+      ...(filters.minPriceCents !== undefined ? { minPriceCents: filters.minPriceCents } : {}),
+      ...(filters.maxPriceCents !== undefined ? { maxPriceCents: filters.maxPriceCents } : {}),
+      ...(filters.minDiscountPct !== undefined ? { minDiscountPct: filters.minDiscountPct } : {}),
+      ...(filters.minRating !== undefined ? { minRating: filters.minRating } : {}),
+      ...(filters.vibes.length > 0 ? { vibes: filters.vibes } : {}),
+      ...(filters.sort !== undefined ? { sort: filters.sort } : {}),
       ...(anonSeed ? { anonSeed } : {}),
     },
     { placeholderData: keepPreviousData, enabled: identityReady },
@@ -134,6 +152,8 @@ export default function MapScreen() {
       const idx = spas.findIndex((s) => s.vendorId === vendorId);
       if (idx < 0) return;
       Haptics.selectionAsync();
+      // Bring the sheet back to the cards detent so the tapped spa's card shows.
+      sheetRef.current?.collapse();
       setActiveIndex(idx);
       listRef.current?.scrollToOffset({ offset: idx * CARD_SNAP, animated: true });
       const spa = spas[idx];
@@ -200,8 +220,11 @@ export default function MapScreen() {
         )}
       </MapView>
 
-      {/* ── Top overlay: back + category tabs + filter row ─────────────── */}
+      {/* ── Static top chrome: location row · scrollable service pills ·
+             filter chip row. Pinned above everything (and the full sheet
+             detent stops just below it). ──────────────────────────────── */}
       <View
+        onLayout={(e) => setHeaderBottom(e.nativeEvent.layout.height)}
         style={{
           position: 'absolute',
           top: 0,
@@ -213,6 +236,7 @@ export default function MapScreen() {
           ...shadow.sm,
         }}
       >
+        {/* Row 1 — back + location (static). */}
         <Stack direction="row" align="center" gap={2} style={{ paddingHorizontal: space[4], paddingBottom: space[2] }}>
           <Pressable
             onPress={() => router.back()}
@@ -234,8 +258,15 @@ export default function MapScreen() {
             {location.label === 'Near you' ? 'Near you' : location.label}
           </Text>
         </Stack>
-        <View style={{ paddingLeft: space[4], paddingRight: space[3] }}>
+
+        {/* Row 2 — scrollable service pills (All / Injectables / Skin / …). */}
+        <View style={{ paddingLeft: space[4], paddingRight: space[3], paddingBottom: space[2] }}>
           <FilterPills selectedSlug={categorySlug} onSelect={selectCategory} />
+        </View>
+
+        {/* Row 3 — static filter chip row (Filter · Vibe · Price · Rating · Sort). */}
+        <View style={{ paddingLeft: space[4] }}>
+          <MapFilterChips filters={filters} onOpen={setFilterFocus} />
         </View>
       </View>
 
@@ -245,7 +276,7 @@ export default function MapScreen() {
           onPress={searchThisArea}
           style={{
             position: 'absolute',
-            top: insets.top + 120,
+            top: headerBottom + space[3],
             alignSelf: 'center',
             flexDirection: 'row',
             alignItems: 'center',
@@ -268,8 +299,9 @@ export default function MapScreen() {
         </Pressable>
       ) : null}
 
-      {/* ── Bottom: "N found" → slide up to browse the full list ───────── */}
+      {/* ── Bottom: 3-detent sheet — cards → map+list → full list ──────── */}
       <MapBrowseSheet
+        ref={sheetRef}
         spas={spas}
         isLoading={dealsQuery.isLoading}
         cardWidth={CARD_WIDTH}
@@ -280,6 +312,19 @@ export default function MapScreen() {
         savedIds={savedIds}
         onToggleSave={toggle}
         bottomInset={insets.bottom + space[2]}
+        headerBottom={headerBottom}
+      />
+
+      {/* ── Filter sheet — opened from any chip, focused on its section ─── */}
+      <MapFilterSheet
+        open={filterFocus !== null}
+        focus={filterFocus ?? 'all'}
+        initial={filters}
+        onClose={() => setFilterFocus(null)}
+        onApply={(next) => {
+          setFilters(next);
+          setActiveIndex(0);
+        }}
       />
     </View>
   );

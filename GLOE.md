@@ -35,7 +35,7 @@ Last consolidated: 2026-05-29. Last updated: 2026-06-01 (search & discovery engi
 | **Bottom navigation** | Discover · Saved · Wallet · Profile | §6E App shell | ✅ |
 | **Loyalty points** | Members earn points (purchases + actions) and redeem them toward bookings | §9 Credit · Linear GLO-24 | 🟡 planned |
 | **Reviews** | Gloē reviews + live Google reviews (with reviewer photos) on each deal; leads with whichever has more | §6 Consumer | ✅ |
-| **Vendor storefront** | Public spa profile — hero, logo, "Gloē's take", hours, amenities, providers, deals, video reel, reviews, map | §7 Vendor · WEB.md | ✅ |
+| **Vendor storefront** | Public spa profile — hero, logo, "Gloē's take", hours, vibe, amenities, providers, deals, video reel, reviews, map | §7 Vendor · WEB.md | ✅ |
 | **Vendor profile videos** | Spas upload short "Inside the spa" clips (vendor-level, shown on the profile) | §7 Vendor | ✅ |
 | **Location maps** | Cached static map of each spa, auto-captured when their address is set | §5 · §7 | ✅ |
 | **Vendor — post a deal** | Vendors list a treatment; we auto-tag it (Botox/Dysport) | §7 Vendor · §6A | ✅ |
@@ -573,11 +573,13 @@ Debounced (180ms) instant results · autocomplete suggestion chips while typing 
 ResortPass-style full-screen map, reached via the **square brand-colored map button** to the right of the discover search bar (`features/discover-header/MapButton.tsx`; the search bar itself is now square-cornered to match). iOS-first — Android is a deliberate fast-follow.
 
 - Opens centered on the user's current browse location ("Near you") from `SelectedLocationProvider`.
-- **Category tabs** across the top reuse `FilterPills` / `useCategoryOptions` (same DB-driven taxonomy as discover).
+- **Static top chrome** (3 rows): location bar · **scrollable service pills** (All / Injectables / Skin / … — reuses `FilterPills` / `useCategoryOptions`, same DB taxonomy) · **filter chip row** `MapFilterChips` (Filter · Vibe · Price · Rating · Sort). Every chip opens `MapFilterSheet` focused on its section; all map 1:1 onto `deals.list` inputs (`mapFilters.ts`), so applying is a spread. Vibe/rating/sort/price are **fully wired**, not stubs.
 - **One teal pin per spa** (`groupDealsBySpa` collapses the deal list to vendors; GLO-25 decision = card-per-spa, not per-deal). Pins **cluster** when zoomed out via a dependency-free grid bucketer (`clustering.ts`) — no supercluster lib. The active spa's pin darkens to ink.
-- **Swipeable bottom card carousel** (`MapDealCard.tsx`) two-way synced to the pins: swiping a card centers + highlights its pin; tapping a pin scrolls its card into view. A card shows the spa's headline deal plus "+N more experiences" (routes to the vendor storefront when the spa has several).
+- **Three-detent bottom sheet** (`MapBrowseSheet`, RN core Animated + PanResponder, no sheet/gesture dep): **collapsed** = map + swipeable cards; **mid** = cards crossfade out, sheet rises to ~45% with the vertical listing and a map peek above; **full** = map gone, straight scrollable listing under the pinned header. One `Animated.Value` (the sheet's top) drives the snap + the card↔list opacity crossfade.
+- **Swipeable cards** (`MapDealCard.tsx`) two-way synced to the pins: swiping a card centers + highlights its pin; tapping a pin collapses the sheet and scrolls its card into view. A card shows the spa's headline deal + vibe + "+N more experiences" (routes to the vendor storefront when the spa has several).
 - **"Search this area"** pill appears after panning and re-queries `deals.list` using the visible map center + a radius derived from the region span — **no backend change** (vendor lat/lng already ride on every deal).
-- A floating "N spas found" chip sits above the cards.
+
+**Vibes** (the spa's "feel" — a real aesthetics-purchase driver): a `vibes` jsonb array on `vendors` (mirrors `amenities` — `apps/api/src/domain/vibes.ts` canonical list, GIN-indexed, migration `20260606200000_add_vendor_vibes`). Vendors self-select 1–3 in the Post-Deal form (`VibePicker`); shown on the consumer storefront; filtered on the map via `deals.list`'s `vibes` input (`v.vibes ?| array[...]`). `deals.list` also gained `minRating` + `sort` inputs (already supported by `listDeals`, just newly exposed) to power the Rating + Sort chips. Seeded vibes backfilled for the demo spas.
 
 ### Why it scales (and won't hurt us later)
 
@@ -662,7 +664,7 @@ Where a medspa runs its Gloē presence: sign up, get approved, **post deals** (a
 | Signup | Business name, phone, address (Places autocomplete), categories. Creates vendor + Stripe Express account. |
 | Dashboard | Hub snapshot: sold today, redeemed today, active vouchers, held balance, 7d paid, in-transit, failed payout count. |
 | Stripe balance widget | Real-time Stripe `available` + `pending` balances. Separate query from hub snapshot. |
-| Post Deal | Full form — title, description, variants, photos, video upload, amenities, 1–2 categories, restrictions, fine print. Draft or submit for review. |
+| Post Deal | Full form — title, description, variants, photos, video upload, amenities, **vibe (1–3)**, 1–2 categories, restrictions, fine print. Draft or submit for review. |
 | Scan tab | Live QR camera (html5-qrcode) + manual code input fallback. Lookup → confirm → redeem. Blocked until Stripe onboarding done. |
 | Stripe Connect onboarding | Generates hosted Express onboarding link. Status mirrored back via webhook. |
 | Instant payout | "Pay me now" button. Eligibility: payouts_enabled + debit card. ~30 min arrival, 3% fee. |

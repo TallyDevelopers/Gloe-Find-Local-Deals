@@ -24,6 +24,12 @@ export const dealsRouter = router({
           maxPriceCents: z.number().int().min(0).optional(),
           /** 0-100, e.g. 30 means "at least 30% off". */
           minDiscountPct: z.number().int().min(0).max(100).optional(),
+          /** Minimum vendor rating (0-5). Powers the "Guest Rating" filter chip. */
+          minRating: z.number().min(0).max(5).optional(),
+          /** Spa vibe slugs to require ANY of (clinical/luxe/trendy/…). */
+          vibes: z.array(z.string().max(40)).max(8).optional(),
+          /** Result ordering for the "Sort" chip. Defaults to blended relevance. */
+          sort: sortEnum.optional(),
           /**
            * Anonymous seed for ranking jitter. Mobile generates + stores a UUID
            * once per install. Signed-in users override this with their real

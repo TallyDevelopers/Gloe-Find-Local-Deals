@@ -67,6 +67,8 @@ export interface DealVendor {
   /** Vendor coordinates — used for client-side drive time estimates. */
   lat: number | null;
   lng: number | null;
+  /** The spa's vibe slugs (clinical/luxe/…) — shown on the map card + filtered on. */
+  vibes: string[];
 }
 
 export interface DealProvider {
@@ -94,6 +96,7 @@ function mapVendor(r: {
   vendor_google_review_count: number | null;
   vendor_hours_summary: string | null;
   vendor_address_line1: string;
+  vendor_vibes: unknown;
   vendor_lat: number | null;
   vendor_lng: number | null;
 }): DealVendor {
@@ -120,6 +123,7 @@ function mapVendor(r: {
     googlePlaceId: null,
     lat: r.vendor_lat,
     lng: r.vendor_lng,
+    vibes: Array.isArray(r.vendor_vibes) ? (r.vendor_vibes as string[]) : [],
   };
 }
 
@@ -206,6 +210,8 @@ interface ListParams {
   subtypeSlug?: string;
   /** Minimum vendor rating (0-5). Falls back to Google rating when we have no native one. */
   minRating?: number;
+  /** Restrict to spas tagged with ANY of these vibe slugs (clinical/luxe/…). */
+  vibes?: string[];
   /** Result ordering. Defaults to relevance-blended ranking. */
   sort?: DealSort;
   /**
@@ -234,8 +240,10 @@ export interface DealPage {
 export async function listDeals(sql: Sql, params: ListParams = {}): Promise<DealPage> {
   const {
     userLat, userLng, maxDistanceMiles = 50, category, limit = 50, offset = 0,
-    minPriceCents, maxPriceCents, minDiscountPct, q, subtypeSlug, minRating, sort, viewerSeed,
+    minPriceCents, maxPriceCents, minDiscountPct, q, subtypeSlug, minRating, vibes, sort, viewerSeed,
   } = params;
+  const vibeFilter = Array.isArray(vibes) ? vibes.filter((v) => typeof v === 'string' && v.length > 0) : [];
+  const hasVibes = vibeFilter.length > 0;
   const hasUserLocation = typeof userLat === 'number' && typeof userLng === 'number';
   const radiusMeters = maxDistanceMiles * 1609.344;
   // Auto-"Trending" threshold (admin-tunable in god-mode). Use the caller's
@@ -312,6 +320,7 @@ export async function listDeals(sql: Sql, params: ListParams = {}): Promise<Deal
       v.google_review_count AS vendor_google_review_count,
       v.hours_summary   AS vendor_hours_summary,
       v.address_line1   AS vendor_address_line1,
+      v.vibes           AS vendor_vibes,
       ST_Y(v.location::geometry) AS vendor_lat,
       ST_X(v.location::geometry) AS vendor_lng,
       (
@@ -390,6 +399,7 @@ export async function listDeals(sql: Sql, params: ListParams = {}): Promise<Deal
       }
       ${subtypeSlug ? sql`AND s.slug = ${subtypeSlug}` : sql``}
       ${hasMinRating ? sql`AND COALESCE(v.rating_avg, v.google_rating, 0) >= ${minRating}` : sql``}
+      ${hasVibes ? sql`AND v.vibes ?| ${sql.array(vibeFilter)}::text[]` : sql``}
       ${hasQuery ? sql`AND (rel.sim >= ${SEARCH_SIM_THRESHOLD} OR rel.hard_match)` : sql``}
     -- Ranking via orderByClause: blended relevance score by default (text
     -- relevance + sponsored + rating - distance + recency + jitter), or a
@@ -736,6 +746,7 @@ export async function getDeal(sql: Sql, dealId: string): Promise<DealDetail | nu
       v.google_review_count AS vendor_google_review_count,
       v.hours_summary   AS vendor_hours_summary,
       v.address_line1   AS vendor_address_line1,
+      v.vibes           AS vendor_vibes,
       ST_Y(v.location::geometry) AS vendor_lat,
       ST_X(v.location::geometry) AS vendor_lng,
       v.google_place_id AS vendor_google_place_id,
@@ -940,6 +951,7 @@ interface DealListRow {
   vendor_google_review_count: number | null;
   vendor_hours_summary: string | null;
   vendor_address_line1: string;
+  vendor_vibes: unknown;
   vendor_lat: number | null;
   vendor_lng: number | null;
   primary_photo_url: string | null;
