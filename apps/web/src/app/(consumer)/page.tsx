@@ -11,7 +11,6 @@ import { DealCard } from '../../components/consumer/DealCard';
 import { GetTheApp } from '../../components/consumer/GetTheApp';
 import { useMediaQuery } from '../../components/consumer/useMediaQuery';
 import { LocationBanner } from '../../components/consumer/LocationBanner';
-import { DealGridSkeleton } from '../../components/consumer/Skeletons';
 import { ArrowRight, ChevronDown, Lock, MapPin, Search, ShieldCheck, Star, Wallet, Zap } from '../../components/consumer/icons';
 import { useDealLocationArgs, useLocation } from '../../lib/location';
 import { trpc } from '../../lib/trpc';
@@ -99,57 +98,58 @@ export default function HomePage() {
         </div>
       ) : null}
 
-      {/* Browse by treatment — photo cards */}
-      {populated.length > 0 ? (
-        <div className="consumer-container" style={{ paddingTop: 4 }}>
-          <div className="section-head">
-            <h2>Browse by treatment</h2>
-          </div>
-          <Carousel ariaLabel="Browse by treatment">
-            {populated.map((c) => {
-              const deals = byCat.get(c.slug) ?? [];
-              // Prefer a curated static tile image; fall back to a real deal photo.
-              const img = TREATMENT_TILE_IMAGES[c.slug] ?? deals.find((d) => d.primaryPhotoUrl)?.primaryPhotoUrl ?? null;
-              return (
-                <Link key={c.slug} href={`/treatments/${c.slug}`} className="cat-card cat-card--carousel">
-                  {img ? <BlurImage src={img} alt={c.displayName} /> : null}
-                  <span className="cat-card-label">
-                    <span className="name">{c.displayName}</span>
-                    <span className="count">{deals.length} deal{deals.length > 1 ? 's' : ''} nearby</span>
-                  </span>
-                </Link>
-              );
-            })}
-          </Carousel>
-        </div>
-      ) : null}
-
-      {/* A rail per category */}
+      {/* Browse by treatment + a rail per category. Gated together on load and
+          backed by a same-shape skeleton so the middle reserves its height —
+          the page paints top-to-bottom without the bottom sections jumping. */}
       {feed.isLoading ? (
-        <div className="consumer-container" style={{ paddingTop: 24 }}>
-          <DealGridSkeleton count={5} />
-        </div>
+        <HomeFeedSkeleton cardW={railCardW} />
       ) : (
-        populated.map((c) => {
-          const deals = byCat.get(c.slug) ?? [];
-          return (
-            <div key={c.slug} style={{ marginTop: 8 }}>
-              <div className="consumer-container" style={{ paddingTop: 12, paddingBottom: 0 }}>
-                <div className="section-head" style={{ marginBottom: 12 }}>
-                  <Link href={`/treatments/${c.slug}`} style={{ color: 'inherit' }}>
-                    <h2 style={{ margin: 0 }}>{c.displayName}</h2>
-                  </Link>
-                </div>
-                <Carousel ariaLabel={c.displayName}>
-                  {deals.slice(0, 12).map((deal) => (
-                    <DealCard key={deal.id} deal={deal} width={railCardW} />
-                  ))}
-                  <ViewMoreCard slug={c.slug} label={c.displayName} count={deals.length} />
-                </Carousel>
+        <>
+          {populated.length > 0 ? (
+            <div className="consumer-container" style={{ paddingTop: 4 }}>
+              <div className="section-head">
+                <h2>Browse by treatment</h2>
               </div>
+              <Carousel ariaLabel="Browse by treatment">
+                {populated.map((c) => {
+                  const deals = byCat.get(c.slug) ?? [];
+                  // Prefer a curated static tile image; fall back to a real deal photo.
+                  const img = TREATMENT_TILE_IMAGES[c.slug] ?? deals.find((d) => d.primaryPhotoUrl)?.primaryPhotoUrl ?? null;
+                  return (
+                    <Link key={c.slug} href={`/treatments/${c.slug}`} className="cat-card cat-card--carousel">
+                      {img ? <BlurImage src={img} alt={c.displayName} /> : null}
+                      <span className="cat-card-label">
+                        <span className="name">{c.displayName}</span>
+                        <span className="count">{deals.length} deal{deals.length > 1 ? 's' : ''} nearby</span>
+                      </span>
+                    </Link>
+                  );
+                })}
+              </Carousel>
             </div>
-          );
-        })
+          ) : null}
+
+          {populated.map((c) => {
+            const deals = byCat.get(c.slug) ?? [];
+            return (
+              <div key={c.slug} style={{ marginTop: 8 }}>
+                <div className="consumer-container" style={{ paddingTop: 12, paddingBottom: 0 }}>
+                  <div className="section-head" style={{ marginBottom: 12 }}>
+                    <Link href={`/treatments/${c.slug}`} style={{ color: 'inherit' }}>
+                      <h2 style={{ margin: 0 }}>{c.displayName}</h2>
+                    </Link>
+                  </div>
+                  <Carousel ariaLabel={c.displayName}>
+                    {deals.slice(0, 12).map((deal) => (
+                      <DealCard key={deal.id} deal={deal} width={railCardW} />
+                    ))}
+                    <ViewMoreCard slug={c.slug} label={c.displayName} count={deals.length} />
+                  </Carousel>
+                </div>
+              </div>
+            );
+          })}
+        </>
       )}
 
       {/* How it works */}
@@ -199,6 +199,40 @@ const TREATMENT_TILE_IMAGES: Record<string, string> = {
   injectables: '/treatments/injectables.jpg',
   'hormones-peptides': '/treatments/peptides.jpg',
 };
+
+/**
+ * Same-shape placeholder for the deal feed (Browse row + a few rails) shown
+ * while data loads. Reserves the middle's height so the page paints
+ * top-to-bottom and the marketing sections below never jump on load.
+ */
+function HomeFeedSkeleton({ cardW }: { cardW: number }) {
+  return (
+    <div aria-hidden>
+      <div className="consumer-container" style={{ paddingTop: 4 }}>
+        <div className="section-head"><h2>Browse by treatment</h2></div>
+        <div className="skel-rail">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="skel-tile" />
+          ))}
+        </div>
+      </div>
+      {[0, 1, 2].map((r) => (
+        <div key={r} style={{ marginTop: 8 }}>
+          <div className="consumer-container" style={{ paddingTop: 12, paddingBottom: 0 }}>
+            <div className="section-head" style={{ marginBottom: 12 }}>
+              <span className="skel-h2" />
+            </div>
+            <div className="skel-rail">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="skel-card" style={{ width: cardW }} />
+              ))}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 /** Terminal card at the end of a category rail — the "view all" affordance. */
 function ViewMoreCard({ slug, label, count }: { slug: string; label: string; count: number }) {

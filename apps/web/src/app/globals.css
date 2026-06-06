@@ -2302,3 +2302,13 @@ textarea {
   text-decoration-color: var(--brand-500); text-underline-offset: 2px;
 }
 .rev-more:hover { color: var(--brand-500); }
+
+/* Home feed loading skeleton — same shape/height as Browse + rails, so the
+   page reserves space and doesn't reflow when deals arrive. */
+.skel-rail { display: flex; gap: 16px; overflow: hidden; padding-bottom: 4px; }
+.skel-tile { flex: 0 0 auto; width: 260px; aspect-ratio: 5 / 4; border-radius: var(--radius-lg); background: var(--surface-secondary); }
+.skel-card { flex: 0 0 auto; aspect-ratio: 1 / 1.4; border-radius: var(--radius-lg); background: var(--surface-secondary); }
+.skel-h2 { display: inline-block; width: 160px; height: 24px; border-radius: 8px; background: var(--surface-secondary); }
+@media (max-width: 760px) {
+  .skel-tile { width: 62vw; max-width: 240px; }
+}
