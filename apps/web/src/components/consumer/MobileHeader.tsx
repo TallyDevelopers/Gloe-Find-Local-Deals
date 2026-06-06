@@ -90,7 +90,7 @@ function Hamburger({ color = 'var(--text-primary)' }: { color?: string }) {
   return (
     <span style={{ display: 'flex', flexDirection: 'column', gap: 4.5, width: 20 }}>
       {[0, 1, 2].map((i) => (
-        <span key={i} style={{ height: 2, borderRadius: 2, background: color }} />
+        <span key={i} style={{ height: 2, borderRadius: 2, background: color, transition: 'background-color 0.25s ease' }} />
       ))}
     </span>
   );
