@@ -195,26 +195,31 @@ export default function DiscoverScreen() {
             <SearchBar onPress={() => router.push('/(app)/search')} />
           </View>
 
-          {/* Category filter pills, with an optional treatment drill-down row
-              that only appears when the selected category has enough inventory. */}
-          <View style={{ paddingLeft: space[5], paddingRight: space[3] }}>
-            <FilterPills
-              selectedSlug={categorySlug}
-              onSelect={selectCategory}
-              onOpenFilters={() => setFilterSheetOpen(true)}
-              activeFilterCount={activeFilterCount}
-            />
-            {categorySlug ? (
-              <TreatmentPills
-                categorySlug={categorySlug}
-                selectedSubtype={subtypeSlug}
-                onSelect={setSubtypeSlug}
-                userLat={location.latitude}
-                userLng={location.longitude}
-                maxDistanceMiles={filters.maxDistanceMiles ?? 50}
+          {/* On "All" the Browse-by-category tiles handle navigation, so the
+              pill row is hidden (and filtering the whole feed isn't meaningful).
+              Inside a category we show the pills (incl. the "All" pill to go
+              back), the treatment drill-down, and the Filters button — where
+              refining a list actually matters. */}
+          {!isAllView ? (
+            <View style={{ paddingLeft: space[5], paddingRight: space[3] }}>
+              <FilterPills
+                selectedSlug={categorySlug}
+                onSelect={selectCategory}
+                onOpenFilters={() => setFilterSheetOpen(true)}
+                activeFilterCount={activeFilterCount}
               />
-            ) : null}
-          </View>
+              {categorySlug ? (
+                <TreatmentPills
+                  categorySlug={categorySlug}
+                  selectedSubtype={subtypeSlug}
+                  onSelect={setSubtypeSlug}
+                  userLat={location.latitude}
+                  userLng={location.longitude}
+                  maxDistanceMiles={filters.maxDistanceMiles ?? 50}
+                />
+              ) : null}
+            </View>
+          ) : null}
 
           {/* Thin "updating…" bar ONLY while swapping to new results with old
               ones still on screen — cold start is owned by the big spinner below,
@@ -258,7 +263,12 @@ export default function DiscoverScreen() {
                paid placement. */
             <Stack gap={8} style={{ marginTop: space[2] }}>
               <BrowseByCategory
-                categories={rails.map((r) => ({ slug: r.slug, displayName: r.displayName, deals: r.deals }))}
+                categories={rails.map((r) => ({
+                  slug: r.slug,
+                  displayName: r.displayName,
+                  deals: r.deals,
+                  tileImageUrl: r.tileImageUrl,
+                }))}
                 onSelect={(slug) => setCategorySlug(slug)}
               />
 

@@ -439,6 +439,24 @@ export interface DiscoverRail {
   displayName: string;
   deals: DealSummary[];
   hasMore: boolean;
+  /** Curated "browse by category" tile image (shared with the web), or null to
+   *  fall back to a deal photo client-side. Single source of truth so web + app
+   *  show the identical tile. */
+  tileImageUrl: string | null;
+}
+
+/**
+ * Curated tile images per category — the SAME files the web serves from
+ * /public/treatments. Built from PUBLIC_WEB_ORIGIN so both platforms read one
+ * source. Categories not listed fall back to a deal photo (matches the web).
+ */
+const CURATED_TILE_SLUGS = new Set(['injectables', 'hormones-peptides']);
+function curatedTileUrl(slug: string): string | null {
+  if (!CURATED_TILE_SLUGS.has(slug)) return null;
+  const origin = process.env.PUBLIC_WEB_ORIGIN ?? 'https://gloe.app';
+  // The web stores peptides art under /treatments/peptides.jpg.
+  const file = slug === 'hormones-peptides' ? 'peptides' : slug;
+  return `${origin}/treatments/${file}.jpg`;
 }
 
 export interface DiscoverFeed {
@@ -496,6 +514,7 @@ export async function getDiscoverFeed(sql: Sql, params: DiscoverFeedParams = {})
         displayName: c.display_name,
         deals: page.deals,
         hasMore: page.hasMore,
+        tileImageUrl: curatedTileUrl(c.slug),
       })),
     ),
   ]);
