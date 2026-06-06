@@ -11,6 +11,7 @@ import { useRequireAuth } from '../../features/auth-gate/useRequireAuth';
 import { formatRating, formatDistance } from '../../features/discover/cardMeta';
 import { formatPrice } from '../../features/discover/format';
 import { useAnonSeed } from '../../features/discover/anonSeed';
+import { LocationPickerSheet } from '../../features/discover-header/LocationPickerSheet';
 import { useSelectedLocation } from '../../features/discover-header/SelectedLocationProvider';
 import { Icon } from '../../features/icon/Icon';
 import { CachedImage, resizedUrl } from '../../features/image/CachedImage';
@@ -42,6 +43,7 @@ export default function SearchScreen() {
   const toggleSave = requireAuth('save', (dealId: string) => toggle(dealId));
 
   const [query, setQuery] = useState('');
+  const [locationPickerOpen, setLocationPickerOpen] = useState(false);
   const debounced = useDebouncedValue(query.trim(), 180);
   const active = debounced.length >= 2;
 
@@ -118,6 +120,19 @@ export default function SearchScreen() {
             ) : null}
           </View>
         </Stack>
+
+        {/* Location context — tap to search a different city (travel, planning). */}
+        <Pressable
+          onPress={() => setLocationPickerOpen(true)}
+          hitSlop={8}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: space[1], marginTop: space[3], paddingLeft: space[1] }}
+        >
+          <Icon name="pin" size={14} color={palette.text.secondary} strokeWidth={2.25} />
+          <Text variant="body-sm" tone="secondary">
+            Searching near <Text variant="body-sm" tone="primary" weight="semibold">{location.label}</Text>
+          </Text>
+          <Icon name="chevronDown" size={14} color={palette.text.tertiary} strokeWidth={2.5} />
+        </Pressable>
       </View>
 
       <ScrollView
@@ -227,6 +242,9 @@ export default function SearchScreen() {
           </Stack>
         )}
       </ScrollView>
+
+      {/* Change-location picker (opened from the "Searching near …" row). */}
+      <LocationPickerSheet open={locationPickerOpen} onClose={() => setLocationPickerOpen(false)} />
     </View>
   );
 }

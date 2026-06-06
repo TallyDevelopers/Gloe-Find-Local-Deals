@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import { Animated, Modal, Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Icon } from '../icon/Icon';
 import {
   POPULAR_CITIES,
   useSelectedLocation,
@@ -21,7 +22,7 @@ interface LocationPickerSheetProps {
 export function LocationPickerSheet({ open, onClose }: LocationPickerSheetProps) {
   const insets = useSafeAreaInsets();
   const { color: palette } = useTheme();
-  const { location, setLocation } = useSelectedLocation();
+  const { location, setLocation, requestLocation } = useSelectedLocation();
   const translateY = useRef(new Animated.Value(800)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
 
@@ -108,6 +109,30 @@ export function LocationPickerSheet({ open, onClose }: LocationPickerSheetProps)
                 Pick a city to see deals nearby.
               </Text>
             </Stack>
+
+            {/* Use my location — GPS, the top option. Picks the device fix and
+                closes; falls through silently if permission is blocked (the
+                city list below is the fallback). */}
+            <Pressable
+              onPress={async () => {
+                const ok = await requestLocation();
+                if (ok) close();
+              }}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: space[3],
+                paddingVertical: space[4],
+                paddingHorizontal: space[5],
+                backgroundColor: palette.brand[100],
+                borderRadius: radius.lg,
+              }}
+            >
+              <Icon name="pin" size={18} color={palette.brand[600]} strokeWidth={2.25} />
+              <Text variant="body-md" tone="primary" weight="semibold">
+                Use my current location
+              </Text>
+            </Pressable>
 
             <Stack gap={2}>
               <Text variant="label" tone="tertiary">

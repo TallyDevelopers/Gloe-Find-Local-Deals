@@ -4,7 +4,7 @@ import { Stack, Text, radius, shadow, space, useTheme } from '@gloe/ui';
 import { keepPreviousData } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAnonSeed } from '../../features/discover/anonSeed';
 import { CategoryTabs } from '../../features/discover-header/CategoryTabs';
+import { LocationPickerSheet } from '../../features/discover-header/LocationPickerSheet';
 import { useSelectedLocation } from '../../features/discover-header/SelectedLocationProvider';
 import { Icon } from '../../features/icon/Icon';
 import { ClusterMarker, SpaMarker } from '../../features/map-discovery/MapPin';
@@ -82,6 +83,7 @@ export default function MapScreen() {
   // onto deals.list inputs. Opened from the chip row via `filterFocus`.
   const [filters, setFilters] = useState<MapFilters>(EMPTY_MAP_FILTERS);
   const [filterFocus, setFilterFocus] = useState<FilterFocus | null>(null);
+  const [locationPickerOpen, setLocationPickerOpen] = useState(false);
 
   // Y where the static header ends — the full sheet detent stops just below it.
   const [headerBottom, setHeaderBottom] = useState(insets.top + 132);
@@ -100,6 +102,17 @@ export default function MapScreen() {
   });
   // True when the visible region has drifted from the last queried center.
   const [areaDirty, setAreaDirty] = useState(false);
+
+  // When the browse location changes (user picked a city / shared GPS), fly the
+  // map there and re-query around it. Keyed on coords so it only fires on a real
+  // change, not every render.
+  useEffect(() => {
+    const next = regionFromLocation(location.latitude, location.longitude);
+    mapRef.current?.animateToRegion(next, 400);
+    setQueryCenter({ lat: location.latitude, lng: location.longitude, radiusMiles: 12 });
+    setAreaDirty(false);
+    setActiveIndex(0);
+  }, [location.latitude, location.longitude]);
 
   const isSignedIn = status === 'signed-in';
   const identityReady = isSignedIn || anonSeed !== null;
@@ -254,9 +267,18 @@ export default function MapScreen() {
           >
             <Icon name="chevronLeft" size={20} color={palette.text.primary} />
           </Pressable>
-          <Text variant="body-md" tone="primary" weight="semibold" numberOfLines={1} style={{ flex: 1 }}>
-            {location.label === 'Near you' ? 'Near you' : location.label}
-          </Text>
+          {/* Tappable location — opens the city picker (change where you're
+              browsing; the map re-centers on the new location). */}
+          <Pressable
+            onPress={() => setLocationPickerOpen(true)}
+            hitSlop={8}
+            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: space[1] }}
+          >
+            <Text variant="body-md" tone="primary" weight="semibold" numberOfLines={1}>
+              {location.label}
+            </Text>
+            <Icon name="chevronDown" size={16} color={palette.text.tertiary} strokeWidth={2.5} />
+          </Pressable>
         </Stack>
 
         {/* Row 2 — category tabs (All · Injectables · Skin · …), underline style. */}
@@ -324,6 +346,9 @@ export default function MapScreen() {
           setActiveIndex(0);
         }}
       />
+
+      {/* Change-location picker (opened from the tappable location label). */}
+      <LocationPickerSheet open={locationPickerOpen} onClose={() => setLocationPickerOpen(false)} />
     </View>
   );
 }

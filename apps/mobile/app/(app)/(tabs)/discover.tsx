@@ -3,9 +3,9 @@ import { useAuth } from '@gloe/auth';
 import { Stack, Text, space, useTheme } from '@gloe/ui';
 import { keepPreviousData } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
-import { Link, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { ActivityIndicator, RefreshControl, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useRequireAuth } from '../../../features/auth-gate/useRequireAuth';
@@ -15,6 +15,7 @@ import { useAnonSeed } from '../../../features/discover/anonSeed';
 import { CategoryRail } from '../../../features/discover/CategoryRail';
 import { ComingSoon } from '../../../features/discover/ComingSoon';
 import { DealCardLarge } from '../../../features/discover/DealCardLarge';
+import { LocationGate } from '../../../features/discover/LocationGate';
 import { BrowseByCategory } from '../../../features/discover/BrowseByCategory';
 import { FilterPills } from '../../../features/discover-header/FilterPills';
 import { TreatmentPills } from '../../../features/discover-header/TreatmentPills';
@@ -30,7 +31,7 @@ export default function DiscoverScreen() {
   const { status } = useAuth();
   const requireAuth = useRequireAuth();
   const { savedIds, toggle } = useSavedDeals();
-  const { location, gpsResolved, gpsDenied } = useSelectedLocation();
+  const { location, gpsResolved, gpsDenied, hasLocation } = useSelectedLocation();
   const { color: palette } = useTheme();
   const anonSeed = useAnonSeed();
 
@@ -62,7 +63,9 @@ export default function DiscoverScreen() {
   // that piled up. Gate on: location resolved (GPS done or denied) AND identity
   // ready (signed-in users use their id; anon users wait for the seed).
   const identityReady = isSignedIn || anonSeed !== null;
-  const inputsReady = (gpsResolved || gpsDenied) && identityReady;
+  // Gate queries on having a REAL location now — no location means the home
+  // takeover shows instead of a feed, so there's nothing to fetch yet.
+  const inputsReady = hasLocation && identityReady;
 
   // ── "All" view: the WHOLE screen (featured + every rail) in ONE request.
   // Replaces the old fan-out of one deals.list per rail that drained the pool.
@@ -171,21 +174,9 @@ export default function DiscoverScreen() {
         }
       >
         <Stack gap={4}>
-          {/* Header row: auth link (right). Only rendered for signed-out users;
-              signed-in users skip it so there's no empty gap. */}
-          {!isSignedIn ? (
-            <Stack direction="row" justify="flex-end" align="center" paddingX={5}>
-              <Link href="/(auth)/login" asChild>
-                <Pressable hitSlop={8}>
-                  <Text variant="body-md" tone="link" weight="semibold">
-                    Sign in
-                  </Text>
-                </Pressable>
-              </Link>
-            </Stack>
-          ) : null}
-
-          {/* Search bar + square map-view button (ResortPass pattern) */}
+          {/* Search bar + square map-view button (ResortPass pattern). No
+              sign-in link here — the Profile tab + the auth-gate on any action
+              (buy/save) already handle it; a header link was just clutter. */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[3], paddingHorizontal: space[5] }}>
             <View style={{ flex: 1 }}>
               <SearchBar onPress={() => router.push('/(app)/search')} />
@@ -193,6 +184,11 @@ export default function DiscoverScreen() {
             <MapButton onPress={() => router.push('/(app)/map')} />
           </View>
 
+          {/* No location yet → the feed is replaced by a single share-location
+              ask (LocationGate). The happy path (located) shows zero location
+              chrome; this only ever appears when there's nothing local to show. */}
+          {!hasLocation ? <LocationGate /> : (
+          <>
           {/* On "All" the Browse-by-category tiles handle navigation, so the
               pill row is hidden (and filtering the whole feed isn't meaningful).
               Inside a category we show the pills (incl. the "All" pill to go
@@ -301,6 +297,8 @@ export default function DiscoverScreen() {
             </Stack>
           )}
           </View>
+          </>
+          )}
         </Stack>
       </ScrollView>
 
