@@ -1,8 +1,11 @@
 import { trpc } from '@gloe/api-client';
-import { Button, Input, Stack, Text, space, useTheme } from '@gloe/ui';
+import { Button, Input, Stack, Text, radius, space, useTheme } from '@gloe/ui';
 import * as Haptics from 'expo-haptics';
 import { useState } from 'react';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
+
+import { Icon } from '../icon/Icon';
+import { LocationPickerSheet } from '../discover-header/LocationPickerSheet';
 
 interface ComingSoonProps {
   /** The user's resolved area label, e.g. "Near you" or a picked city. */
@@ -28,6 +31,7 @@ export function ComingSoon({ cityLabel, lat, lng, onBrowseAnyway }: ComingSoonPr
 
   const [email, setEmail] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   const cities = liveCities.data ?? [];
   const liveCitiesText =
@@ -97,6 +101,38 @@ export function ComingSoon({ cityLabel, lat, lng, onBrowseAnyway }: ComingSoonPr
           </Text>
         </View>
 
+        {/* Take a look around a live area. Out-of-area users can enter an address
+            or pick a popular city to see how Gloē works before we reach them —
+            picking a live city flips the feed and this screen falls away. */}
+        <Pressable
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            setPickerOpen(true);
+          }}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: space[3],
+            paddingVertical: space[4],
+            paddingHorizontal: space[5],
+            borderColor: palette.border.default,
+            borderWidth: 1,
+            borderRadius: radius.lg,
+            width: '100%',
+          }}
+        >
+          <Icon name="search" size={18} color={palette.brand[600]} strokeWidth={2.25} />
+          <Stack gap={0} style={{ flex: 1 }}>
+            <Text variant="body-md" tone="primary" weight="semibold">
+              Explore a live city
+            </Text>
+            <Text variant="caption" tone="secondary">
+              Enter an address or pick a city to see how it works.
+            </Text>
+          </Stack>
+          <Icon name="chevronRight" size={18} color={palette.text.tertiary} strokeWidth={2} />
+        </Pressable>
+
         {submitted ? (
           <Stack gap={2} align="center" style={{ paddingVertical: space[3] }}>
             <Text variant="body-lg" tone="primary" weight="semibold" style={{ textAlign: 'center' }}>
@@ -137,6 +173,8 @@ export function ComingSoon({ cityLabel, lat, lng, onBrowseAnyway }: ComingSoonPr
 
         <Button label="Browse SoCal deals" variant="ghost" fullWidth onPress={onBrowseAnyway} />
       </Stack>
+
+      <LocationPickerSheet open={pickerOpen} onClose={() => setPickerOpen(false)} />
     </View>
   );
 }

@@ -8,6 +8,7 @@ import { usePrefetch } from '../prefetch/usePrefetch';
 import { Icon } from '../icon/Icon';
 import { formatDistance, formatDriveTime, formatRating } from './cardMeta';
 import { formatPrice } from './format';
+import { TrendingRibbon } from './TrendingRibbon';
 
 interface DealCardProps {
   deal: DealSummary;
@@ -110,6 +111,7 @@ export function DealCard({ deal, onSave, isSaved = false, width, imageAspectRati
             {discountPct}% off
           </Text>
         </View>
+        {deal.isTrending ? <TrendingRibbon bottom={8} /> : null}
       </View>
 
       <View style={{ padding: space[3] }}>

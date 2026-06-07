@@ -7,6 +7,7 @@ import { CachedImage } from '../image/CachedImage';
 import { usePrefetch } from '../prefetch/usePrefetch';
 import { Icon } from '../icon/Icon';
 import { formatPrice } from './format';
+import { TrendingRibbon } from './TrendingRibbon';
 
 interface FeaturedCarouselProps {
   deals: DealSummary[];
@@ -137,6 +138,7 @@ function FeaturedCard({ deal, width, isSaved, onSave }: FeaturedCardProps) {
             {discountPct}% off
           </Text>
         </View>
+        {deal.isTrending ? <TrendingRibbon /> : null}
       </View>
 
       <View style={{ padding: space[4] }}>

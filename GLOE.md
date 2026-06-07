@@ -10,6 +10,8 @@ Last consolidated: 2026-05-29. Last updated: 2026-06-01 (search & discovery engi
 
 **Gloē in one line:** the first app a woman opens when she's thinking about Botox, filler, or any aesthetic treatment — to find and book the best deal near her, today. A two-sided marketplace: **consumers** find and buy deals; **vendors** post for free and pay only when a customer actually shows up and redeems.
 
+> 📖 [**HOW-IT-WORKS.md**](./HOW-IT-WORKS.md) is the **founder-readable companion** to this doc — the plain-language, end-to-end tour of how the app *behaves* (how the homepage loads, how trending is computed, how money moves, every edge case, what's not built yet). Same facts as this spec, friendlier voice. Read it when you want to *understand* the app; read this when you want to *build on* it.
+
 ### This doc has two readers — every section is written for both
 
 > **📖 How to read any section:** look for the two parts.
@@ -24,6 +26,7 @@ Last consolidated: 2026-05-29. Last updated: 2026-06-01 (search & discovery engi
 | Feature | 💼 In plain English | 🔧 Where it's documented | Status |
 |---|---|---|---|
 | **Discover feed** | Browse the best aesthetic deals near you, ranked | §6 Consumer app | ✅ |
+| **Map discovery** | ResortPass-style map — pins per spa, category tabs, swipeable cards | §6A → Map discovery · Linear GLO-25 | ✅ |
 | **Search** | Type a treatment — even misspelled or slang ("tox") — get nearby matches | §6A Search engine | ✅ |
 | **Claim & pay** | Buy a voucher in-app with Apple Pay or card | §6B Pay & share · §4 Money | ✅ |
 | **Share to pay** | Text a link so someone *else* pays for your treatment | §6B Pay & share | ✅ |
@@ -427,11 +430,11 @@ The iPhone app a customer actually uses: **find** a deal (Discover + Search), **
 
 | Tab | Status | Purpose |
 |---|---|---|
-| Discover | Shipped | Feed of deals near you. Category rail, featured carousel, filter pills. |
-| Map | **Not built** | Removed from nav. Future addition for v1.1. |
+| Discover | Shipped | Feed of deals near you. Per-category rails (4:3 cards) each ending in an inline "See all" tile → 2-up category grid; filter pills; location-gated home (§6A). |
+| Map | Shipped | ResortPass-style map discovery (GLO-25). Reached via the brand map button by the search bar. Full detail in §6A → "Map discovery". |
 | Saved | Shipped | Bookmarked deals + vendors. Segmented control. |
 | Wallet | Shipped | Active vouchers, past claims, soonest-expiring hero, credit balance (stub at $0). |
-| Profile | Shipped | Account settings, sign out. Delete account = **stub**. |
+| Profile | Shipped | Grouped settings (ACTIVITY / PREFERENCES / SUPPORT & ABOUT), sign out, delete account (SHIPPED). See "Profile screen" below. |
 
 ### Key flows
 
@@ -454,16 +457,17 @@ The iPhone app a customer actually uses: **find** a deal (Discover + Search), **
 
 **Search:** ✅ **Built** — `app/(app)/search.tsx` is the live fuzzy/synonym-aware search; `deals.search` / `deals.suggest` / `deals.trending` / `deals.detectSubtype` / `deals.categoryTreatments` back it. Full breakdown in **§6A**.
 
-**Location gate (GLO-26):** Home stays pristine — location is handled invisibly. `SelectedLocationProvider` has a real **unset** state (`hasLocation`): on launch it lights up only from an already-granted GPS fix (no cold-start permission nag), and the San Diego coords are demoted to a neutral *map camera*, never surfaced as "your location." When `hasLocation` is false, the Discover All view is replaced by a full-screen `LocationGate` ("See med-spa deals near you → Use my location"); granted → real feed with **zero location chrome**, denied/blocked → the city picker. Changing location lives only in **Map + Search** (tappable location label → `LocationPickerSheet`, which also has a "Use my current location" GPS row); the home header carries no location UI and no sign-in link (Profile tab + auth-gate cover sign-in).
+**Location gate (GLO-26):** Home stays pristine — location is handled invisibly. `SelectedLocationProvider` has a real **unset** state (`hasLocation`): on launch it lights up only from an already-granted GPS fix (no cold-start permission nag), and the San Diego coords are demoted to a neutral *map camera*, never surfaced as "your location." When `hasLocation` is false, the Discover All view is replaced by a full-screen `LocationGate` ("See med-spa deals near you → Use my location"); granted → real feed with **zero location chrome**, denied/blocked → the city picker. Changing location lives only in **Map + Search** (tappable location label → `LocationPickerSheet`); the home header carries no location UI and no sign-in link (Profile tab + auth-gate cover sign-in). `LocationPickerSheet` offers three ways in: **free-text address/city search** (geocoded on submit via `expo-location`'s `geocodeAsync` + `reverseGeocodeAsync` for a clean "City, ST" label — no API key, errors stay inline), a **"Use my current location"** GPS row, and the curated `POPULAR_CITIES` list.
 
 **Out-of-area ("coming soon") gate:**
 - We launch in LA / Orange County / San Diego. When a **located** user's area has **zero deals within 50mi** (no category/filter active), Discover shows `ComingSoon` instead of an empty grid. (Distinct from the location gate above: that's "we don't know where you are"; this is "we know, but we're not there yet".)
 - The gate is **data-driven, not a hardcoded boundary**: the moment a new city gets its first live deal, the next nearby user sees a feed automatically — no deploy, no flag. "The listing unlocks the gate."
 - The screen lists the cities that are **actually live** (`waitlist.liveCities` → distinct cities with active deals), so the "Now live in …" copy is never stale even with multiple cities open.
-- Email capture (`waitlist.join`, public) stores `{email, city_label, lat, lng}` in `region_waitlist` (upsert on email). No notification fires yet — this is demand collection. Admin god-mode **Waitlist** tab (`WaitlistView`) shows demand ranked by city = the expansion roadmap. "Browse SoCal deals" escape hatch lets out-of-area users into the SD-default feed anyway.
+- Email capture (`waitlist.join`, public) stores `{email, city_label, lat, lng}` in `region_waitlist` (upsert on email). No notification fires yet — this is demand collection. Admin god-mode **Waitlist** tab (`WaitlistView`) shows demand ranked by city = the expansion roadmap.
+- **"Explore a live city"** row opens the shared `LocationPickerSheet` so out-of-area users can enter an address or tap a live city and see how Gloē works; picking a city with deals re-fires the feed and `ComingSoon` falls away. A blunter "Browse SoCal deals" escape hatch also drops them into the SD-default feed.
 
 **In-app support tickets (consumer ↔ Gloē):**
-- Profile → Help & support opens `support/cases.tsx` (list of cases + new request) → `support/[id].tsx` (chat thread). Customer opens a case, sees ongoing cases in chat format, replies inline.
+- Profile → **Concierge** opens `support/cases.tsx` (list of cases + new request) → `support/[id].tsx` (chat thread). Customer opens a case, sees ongoing cases in chat format, replies inline.
 - Backend: `support_tickets` + `support_messages` tables (purpose-built — NOT the dead vendor-shaped `message_threads`). 5-state machine: `open → awaiting_us → awaiting_customer → resolved → closed`. `domain/supportTickets.ts` (consumer, all `userId`-scoped, IDOR-guarded) + `support.router.ts`.
 - God mode: **Support** tab (`SupportView.tsx`) lists tickets `awaiting_us`-first (triage queue) with a reply drawer. Agent reply is the ONLY place an APNs push fires (`createAgentReply` in `admin.ts` → `sendApnsPushToUser`, fire-and-forget, `data:{type:'support_reply',ticketId}` read flat on device).
 - Push-on-reply + a **permission-aware** caption above the composer: "You can close the app — we'll notify you the moment we reply" (granted) vs a "turn on notifications" prompt (denied). Notification tap deep-links to the thread via a listener in `usePushRegistration.ts`.
@@ -476,6 +480,18 @@ The iPhone app a customer actually uses: **find** a deal (Discover + Search), **
 - Backend: `support_message_attachments` table + `support-attachments` bucket. `support.signAttachmentUpload` (consumer) + `admin.signSupportAttachmentUpload` (god mode). `create`/`reply` accept an `attachments[]`; a body-or-attachment refine lets a photo-only message through.
 - iOS: `NSPhotoLibraryUsageDescription` + `NSCameraUsageDescription` + `NSMicrophoneUsageDescription` in Info.plist (the missing photo key was hard-crashing the picker).
 - **Watch-out:** the batched attachment fetch uses `ANY(...)::uuid[]` — the `::uuid[]` cast is required (postgres.js `sql.array()` yields `text[]`; without the cast the query throws and the router masked it as a bogus NOT_FOUND/"couldn't open conversation"). The getCase catch now surfaces non-NOT_FOUND errors as 500 instead of hiding them.
+
+### Profile screen (`app/(app)/(tabs)/profile.tsx`) — SHIPPED
+
+Account hub. Header (avatar/stats when signed in, or the sign-up/sign-in card when out), then settings grouped **by intent** rather than one flat list — the grouping is what tells the user where to look:
+
+- **ACTIVITY** (signed-in only) — your stuff *inside* the app: Your deals (with a live active-claims count badge), My receipts & vouchers.
+- **PREFERENCES** — things you tune: Appearance (in-app), Notifications + Location settings (deep-link to iOS Settings → Gloe; in-app toggles would be fake controls that just call `openSettings()` anyway).
+- **SUPPORT & ABOUT** — the help/legal/footer cluster: **Concierge**, Contact info (mailto), Rate Gloē, Terms & privacy, About Gloē (shows version). **Concierge sits here, not in ACTIVITY, so it's reachable even signed-out** — the likeliest reason someone digs through Profile while logged out is they're stuck and need help (the ticket flow can prompt sign-in at send time).
+
+Each group is its own card via one shared `SettingsGroup` renderer (no copy-paste). Rows carry an optional `badge` (count) and an `external` flag that picks the trailing icon.
+
+**Icon seam (cohesion rule):** trailing indicators use the central `features/icon/Icon.tsx` Lucide seam — `chevronRight` for in-app navigation, `arrowUpRight` for "opens externally". Never raw Unicode glyphs: bare `↗`/`›` text was being auto-promoted by iOS to a full-color emoji (ignoring tone), which is why these are real SVG icons. All app icons go through this seam so the library can be swapped in one file.
 
 ### Account deletion (Apple 5.1.1(v)) — SHIPPED
 
@@ -565,6 +581,16 @@ The taxonomy is **7 categories → 42 treatment subtypes** (Botox, Dysport, Juve
 ### Customer drill-down (inventory-gated)
 
 Pills are the **7 categories** by default. Tap one → an optional second row of **treatment** sub-pills appears — but only treatments with **≥2 nearby deals** (`TreatmentPills` renders nothing below that). Cold-start safe: with thin inventory there's no drill row (no dead-ends "showing nothing but one"); as vendors are added and treatments cross the floor, the row lights up **on its own, same code**. Drilling is always opt-in — a leading "All" pill keeps the whole category.
+
+### Home rails & "See all" (`features/discover/`)
+
+The Discover **All** view renders one horizontal rail per service category (`CategoryRail.tsx`), fed by `deals.discoverFeed`. Presentation details (the recent polish pass):
+
+- **4:3 rail cards** — shorter than the old portrait cards, so more of the rail is visible at a glance on small phones.
+- **Inline "See all" tile** at the *end* of each rail (not a tired top-right "See all →" link — that's gone; the rail's category label stays tappable). Tapping it opens the category view.
+- **2-up category grid** — the category / See-all view lays deals out two-up, small-phone-friendly, with the See-all entry tile centered.
+
+(GLO-27 will later replace the dry category-noun rail headings with admin-authored editorial taglines that can pool multiple categories — not built yet; this section describes today's per-category behavior.)
 
 ### Search screen (`apps/mobile/app/(app)/search.tsx`)
 
@@ -802,7 +828,7 @@ The **infra switches** (Stripe live keys, live webhook, Railway env, EAS build, 
 - **Apple Wallet live updates** — pass generation ships, but status flips (e.g. "Redeemed") need APNs Pass Web Service spec wiring. Schema for `pass_registrations` is there. Not a launch blocker.
 - ~~**Delete account in-app**~~ — **DONE** (`me.deleteAccount`, anonymize-and-deactivate; see §6).
 - **ATT prompt** — required per Apple 5.1.2 if any cross-app analytics. Add `expo-tracking-transparency`.
-- **Map tab** — not in nav. Future v1.1.
+- ~~**Map discovery**~~ — **DONE** (GLO-25; ResortPass-style, reached via the search-bar map button, not a bottom tab — see §6A "Map discovery").
 - **Credit & loyalty system** — stubbed at $0.
 - **Sentry + Mixpanel** — not wired.
 - **CI/CD** — no `.github/workflows/`. Manual Railway deploy.

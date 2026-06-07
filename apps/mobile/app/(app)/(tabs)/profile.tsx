@@ -7,6 +7,7 @@ import { Alert, Linking, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useClaimedDeals } from '../../../features/claimed/ClaimedDealsProvider';
+import { Icon } from '../../../features/icon/Icon';
 import { CachedImage } from '../../../features/image/CachedImage';
 import { StatusBarBackdrop } from '../../../features/layout/StatusBarBackdrop';
 import { usePrefetch } from '../../../features/prefetch/usePrefetch';
@@ -96,59 +97,10 @@ export default function ProfileScreen() {
             />
           ) : null}
 
-          {isSignedIn ? (
-            <Stack gap={2}>
-              <Text variant="label" tone="tertiary" style={{ paddingHorizontal: space[2] }}>
-                ACTIVITY
-              </Text>
-              <View
-                style={{
-                  backgroundColor: palette.surface.elevated,
-                  borderRadius: radius.lg,
-                  overflow: 'hidden',
-                }}
-              >
-                <Pressable
-                  onPress={() => router.push('/(app)/(tabs)/saved')}
-                  style={{
-                    paddingVertical: space[4],
-                    paddingHorizontal: space[5],
-                    flexDirection: 'row',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                  }}
-                >
-                  <Text variant="body-md" tone="primary">
-                    Your deals
-                  </Text>
-                  <Stack direction="row" gap={2} align="center">
-                    {activeClaims.length > 0 ? (
-                      <View
-                        style={{
-                          minWidth: 22,
-                          height: 22,
-                          paddingHorizontal: space[2],
-                          borderRadius: 11,
-                          backgroundColor: palette.brand[500],
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                        }}
-                      >
-                        <Text variant="caption" tone="inverse" weight="bold">
-                          {activeClaims.length}
-                        </Text>
-                      </View>
-                    ) : null}
-                    <Text variant="body-md" tone="tertiary">
-                      ›
-                    </Text>
-                  </Stack>
-                </Pressable>
-              </View>
-            </Stack>
-          ) : null}
-
           <SettingsList
+            isSignedIn={isSignedIn}
+            activeClaimsCount={activeClaims.length}
+            onYourDeals={() => router.push('/(app)/(tabs)/saved')}
             onAppearance={() => router.push('/(app)/settings/appearance')}
             onOpenWallet={() => router.push('/(app)/(tabs)/wallet')}
             onOpenSupport={() => router.push('/(app)/support/cases')}
@@ -241,9 +193,12 @@ function ActiveCaseCard({
               </Text>
             ) : null}
           </Stack>
-          <Text variant="caption" tone="brand" weight="semibold">
-            Open conversation ›
-          </Text>
+          <Stack direction="row" gap={1} align="center">
+            <Text variant="caption" tone="brand" weight="semibold">
+              Open conversation
+            </Text>
+            <Icon name="chevronRight" size={14} color={palette.brand[500]} />
+          </Stack>
         </Stack>
       </View>
     </Pressable>
@@ -402,34 +357,83 @@ function StatRow({ label, value }: { label: string; value: string }) {
 }
 
 function SettingsList({
+  isSignedIn,
+  activeClaimsCount,
+  onYourDeals,
   onAppearance,
   onOpenWallet,
   onOpenSupport,
 }: {
+  isSignedIn: boolean;
+  activeClaimsCount: number;
+  onYourDeals: () => void;
   onAppearance: () => void;
   onOpenWallet: () => void;
   onOpenSupport: () => void;
 }) {
-  const { color: palette } = useTheme();
-  // Notifications / Location both deeplink to iOS Settings → Gloe — the only
-  // place the user can actually toggle these permissions. Doing it in-app
-  // would just be a fake control that calls openSettings() anyway.
-  const rows: { label: string; value?: string; onPress: () => void; external?: boolean }[] = [
-    { label: 'Appearance', onPress: onAppearance },
-    { label: 'Notifications', onPress: () => Linking.openSettings(), external: true },
-    { label: 'Location settings', onPress: () => Linking.openSettings(), external: true },
-    { label: 'My receipts & vouchers', onPress: onOpenWallet },
-    { label: 'Contact info', onPress: () => Linking.openURL('mailto:support@gloe.app?subject=Update%20my%20contact%20info'), external: true },
-    { label: 'Rate Gloē', onPress: () => Linking.openURL(APP_STORE_REVIEW_URL), external: true },
-    { label: 'Concierge', onPress: onOpenSupport },
-    { label: 'Terms & privacy', onPress: () => Linking.openURL('https://gloe.app/terms'), external: true },
-    { label: 'About Gloē', value: `v${APP_VERSION}`, onPress: () => Linking.openURL('https://gloe.app/about'), external: true },
+  // Grouped so the list reads by intent rather than as a flat dump:
+  //  • Activity — your own stuff inside the app (signed-in only).
+  //  • Preferences — things you tune (Notifications/Location deep-link to iOS
+  //    Settings → Gloe, the only place those permissions can be toggled).
+  //  • Support & about — the footer/legal/help cluster.
+  const groups: { title: string; rows: SettingsRow[] }[] = [
+    ...(isSignedIn
+      ? [
+          {
+            title: 'ACTIVITY',
+            rows: [
+              { label: 'Your deals', onPress: onYourDeals, badge: activeClaimsCount },
+              { label: 'My receipts & vouchers', onPress: onOpenWallet },
+            ] as SettingsRow[],
+          },
+        ]
+      : []),
+    {
+      title: 'PREFERENCES',
+      rows: [
+        { label: 'Appearance', onPress: onAppearance },
+        { label: 'Notifications', onPress: () => Linking.openSettings(), external: true },
+        { label: 'Location settings', onPress: () => Linking.openSettings(), external: true },
+      ],
+    },
+    {
+      title: 'SUPPORT & ABOUT',
+      rows: [
+        // Always visible (even signed-out): the likeliest reason someone digs
+        // through Profile while logged out is they're stuck and need help.
+        { label: 'Concierge', onPress: onOpenSupport },
+        { label: 'Contact info', onPress: () => Linking.openURL('mailto:support@gloe.app?subject=Update%20my%20contact%20info'), external: true },
+        { label: 'Rate Gloē', onPress: () => Linking.openURL(APP_STORE_REVIEW_URL), external: true },
+        { label: 'Terms & privacy', onPress: () => Linking.openURL('https://gloe.app/terms'), external: true },
+        { label: 'About Gloē', value: `v${APP_VERSION}`, onPress: () => Linking.openURL('https://gloe.app/about'), external: true },
+      ],
+    },
   ];
 
   return (
+    <Stack gap={5}>
+      {groups.map((group) => (
+        <SettingsGroup key={group.title} title={group.title} rows={group.rows} />
+      ))}
+    </Stack>
+  );
+}
+
+type SettingsRow = {
+  label: string;
+  value?: string;
+  onPress: () => void;
+  external?: boolean;
+  /** Optional count badge (e.g. active claims on "Your deals"). 0 hides it. */
+  badge?: number;
+};
+
+function SettingsGroup({ title, rows }: { title: string; rows: SettingsRow[] }) {
+  const { color: palette } = useTheme();
+  return (
     <Stack gap={2}>
       <Text variant="label" tone="tertiary" style={{ paddingHorizontal: space[2] }}>
-        SETTINGS
+        {title}
       </Text>
       <View
         style={{
@@ -461,9 +465,28 @@ function SettingsList({
                   {row.value}
                 </Text>
               ) : null}
-              <Text variant="body-md" tone="tertiary">
-                {row.external ? '↗' : '›'}
-              </Text>
+              {row.badge && row.badge > 0 ? (
+                <View
+                  style={{
+                    minWidth: 22,
+                    height: 22,
+                    paddingHorizontal: space[2],
+                    borderRadius: 11,
+                    backgroundColor: palette.brand[500],
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Text variant="caption" tone="inverse" weight="bold">
+                    {row.badge}
+                  </Text>
+                </View>
+              ) : null}
+              <Icon
+                name={row.external ? 'arrowUpRight' : 'chevronRight'}
+                size={18}
+                color={palette.text.tertiary}
+              />
             </Stack>
           </Pressable>
         ))}

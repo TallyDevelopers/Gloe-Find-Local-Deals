@@ -215,7 +215,13 @@ function ScannerCard({
   busy: boolean;
   onActiveChange: (active: boolean) => void;
 }) {
-  const [active, setActive] = useState(false);
+  // 'off'      → camera not running (genuinely off / denied / stopped)
+  // 'starting' → start() called; html5-qrcode is already painting the live
+  //              <video> but its promise hasn't resolved yet.
+  // 'on'       → camera fully live and scanning.
+  // The overlay must NOT say "Camera off" during 'starting', because the live
+  // feed is already visible behind it (the bug this state machine fixes).
+  const [camera, setCamera] = useState<'off' | 'starting' | 'on'>('off');
   const [error, setError] = useState<string | null>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const onDetectedRef = useRef(onDetected);
@@ -241,12 +247,13 @@ function ScannerCard({
         // ignore
       }
     }
-    setActive(false);
+    setCamera('off');
     onActiveChange(false);
   }, [onActiveChange]);
 
   const start = useCallback(async () => {
     setError(null);
+    setCamera('starting');
     // Guard against a double-start leaving an orphaned camera/video.
     if (scannerRef.current) {
       try { scannerRef.current.clear(); } catch { /* ignore */ }
@@ -265,7 +272,7 @@ function ScannerCard({
         },
         () => { /* per-frame failures are noisy; ignore */ },
       );
-      setActive(true);
+      setCamera('on');
       onActiveChange(true);
     } catch (e) {
       const name = e instanceof Error ? e.name : '';
@@ -286,7 +293,7 @@ function ScannerCard({
       setError(friendly);
       try { scannerRef.current?.clear(); } catch { /* ignore */ }
       scannerRef.current = null;
-      setActive(false);
+      setCamera('off');
       onActiveChange(false);
     }
   }, [stop, onActiveChange]);
@@ -319,7 +326,7 @@ function ScannerCard({
         }}
       >
         <div id={SCANNER_ELEMENT_ID} style={{ width: '100%', height: '100%' }} />
-        {!active ? (
+        {camera !== 'on' ? (
           <span
             style={{
               position: 'absolute',
@@ -332,17 +339,19 @@ function ScannerCard({
               pointerEvents: 'none',
             }}
           >
-            Camera off
+            {camera === 'starting' ? 'Starting camera…' : 'Camera off'}
           </span>
         ) : null}
       </div>
       <div style={{ display: 'flex', gap: 10, marginTop: 14, justifyContent: 'center' }}>
-        {!active ? (
+        {camera === 'off' ? (
           <button onClick={start} disabled={busy} style={primaryBtn}>
             {busy ? 'Looking up…' : 'Start camera'}
           </button>
         ) : (
-          <button onClick={stop} style={secondaryBtn}>Stop camera</button>
+          <button onClick={stop} disabled={camera === 'starting'} style={secondaryBtn}>
+            {camera === 'starting' ? 'Starting…' : 'Stop camera'}
+          </button>
         )}
       </div>
       {error ? (

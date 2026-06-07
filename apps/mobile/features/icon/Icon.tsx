@@ -1,4 +1,5 @@
 import {
+  ArrowUpRight,
   Camera,
   ChevronDown,
   ChevronLeft,
@@ -35,6 +36,7 @@ const ICONS = {
   chevronDown: ChevronDown,
   chevronLeft: ChevronLeft,
   chevronRight: ChevronRight,
+  arrowUpRight: ArrowUpRight,
   filters: SlidersHorizontal,
   map: Map,
   close: X,

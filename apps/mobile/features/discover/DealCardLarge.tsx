@@ -8,6 +8,7 @@ import { usePrefetch } from '../prefetch/usePrefetch';
 import { Icon } from '../icon/Icon';
 import { formatDistance, formatDriveTime, formatRating } from './cardMeta';
 import { formatPrice } from './format';
+import { TrendingRibbon } from './TrendingRibbon';
 
 // Image height tuned so a centered card leaves a peek of the next one below,
 // without pushing the price/vendor line off-screen.
@@ -100,6 +101,11 @@ export function DealCardLarge({ deal, onSave, isSaved = false }: DealCardLargePr
             strokeWidth={2.25}
           />
         </Pressable>
+
+        {deal.isTrending ? (
+          // Sit above the Sponsored badge when both are present, else at the edge.
+          <TrendingRibbon bottom={deal.isSponsored ? space[3] + 28 : space[3]} />
+        ) : null}
 
         {deal.isSponsored ? (
           <View

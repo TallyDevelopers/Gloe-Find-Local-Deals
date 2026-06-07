@@ -1,0 +1,796 @@
+# How Gloē Works — The Complete Tour
+
+> **Who this is for:** you, the founder. This is the plain-language, end-to-end walkthrough of
+> how Gloē actually behaves — how the homepage loads, when things load, when they update, how
+> "trending" is computed, how money moves, what happens in every edge case, down to the
+> nitty-gritty. Every detail here was traced against the real code, not guessed.
+>
+> **How this differs from `GLOE.md`:** `GLOE.md` is the precise engineering spec (for builders +
+> AI agents). *This* doc is the readable story — same facts, friendlier voice. Each section ends
+> with a *Deeper* line pointing to the exact code so you can drill in.
+>
+> **Living doc:** this gets updated every time we ship a ticket that changes how the app behaves.
+> If anything here doesn't match what the app actually does, that's a bug — tell me.
+
+---
+
+## Contents
+
+1. [Opening the app](#1-opening-the-app)
+2. [Finding deals (the home feed)](#2-finding-deals-the-home-feed)
+3. [How ranking & "trending" actually work](#3-how-ranking--trending-actually-work)
+4. [Search](#4-search)
+5. [The map](#5-the-map)
+6. [Looking at a deal & a spa](#6-looking-at-a-deal--a-spa)
+7. [Buying, the voucher, and redeeming](#7-buying-the-voucher-and-redeeming)
+8. [How the money moves](#8-how-the-money-moves)
+9. [The vendor side](#9-the-vendor-side)
+10. [Behind the glass (admin god-mode)](#10-behind-the-glass-admin-god-mode)
+11. [Accounts & login](#11-accounts--login)
+12. [Notifications](#12-notifications)
+13. [Support / Concierge](#13-support--concierge)
+14. [The website (gloe.app)](#14-the-website-gloeapp)
+15. [What's NOT built yet](#15-whats-not-built-yet)
+
+---
+
+## 1. Opening the app
+
+### We figure out where you are — quietly
+
+The home feed is about deals *near you*, so the very first thing the app needs is a location.
+We're deliberate about how we get it, because nothing kills a first impression like a cold
+permission pop-up before you've seen anything.
+
+There are exactly **three location states**: `unset`, `gps`, and `picked`.
+
+- **On launch, we check — we don't ask.** The app calls a *permission check* (not a request),
+  so no OS dialog appears. If you'd already granted location on a previous run, we silently
+  read your last known position (a 10-minute cached fix, falling back to a fresh read) and the
+  feed **comes alive with zero taps** — your location shows as a calm "Near you," nothing more.
+- **If we genuinely don't know where you are** (`unset` state), the entire home feed is replaced
+  by a single full-screen **Location Gate** — one clean "share your location" ask. No half-feed,
+  no empty grid. Nothing is fetched until you resolve it.
+- **If you tap it and allow,** the feed lights up. **If you deny,** we fall back to a **location
+  picker** with three ways in: type **any address or city** (we geocode it on the spot), tap **"Use
+  my current location"** (GPS), or pick one of the **popular markets**. Any of them sets your
+  location the same as GPS would.
+
+There's a San Diego coordinate baked in as a default — but it's **only a map camera position**
+(so the map isn't "a blank ocean"), never surfaced as "your location." Until you have a real
+location, you're in `unset` and you see the gate.
+
+**Why it's built this way:** home stays pristine. We handle location invisibly when we can, ask
+politely once when we must, and never nag on a cold start. Once a location is set, the feed shows
+with *zero* location chrome — changing it lives in Map and Search, not cluttering the home screen.
+
+*Deeper: `GLOE.md` §6 "Location gate (GLO-26)". Code: `SelectedLocationProvider.tsx`, `LocationGate.tsx`, `discover.tsx`.*
+
+### If you're in a city we haven't launched in yet
+
+We launch city by city (LA / Orange County / San Diego today). So what does someone in, say,
+Phoenix see? **Not a sad empty screen.**
+
+- We detect the specific situation "**we know where you are, but we have zero deals within 50
+  miles**" (and you haven't applied any filters). When that's true, the feed is swapped for a
+  **"Gloē is growing" / Coming Soon** screen.
+- It **tells the truth about where we're live** — it lists the cities that *actually* have live
+  deals right now, pulled fresh from the database. So it's never stale, even as you open new cities.
+- It **collects demand**: drop your email and we store it with your city + coordinates. In admin,
+  you see exactly which cities people are asking for — your expansion roadmap, ranked by real demand.
+- The gate is **data-driven, not hardcoded**. The moment a vendor in a new city posts the first
+  live deal, the next nearby user sees a real feed automatically — no deploy, no toggle.
+  *The first listing unlocks the city.*
+- They can **look around a live area before we reach them**: an "**Explore a live city**" row opens
+  the same location picker, so they can enter an address or tap one of our live cities and see exactly
+  how Gloē works. Picking a city with deals flips the feed and this screen falls away.
+- There's also a blunter **escape hatch**: a "Browse SoCal deals" button drops them straight into our
+  live region anyway.
+
+One careful detail: this only triggers *after* GPS has actually resolved, so it never flashes
+during the split-second of locating you (the app starts on the San Diego fallback, which has
+deals, so there's no empty flicker).
+
+> ⚠️ When someone joins this waitlist, **no email goes out yet** — it's pure demand collection for
+> now. (See [§15](#15-whats-not-built-yet).)
+
+*Deeper: `GLOE.md` §6 "Out-of-area gate". Code: `ComingSoon.tsx`, `waitlist.router.ts`, `deals.ts`.*
+
+---
+
+## 2. Finding deals (the home feed)
+
+### The whole screen loads in ONE request
+
+When you land on Discover, the entire screen — the category rails and everything in them — comes
+back from a **single** server call (`deals.discoverFeed`). The server fans out to fetch each
+category's deals *concurrently on its end*, then hands you one tidy response.
+
+This matters more than it sounds: the original design fired one request *per rail* (8+ rails at
+once), which literally **drained the database connection pool**. Folding it into one call — with a
+single shared "trending config" read instead of one per rail — is what keeps the home screen fast
+and cheap.
+
+### Three tricks make it feel instant
+
+1. **We remember what we just saw (30 seconds).** After a feed loads, it stays "fresh" for 30s.
+   Hop to another tab and back within that window and it paints **instantly** from cache — zero
+   refetch, zero spinner.
+2. **No flicker when you change anything.** Tap a different category or filter and the old cards
+   **stay on screen, dimmed**, while the new ones load behind them. The app never blanks out and
+   "reloads" — it just swaps. (React Query's `keepPreviousData`.)
+3. **Pictures are downloaded before you scroll to them.** The instant the feed data arrives, we
+   quietly push every card's photo into an on-device cache (memory + disk). By the time you scroll
+   down, the image is already there — it fades in over 200ms instead of streaming in one-by-one.
+
+There's even more under the hood: tapping a card pre-loads the *next* screen's data on **finger-down**
+(`onPressIn`, ~80–150ms before the tap completes), so by the time the deal page opens its data is
+already cached — no spinner. And on app boot, we pre-warm the category list so the filter pills
+never "pop in." A photo downloads **exactly once, ever**, and we even rewrite Supabase image URLs
+to pull a server-resized variant (a 6MB phone photo becomes ~170KB) where it counts.
+
+One disciplined rule worth knowing: data is pre-loaded **on intent (finger down on a card), never
+on scroll**. Scrolling a long list does *not* fire dozens of background requests for screens you
+might never open. We warm on a real signal, not speculatively.
+
+### The layout: rails → "See all" → 2-up grid
+
+- The home view shows one **horizontal rail per category**, with **4:3 cards** (shorter than the
+  old portrait cards, so more shows at a glance on small phones).
+- At the **end of each rail** is an inline **"See all" tile** — swipe past the last card and the
+  next thing under your thumb is the "see everything" button. (The old top-right "See all →" link
+  is gone; the category label itself is also tappable.)
+- Tapping "See all" doesn't navigate anywhere — it switches the *same screen* into a filtered
+  view: a **2-up vertical grid** (~6 listings per screen on a small phone instead of ~1.5), driven
+  by a separate query that loads up to 50 deals.
+
+**Refreshes happen when:** your location changes, you change a category/filter, or you pull-to-refresh
+(which gives a little haptic buzz and re-fetches). Otherwise, after 30 seconds of staleness, the next
+time you focus the screen it quietly refreshes in the background.
+
+*Deeper: `GLOE.md` §6, §6A. Code: `discover.tsx`, `deals.router.ts`, `deals.ts` (`getDiscoverFeed`), `CachedImage.tsx`, `usePrefetch.ts`, `TrpcProvider.tsx`.*
+
+### Category pills & the treatment drill-down
+
+Once you're *inside* a category, a row of category pills appears (with an "All" pill to pop back).
+Below it, a second row of **treatment** sub-pills (Botox, Filler, etc.) appears — **but only when
+at least 2 treatments nearby have enough live inventory to be worth choosing between.**
+
+This is a small, smart piece of design: at launch, most categories have only one or two deals, so a
+treatment drill-down would usually dead-end on a single result — a frustrating, broken-feeling tap.
+So the second row **earns its place**: thin inventory → you see one clean row of categories and never
+a dead tap. And because it's just counting live nearby inventory, the richer experience **switches
+itself on automatically** as vendors are added — no config change, no app release.
+
+*Deeper: `GLOE.md` §6A "Customer drill-down". Code: `TreatmentPills.tsx`, `FilterPills.tsx`, `deals.ts` (`getCategoryTreatments`).*
+
+---
+
+## 3. How ranking & "trending" actually work
+
+### Why your feed feels fresh but not chaotic
+
+An anonymous shopper with no account still gets a feed that feels personal. Here's the trick: each
+install gets a **stable random ID** (a UUID stored securely on the device). That ID, combined with
+**today's date**, seeds a tiny bit of "shuffle" in the ranking.
+
+The effect: reload the app ten times this afternoon and the order **holds steady** (not jittery and
+broken-feeling). Come back tomorrow and the top picks **rotate** — the catalog feels alive. No
+machine learning, no login required, and "fresh tomorrow" is free because it's just the date string
+in the hash flipping at midnight. The moment you sign in, your real user ID quietly replaces the
+device ID, so you get a consistent personalized order across all your devices — with zero migration code.
+
+Underneath, each deal's rank is a blended score: a sponsored boost, plus its rating, minus a distance
+penalty, plus a freshness bonus, plus that small daily shuffle. (Pick an explicit sort — distance,
+price, rating — and the shuffle is bypassed for a clean deterministic order.)
+
+*Deeper: `GLOE.md` §6A. Code: `anonSeed.ts`, `deals.ts` (blended score), `deals.router.ts`.*
+
+### "Trending" is two different things
+
+This surprises people, so it's worth being clear: Gloē has **two unrelated** notions of "trending."
+
+**1. The "Trending" ribbon on a deal** is *real purchase signal.* It's computed live: "did at least
+**3 different people pay for this deal in the last 7 days**?" If yes, ribbon on. It's recomputed
+fresh on every load straight from the payments table — so it **can't be gamed by views**, it lights
+up within *seconds* of the 3rd purchase's payment landing, and it goes dark on its own as those
+purchases age out of the 7-day window. No nightly batch job. (Fully refunded purchases stop counting;
+partial refunds still count.)
+
+**You control the "3" and the "7 days" yourself, from the back end — no code, no deploy.** Both
+numbers are settings (`trending_min_purchases` and `trending_window_days`) stored in the database and
+edited from **admin god-mode → Settings**. Want trending to mean "10 purchases in the last 14 days"
+instead? Change the two values, save, and **the very next feed request uses the new numbers** — every
+deal's ribbon re-evaluates live against your new bar. Nothing is hardcoded: if the settings are ever
+missing, it safely falls back to 3-in-7. (Internally the admin call clamps the values to sane ranges
+so you can't set a nonsensical 0.)
+
+> One thing to know: this ribbon currently renders on the **website only**. Mobile receives the
+> data but doesn't yet draw the ribbon — a UI gap, not a data gap. (See [§15](#15-whats-not-built-yet).)
+
+**2. "Popular near you" treatment chips** (in search) are *not* purchase-based at all. They rank
+treatments by **how many live deals exist nearby** — pure inventory count. That's deliberate: with
+thin early inventory, "what can I actually book here" is the most useful signal, and it improves on
+its own as supply grows. The intent is to swap this to real search/purchase counts once we log them.
+
+*Deeper: `GLOE.md` §6A. Code: `platformSettings.ts` (`getTrendingConfig`), `deals.ts` (`is_trending` subquery, `getTrendingTreatments`), `SettingsView.tsx` (admin).*
+
+---
+
+## 4. Search
+
+Search is built to feel like it **knows aesthetics**. Two layers stack:
+
+1. **A hand-curated synonym map.** We teach it the slang and brand names of the industry — type
+   "tox" and it expands to Botox, Dysport, Jeuveau, Xeomin, Daxxify; "skinny shot" → semaglutide +
+   tirzepatide; "fat freeze" → CoolSculpting. There are ~18 of these trigger groups. A generic
+   search engine doesn't know any of this.
+2. **Typo forgiveness.** On top of that, a fuzzy-matching algorithm (Postgres trigrams) handles
+   misspellings — "botx" still finds Botox — on *both* what you typed and the expanded terms.
+
+The quality gate is a **similarity floor**: a result only survives if it fuzzy-matches well enough
+*or* genuinely contains the words. So a real typo gets through, but actual nonsense falls to an
+**honest empty state** instead of returning garbage. And that empty state never dead-ends — it
+offers "popular nearby treatments" chips to tap.
+
+Behind the scenes, search is **the same engine as the feed** (`listDeals` with a search term added),
+so distance, filters, and ranking behave identically everywhere — one place to tune, no drift.
+
+One integrity detail: during search, the **sponsored boost is cut in half**. When someone asks for a
+specific thing, the best *match* should win, not the highest bidder.
+
+The UX is tuned to feel instant and never blank: a **180ms debounce** (it waits for you to pause
+typing before hitting the server), results that **morph smoothly** instead of flickering (old results
+dim while new ones load), **autocomplete chips** that only point at treatments with real nearby
+inventory, and **recent searches** saved securely on-device. Tapping a result pre-loads the deal page
+on finger-down, so it opens with no spinner.
+
+*Deeper: `GLOE.md` §6A. Code: `search.tsx`, `aestheticSynonyms.ts` (`expandQuery`), `deals.ts` (search SQL), `deals.router.ts`.*
+
+---
+
+## 5. The map
+
+The map is a full-screen, ResortPass-style discovery view, reached from a button on Discover.
+
+- It **opens centered on where you're browsing** — your GPS location or your picked city.
+- **One teal pin per spa** (not per deal — a spa with several deals shows one pin, and its card says
+  "+N more experiences"). Pins for spas without coordinates are simply dropped (can't be plotted).
+- **Pins cluster when you zoom out** and break apart as you zoom in — handled by a lightweight
+  homemade grid bucketer (no heavy clustering library). The pin you're looking at darkens to ink;
+  the rest stay teal.
+- **Swipeable spa cards** at the bottom are two-way synced to the pins: swipe a card and its pin
+  centers; tap a pin and its card scrolls into view.
+- A **three-position draggable sheet** (peek / half / full) lets you browse the card list at whatever
+  height you want.
+- The top chrome is three rows: your location, **category tabs**, and **filter chips** (Filter ·
+  Vibe · Price · Rating · Sort). Every filter maps 1:1 onto the same `deals.list` inputs the feed
+  uses — so applying a filter is just a parameter change, no special map backend.
+- **"Search this area"** re-queries deals for wherever you've panned the map to.
+
+It's **iOS-first** by design (uses Apple Maps); Android is a deliberate fast-follow. And because it
+reuses the existing deals endpoint, building the map required **zero backend changes**.
+
+*Deeper: `GLOE.md` §6A "Map discovery". Code: `map.tsx`, `MapBrowseSheet.tsx`, `clustering.ts`, `spaGrouping.ts`, `deals.ts`.*
+
+### Vibes & amenities
+
+A spa's "vibe" (clinical, luxe, trendy…) is vendor-self-selected, and consumers can filter the map
+by it ("show me only luxe spas"). It's a flexible tag system — the same pattern powers amenities —
+and it filters with a "match any selected vibe" rule.
+
+*Deeper: `GLOE.md` "Vibes feature". Code: `deals.ts` (`vibes` filter), `MapFilterSheet.tsx`.*
+
+---
+
+## 6. Looking at a deal & a spa
+
+### The deal page
+
+Everything the deal page needs arrives in **essentially one round-trip** — hero photos, the vendor
+card, variant options, reviews availability, the redemption map, restrictions, fine print. No cascade
+of spinners. And because the card pre-loaded this data on finger-down, tapping a card usually shows a
+**fully-painted page with no spinner at all**.
+
+A few deliberately-cheap touches:
+
+- **The map is a pre-made image.** A static map of the spa is generated *once* when the location is
+  set and stored in our own storage — so customers load our cached image and we **never pay Google
+  per view**. There's also a "Calculate distance" button that fires a *real* Google Directions route
+  (with live drive time and a drawn route line) only when the user explicitly taps for it.
+- **Drive time is estimated with math, not a paid API.** Cards show a drive-time estimate computed
+  from straight-line distance × a speed that rises with trip length — within ~20% of Google, at zero
+  per-view cost. (Real Google timing only on the explicit "Calculate distance" tap.)
+- **Reviews lead with whichever source has substance.** If the spa has fewer than 5 Gloē reviews and
+  a Google listing is linked, the page auto-leads with Google — so a brand-new spa still shows social
+  proof. Ratings are **count-weighted blends** of Gloē + Google, so a 4.0★ (1 Gloē review) can't bury
+  a 4.9★ (200 Google reviews).
+
+The "Buy now" button never dead-ends an anonymous user — tap it signed-out and it opens sign-in, then
+**continues straight into checkout** with your selection intact.
+
+*Deeper: `GLOE.md` §6 "Deal detail flow". Code: `deal/[id].tsx`, `deals.ts` (`getDeal`), `RedemptionMap.tsx`, `ReviewsSection.tsx`.*
+
+### The spa storefront
+
+A spa's public profile assembles in **one query that fans out to ~6 parallel reads**: the spa row,
+its deals, its providers, its "Inside the spa" videos, its Gloē reviews, and its cached Google
+reviews. On the website, this page also renders SEO metadata + structured data so spa pages are
+Google-indexable.
+
+**Google reviews are cached in our own database** and refreshed **lazily, once per 24 hours, on a
+real visit** — so we pay Google once per spa per day instead of once per pageview, while still showing
+current star counts. If Google is down or unlinked, the page degrades gracefully to cached/Gloē-only.
+
+*Deeper: `GLOE.md` §7, `WEB.md`. Code: `vendorStorefront.ts`, `vendors.router.ts`, `SpaStorefrontClient.tsx`.*
+
+### Reviews — why they're trustworthy
+
+Gloē reviews are **welded to a paid, redeemed voucher**: you can only review your *own* claim, only
+*after* it's been redeemed, and only *once* per claim (re-submitting edits it). This is enforced in
+two places — the app code *and* a database trigger — so reviews **can't be astroturfed**. It's the
+FTC-defensible "only real customers review" guarantee.
+
+*Deeper: `GLOE.md` §6. Code: `reviews.ts`, `reviews.router.ts`, the `enforce_review_requires_redemption` DB trigger.*
+
+### Saved
+
+Hearting a deal or spa flips **instantly** (the heart updates before the network even responds —
+"optimistic" updates), with a little haptic tap on *add* only. If the save fails, it quietly rolls
+back. The Saved tab has a segmented control to switch between saved deals and saved spas. Saving
+while signed-out opens the sign-in sheet first (except on the map, where it silently no-ops).
+
+*Deeper: `GLOE.md` §6. Code: `SavedDealsProvider.tsx`, `SavedVendorsProvider.tsx`, `saved.ts`.*
+
+---
+
+## 7. Buying, the voucher, and redeeming
+
+### Buying — money is the source of truth
+
+The most important rule in the whole system: **a voucher can only exist if real money was
+confirmed.** Here's the exact sequence:
+
+1. You tap **Pay**. The server creates a **held** Stripe charge — the money goes onto *Gloē's* own
+   balance and is **held there** (it does *not* go to the vendor yet). It also writes a
+   "pending payment" record with the fee math **frozen in** at that moment.
+2. Stripe's native payment sheet collects the money (card, Apple Pay, Link, Klarna — whatever's
+   enabled). We never touch card numbers.
+3. When the charge succeeds, **Stripe pings our server** (a webhook), and *only then* are the QR
+   vouchers minted — one per quantity — and inventory decremented.
+
+So an unpaid or abandoned order **never produces a live voucher.** And the minting happens inside a
+single atomic database transaction, guarded so that Stripe re-sending an event (which it can do)
+**can never double-mint** vouchers or double-count inventory.
+
+Why hold the money instead of paying the vendor right away? Two reasons: it lets us honor the
+**3-day refund**, and it means **vendors only get paid after a voucher is actually redeemed** —
+which protects against no-shows and chargebacks. (More in [§8](#8-how-the-money-moves).)
+
+Freezing the fee math onto each transaction means you can change your fee tiers *anytime* in admin,
+and it will **never retroactively change the economics of a past sale.**
+
+> ⚠️ One thing the audit flagged: there's **no cleanup job** for abandoned "pending payment" rows
+> (a canceled checkout leaves a harmless orphan record). And there's a brief window where two buyers
+> could both pass the "spots left" check before either pays. Both noted in [§15](#15-whats-not-built-yet).
+
+*Deeper: `GLOE.md` §4 "Money pipeline". Code: `checkout.ts` (`createPurchase`, `fulfillPurchase`), `stripe.ts`, `index.ts` (webhooks).*
+
+### Share-to-pay (gift links)
+
+You can generate a **Stripe-hosted link** that *anyone* can pay — but the voucher still lands in
+**your** wallet, not the payer's. Text it to a partner or parent: they pay, you get the treatment.
+
+Because the payer is a stranger to our account system (the biggest fraud surface), the money logic is
+locked down on the backend: a **hard $500-per-link ceiling**, your per-customer limits still counted
+against *you* (the recipient), and fraud/liability delegated to Stripe Radar. When it's paid, you get
+a push: *"[Name] booked your gift."* The link is shareable; the resulting voucher is **not** —
+"Code is unique to your account. Do not share."
+
+*Deeper: `GLOE.md` §6B. Code: `checkout.ts` (`createGiftLink`), `gift/[sessionId]/page.tsx`.*
+
+### The voucher (your walk-in ticket)
+
+The voucher screen is the customer's ticket, and it renders in **one of three states**: **active**,
+**redeemed**, or **expired**.
+
+- It paints **instantly** from cache (no spinner) — QR code, an 8-character backup code receptionists
+  can type, and the price you paid (frozen from purchase time).
+- It overlays **fresh** vendor phone + address fetched live at view time — so if the spa changed its
+  number, you see the *current* one (not the frozen snapshot).
+- A countdown ticks every minute and turns **red within 24 hours** of expiry.
+- "Add to Apple Wallet," Call, and Directions are right there.
+
+**The critical safety wall: there is no "I redeemed it myself" button.** The customer screen only
+*displays* the QR + code. Redemption is **vendor-only** — staff scan the QR or type the code on their
+end. This is deliberate: a self-redeem path would let someone trigger a vendor payout with **nobody
+actually showing up.** (An old dev-only "simulate redemption" path was removed for exactly this reason.)
+
+### Expiry — lazy, no cron
+
+Expiry is enforced **lazily, at read time** — every query that lists deals/vouchers checks
+`expires_at > now()` rather than a nightly job flipping statuses. So an expired voucher simply *reads
+as* expired the moment you look at it; there's no scheduled task that has to run. (One function does
+hard-flip deals to "expired" status, but it's only reachable on demand, not on a timer.)
+
+*Deeper: `GLOE.md` §6 "Voucher screen". Code: `my-deal/[id].tsx`, `claims.ts`, `vendor.router.ts` (`redeemVoucher`).*
+
+### Redeeming — what happens when staff scan it
+
+The vendor scans the QR (or types the code), the system verifies it read-only, the vendor confirms,
+and then a **single atomic database write** flips the voucher to "redeemed" — with four conditions
+checked in that one write (right voucher, right vendor, still active, not expired). So if two staff
+scan at once, **exactly one wins.** Every attempt — success, lookup-only, or refused — is logged to an
+audit trail.
+
+And **that redemption is what releases the vendor's money** (next section).
+
+*Deeper: `GLOE.md` §4, §7. Code: `claims.ts` (`redeemClaimByVendor`, `lookupVoucher`).*
+
+---
+
+## 8. How the money moves
+
+This is the heart of the business, so here's the whole pipeline in plain terms. Money moves in
+**stages**, and the key principle is: **the spa gets paid only when the treatment actually happens.**
+
+### Stage 1 — The charge (at purchase)
+
+When a customer pays, the full amount lands on **Gloē's own Stripe balance and is held** — there's
+no transfer to the vendor at this point. This is the "separate charges and transfers" model, and it's
+what lets us refund freely and only pay vendors on redemption.
+
+### The platform fee — a lever, not hardcoded
+
+Your fee schedule lives in the **database**, not in code. Tiers are admin-editable (the live config:
+20% on sales ≤ $500, a flat $60 above). You can raise a tier, or give one specific spa a discounted
+override, as a **data edit — no deploy**. The system picks the matching tier, prefers a vendor-specific
+override over the global one, and if the fee table is ever empty or misconfigured, it falls back to a
+sensible 12% rather than giving the product away.
+
+And the magic detail: the fee that applied is **frozen onto each transaction as a snapshot.** Change
+tomorrow's tiers all you want — it can **never retroactively change yesterday's sales.**
+
+> The way Gloē keeps its cut is elegant: at redemption, we simply **transfer less** to the vendor than
+> we charged the customer. Stripe never sees the fee as a separate line — it's just the gap between
+> what came in and what went out.
+
+*Deeper: `GLOE.md` §4 Stage 1, §2. Code: `fees.ts` (`computeFee`), `platform_fees` table, `FeesView.tsx` (admin).*
+
+### Stage 2 — The transfer (at redemption)
+
+When the vendor redeems a voucher, we move **the vendor's share** from our held balance to their
+connected Stripe account — but only after a chain of **safety walls** all pass:
+
+1. The voucher is genuinely redeemed, and
+2. its transaction is paid, and
+3. it hasn't already been transferred (idempotency — can't double-pay), and
+4. the vendor has a *real, active* Stripe account (we even regex-check the account ID to reject
+   placeholder/test values before Stripe would error), and
+5. the payout amount is positive and finite.
+
+Crucially, **the destination account is always looked up server-side from the voucher** — never passed
+in by the caller. So a malicious request can't redirect another vendor's money.
+
+There are **two release modes**, per vendor: **auto-release** (trusted vendors get paid the instant they
+redeem) or **hold** (funds stay on the platform until an admin pushes them manually). It's a single
+toggle in god-mode. And if a transfer *fails*, **the redemption still sticks** — the customer was
+already served, so an ops/Stripe hiccup never punishes them; the error is surfaced for an operator to
+resolve. Every attempt, pass or fail, is written to an **append-only audit log** for forensic
+reconciliation.
+
+*Deeper: `GLOE.md` §4 Stage 2. Code: `payouts.ts` (`releaseTransferForClaim`, walls), `claims.ts` (`redeemClaimByVendor`).*
+
+### Stage 3 — Payouts to the vendor's bank
+
+Two paths:
+
+- **Standard payouts** (free): **Stripe owns the schedule** (default daily). We never run a payout
+  cron — we just *listen* to Stripe's payout webhooks and mirror each one into our own table, which
+  drives the admin Payouts console and a vendor "failed payout" banner with plain-English error
+  explanations. (Stripe is the source of truth; our table is a read-cache for our UI.)
+- **Instant payout** (3% fee): a vendor taps "Pay me now" to get cash to their debit card in ~30
+  minutes instead of waiting 1–2 business days. Eligibility and balance are **re-verified live against
+  Stripe at the moment of the tap** (never trusting the cached UI), the destination is re-derived
+  server-side, and every refusal is logged. Gloē nets ~2% after Stripe's cut.
+
+*Deeper: `GLOE.md` §4 Stage 3 / 3'. Code: `payouts.ts`, `index.ts` (`payout.*` webhooks), `VendorDashboard.tsx`.*
+
+### Refunds
+
+Two financially-opposite cases, handled differently:
+
+- **Before redemption:** the vendor was never paid, so it's a clean card reversal — refund the
+  customer, kill the voucher. Simple.
+- **After redemption:** the service *was* delivered and the vendor was likely already paid, so refunding
+  the customer also has to **claw back the vendor's transfer** (which can drive their balance negative).
+  This is a deliberate, **owner-only, two-step** action — the UI screams about it with a red danger
+  button and a warning banner.
+
+Gloē **always keeps its platform fee** on a refund (so we never pay Stripe's ~3% to issue one). The
+refund "ledger" is built on the audit log, so it captures not just every dollar that *moved* but every
+dollar someone *tried* to move and was **blocked** — with actor, reason, and Stripe ID.
+
+*Deeper: `GLOE.md` §4 Refunds. Code: `vendorOps.ts` (`refundClaim`, `refundTransaction`, `forceRefundRedeemed`).*
+
+### ⚠️ Disputes / chargebacks — the known gap
+
+This is important and it's a **launch blocker (GLO-10)**: we **do not yet listen for Stripe dispute
+webhooks.** Today, if a customer files a bank dispute, the system behaves as if nothing happened — they
+keep a live, redeemable voucher, and (with auto-release on) the vendor could still get paid out of funds
+we no longer have. That's a double-loss path that scales with volume.
+
+The good news: the hard part (proportional transfer reversal) **already exists** from the refund work.
+The gap is just the missing webhook listener + a freeze + one extra release-wall.
+
+> Heads up: a couple of admin UI elements (a "disputed" status filter and red status color) are already
+> in the interface but **backed by nothing yet** — they light up once this is built.
+
+*Deeper: `GLOE.md` §4 "Disputes (PLANNED)". Linear: GLO-10.*
+
+### A subtle accounting note worth knowing
+
+Because expiry is lazy and **nothing ever flips an unredeemed voucher to a terminal state**, a voucher
+that's paid for but **never redeemed** keeps its payout sitting in the "owed to vendor" bucket
+*indefinitely* — even long past its expiry date. There's no process today that sweeps elapsed-unredeemed
+vouchers, releases that held money, or recognizes the breakage. Flagged in [§15](#15-whats-not-built-yet).
+
+---
+
+## 9. The vendor side
+
+### Signing up & connecting a bank
+
+A spa can sign up in **under a minute** — the form asks only for the essentials (name, phone,
+address with Places autocomplete, categories) and creates the vendor in a **`pending_approval`**
+state. That's enough to put a pin on the map.
+
+Connecting Stripe happens **later and lazily** — on the first "Connect bank" tap from the dashboard,
+not at signup. (Why: we never create dead Stripe accounts for tire-kickers.) That opens a Stripe-hosted
+onboarding flow, and when Stripe says the account can receive money, a webhook **mirrors that status
+back** into our records.
+
+Three things must all be true before a vendor can post live deals: **admin-approved + license
+verified + Stripe active** (or an explicit admin bypass). This collapses to **one server-computed
+boolean**, so the UI and the API can't disagree. And the money wall independently re-checks "Stripe
+active" at transfer time — so even if a UI gate were somehow bypassed, **a half-onboarded vendor
+physically cannot receive funds.**
+
+*Deeper: `GLOE.md` §7. Code: `vendor.router.ts`, Stripe `account.updated` webhook, `vendorHub.ts`.*
+
+### Posting a deal
+
+One form builds the whole listing — categories, title, priced variants, photos/videos, vibes &
+amenities, redemption location, fine print — and submits it either as a **private draft** or as
+**pending review**.
+
+- **Draft** lets a spa build a listing *before* they're fully onboarded (drafts bypass the
+  license/Stripe gate).
+- **Pending review** goes into an **admin approval queue** — nothing reaches customers without a human
+  approving it. That's the trust/quality firewall for a medical-aesthetics marketplace.
+- **Editing a live deal silently bounces it back to review** (and clears its approval) — so a vendor
+  can't get approved and then quietly swap in different content.
+
+Media is compressed on-device and uploaded directly to storage; the static map for the deal is
+generated once and cached (zero per-view Google cost).
+
+### Auto-tagging (the magic that keeps search clean)
+
+As the vendor types a title, the form **classifies the treatment for them** (debounced ~350ms). Brand
+names auto-fill with a checkmark ("Botox" → ✓ Botox, zero friction); generic words only *suggest*
+("lip filler" → "Looks like Dermal Filler?") and wait for a tap. It's **scoped to the chosen category**,
+so genuinely ambiguous names (Laser Hair Removal exists under two categories) resolve correctly. It's
+always a head-start, **never a lock-in** — it never overrides a human's pick.
+
+Why it matters: search can only say "this deal is Botox" if the deal carries the treatment tag — but a
+front-desk worker won't hunt through 42 treatments. So the form does it from the title they already typed.
+
+*Deeper: `GLOE.md` §6A, §7. Code: `PostDealForm`, `dealCreate.ts`, `aestheticSynonyms.ts` (`detectTreatment`).*
+
+### Scanning & redeeming
+
+The vendor scans a voucher's QR (or types the code), the system verifies it **read-only**, the vendor
+confirms, and a **single atomic write** flips it to redeemed (the same race-safe, exactly-one-winner
+mechanism from §7). The camera deliberately stops after the first read so a steady QR can't fire ten
+lookups a second.
+
+If auto-release is on, **the vendor's payout fires immediately** on that redemption. The money path is
+decoupled from the redemption path on purpose: once the customer is served, the voucher is burned even
+if Stripe hiccups — the operator sees a clear "money held" message rather than an unredeemed-but-paid
+limbo. And the whole Scan tab is **blocked until Stripe is active**, so a vendor can never redeem
+vouchers they could never get paid for.
+
+*Deeper: `GLOE.md` §7. Code: `vendor.router.ts` (`redeemVoucher`), `claims.ts`, `payouts.ts`.*
+
+### The dashboard
+
+The vendor Hub shows a **"Today" card** (sold / redeemed / active), a **"Money" card** (live Stripe
+balance + amount queued-for-transfer + 7-day-paid + a failed-payout banner), and a **storefront editor**.
+
+A deliberate design split: the "Today" and "queued/paid" numbers come from **one fast database query**
+(always available, instant), while the genuinely-live "in your Stripe account" balance comes from a
+**separate Stripe call** that can be slow or down **without ever blocking the rest of the page** — it
+just shows "…". The "held / queued for transfer" figure is the trust anchor: money the vendor earned on
+redemption that hasn't moved to their bank yet.
+
+*Deeper: `GLOE.md` §7. Code: `vendorHub.ts` (`hubSnapshot`, `stripeMoney`), `VendorDashboard.tsx`.*
+
+---
+
+## 10. Behind the glass (admin god-mode)
+
+`/admin` is the founder's single-screen cockpit for running the whole marketplace — gated by an
+admin-users table with two roles (**owner** and **moderator**).
+
+- **Pulse** answers "where do I stand / what needs a click today" on a ~10-second heartbeat.
+- Every tab is backed by an admin-only query, and **every money-moving or admin action writes an
+  append-only audit log row** — a permanent receipt of who did what.
+- It's the **only** place refunds, payout retries, deal approvals, fee tiers, and vendor kill-switches
+  are operated.
+
+The two roles matter: **owner** can move/claw-back money and manage the team; **moderator** does
+day-to-day review and support but **can't** drain a vendor's balance or lock the founder out (there are
+owner-only force-refunds and "last owner" guards). Combined with the server-derived Stripe destinations
+and the 8 transfer walls from §8, god-mode convenience **never becomes a way to send money to the wrong
+account.**
+
+### The support drawer
+
+The Support tab is a **triage queue** (needs-reply-first) with a wide drawer that wraps each chat thread
+in three context layers: a **customer "boss-view"** header with auto-flags (whale vs refund-farmer vs
+first-timer), a **collapsible order-history panel** with **inline per-order refunds**, and the message
+thread itself. The agent can resolve the most common case — a refund — **without leaving the page**, and
+their **text reply is the single place a consumer push fires.**
+
+*Deeper: `GLOE.md` §8, `WEB.md`. Code: `admin.router.ts`, `admin.ts`, `SupportView.tsx`, `audit_log` table.*
+
+---
+
+## 11. Accounts & login
+
+### Why web and mobile login look different
+
+**Clerk powers all auth on both platforms** — but the *UI* diverges, and it's forced, not stylistic:
+Clerk gives us a polished pre-built sign-in box **for web only.** It has no native version for a phone app.
+
+- **Web** mounts Clerk's prebuilt components (a centered, brand-styled modal).
+- **Mobile** is a **hand-built bottom sheet** — email/password, 6-digit email-code verification, social
+  sign-in, and Face ID — driven by thin wrappers over Clerk's headless mobile SDK. Same brand styling,
+  built ourselves because Clerk doesn't provide a native screen.
+
+The big conversion play: **anonymous browse is always allowed.** A shopper explores the entire
+marketplace and only hits sign-in the *instant* they try to redeem, save, review, or turn on
+notifications. And because the gated action is **stashed and auto-resumed**, a signed-out "Buy now"
+flows straight into checkout after sign-in — no dead-end.
+
+The whole auth layer sits behind a provider-agnostic seam, so Clerk could be swapped with one file
+changing.
+
+*Deeper: `GLOE.md` §6E, `clerk-native-no-prebuilt-ui` + `auth-ui-architecture-decision` memos. Code: web `sign-in/page.tsx`, mobile `AuthGateSheet.tsx`, `useRequireAuth.ts`.*
+
+### Signing up
+
+Signup is **100% Clerk-driven** — the 6-digit verification code email is sent by *Clerk*, not us. Your
+Gloē account row is created **just-in-time** the first time you hit our API with a valid token (not via
+a webhook). That's deliberately simple and self-healing: there's no webhook to miss, and your local row
+can never get orphaned from Clerk because it's only ever born from a verified token.
+
+> The flip side is the **email gap** (§15): today you can pay money and get **zero email** — no receipt,
+> no confirmation. The plumbing's there at every trigger point; only the send call is missing.
+
+### Deleting your account
+
+Apple requires in-app account deletion, but we legally **can't vaporize a user** — every dollar that
+moved is wired to your record so tax/chargeback/payout history can't be orphaned. So deletion is
+**anonymize-and-deactivate**: we kill the Clerk login, **scrub every personal field to null**, tombstone
+the Clerk ID so the account can never be revived or re-linked, and stamp a deletion date — while the
+faceless financial skeleton survives. We delete the Clerk identity *first*, then scrub: if the
+identity-kill fails, nothing in the database is touched (no half-deleted account you could still log
+into). It's a muted text link behind two confirmations — a rare, irreversible "leave" action.
+
+*Deeper: `GLOE.md` §6 "Account deletion". Code: `account.ts` (`deleteAccount`).*
+
+---
+
+## 12. Notifications
+
+Gloē talks **straight to Apple's push gateway** (APNs) — no Expo middleman — signing its own
+credentials. Devices register their push token on every signed-in launch, and the permission ask is
+**lazy** (only *after* sign-in, so a scary system prompt never wrecks the first-launch experience).
+
+Here's the honest founder-facing truth: the plumbing is production-grade, but **only two events actually
+fire a push today** —
+
+1. **A support agent replies** to your ticket (this one fully deep-links to the thread on tap).
+2. **A gift link gets booked** (notifies the gifter — though its tap-to-open isn't wired yet).
+
+That's it. There's **no "your voucher expires soon," no "you have a booking," no "new deal near you"**
+nudge. The channel is almost silent — a big untapped retention lever. (Tracked: GLO-20 push campaigns.)
+
+*Deeper: `GLOE.md` §6D. Code: `apns.ts`, `usePushRegistration.ts`. Linear: GLO-20.*
+
+---
+
+## 13. Support / Concierge
+
+A 1:1 customer↔Gloē help-ticket system that **reads like Messages.** Your sent message appears
+instantly (dimmed until confirmed), the unread dot clears the moment you focus the thread, and a
+**permission-aware strip** tells you the truth — *"you can close the app, we'll ping you"* (if
+notifications are on) vs *"turn on notifications"* (if off) — instead of nagging.
+
+A **5-state machine** tracks the one thing both sides care about: **whose turn is it.** A customer reply
+always pulls the ball back to "we're on it" and even **reopens a resolved or closed case.** Messages can
+carry **camera or library photos/videos**, uploaded to a private signed storage bucket.
+
+Security is **structural, not bolted on**: every customer read/write filters by your user ID *inside the
+SQL itself*, so a stolen or guessed ticket ID can't read someone else's thread, clear their badges, or
+attach to a stranger's order. The single place a push fires is when an agent replies.
+
+*Deeper: `GLOE.md` §6, §8. Code: `supportTickets.ts`, `support.router.ts`, `support/cases.tsx`, `SupportView.tsx`.*
+
+---
+
+## 14. The website (gloe.app)
+
+The shopper site is a real **premium website**, not a stretched app. It's server-rendered for SEO —
+every deal, spa, and treatment page ships **metadata + structured data** so Google can index them with
+price and star snippets — while the interactive bits hydrate as client islands. It pulls from the
+**same shared API** as the mobile app.
+
+The single biggest UX bet is **embedded Stripe Checkout**: buyers pay **inside a modal on gloe.app** and
+**never bounce to a hosted Stripe page** — which preserves trust and conversion. And just like mobile,
+the **voucher is only minted by the webhook** (never optimistically), so an abandoned or failed payment
+can never leave a live voucher behind. Share-to-pay (the $500-capped gift flow) runs on the same
+machinery.
+
+*Deeper: `GLOE.md` §6, `WEB.md`. Code: `apps/web` `(consumer)` route group, `EmbeddedCheckoutModal.tsx`.*
+
+---
+
+## 15. What's NOT built yet
+
+An honest inventory of gaps the audit surfaced — things a user might reasonably expect that aren't
+built. Each is either tracked in Linear or worth a ticket.
+
+### Emails (the big one)
+- **No backend transactional emails exist at all.** No provider wired up, no templates. The only emails
+  anyone gets are Clerk's auth codes. → **GLO-17** (email system, the foundation).
+- **No purchase receipt / booking confirmation email.** You pay, a voucher mints, nothing hits your
+  inbox. → **GLO-11** (receipts).
+- **No welcome / signup email.** → **GLO-28** (the gap this doc surfaced).
+- **The waitlist promises a notification it can't send.** The "we'll reach out when Gloē lands near you"
+  copy has no delivery mechanism behind it.
+
+### Money safety
+- **No Stripe dispute/chargeback handling** — the double-loss path described in §8. → **GLO-10** (urgent).
+- **No cleanup of abandoned "pending payment" rows** — canceled checkouts leave harmless orphan records.
+- **A brief oversell window** — two buyers can both pass the "spots left" check before either pays
+  (inventory only decrements at payment).
+- **Unredeemed-voucher breakage isn't reconciled** — held money for never-redeemed vouchers sits in
+  "owed to vendor" forever (§8 accounting note).
+
+### Polish / parity
+- **The "Trending" ribbon is web-only.** Mobile gets the data but doesn't draw the ribbon.
+- **The map heart has no auth gate.** Signed-out users tapping save on the map get nothing (no sheet, no
+  feedback) — the other four surfaces do prompt sign-in.
+- **Apple Wallet passes don't live-update.** A pass added to Wallet won't flip to "Redeemed" — the whole
+  APNs Pass Web Service layer is specced but unbuilt (and `pass_registrations` is documented but not
+  actually created). → see `apple-wallet-push-updates-todo`.
+- **Universal Links are broken.** Shared `gloe.app` links always open in the browser, never deep-link
+  into the app. → **GLO-14**.
+- **No vendor reply-to-reviews.** No column, endpoint, or UI exists.
+- **"Notify me about new deals" on saved spas isn't wired** — the copy promises it; no push path exists.
+- **Search/click/purchase analytics aren't logged** — "popular near you" is inventory-count, not real
+  engagement. → relates to **GLO-23** (Sentry + PostHog).
+
+### Config drift / doc-vs-code
+- A few things `GLOE.md` describes as done are actually specced-but-unbuilt (the `pass_registrations`
+  table, base64-env cert loading). Noted so the docs get reconciled.
+
+---
+
+## How this doc stays honest
+
+Every time we finish a ticket that changes how the app *behaves*, the relevant section here gets updated
+(or a new one added). If you ever read something here that doesn't match what the app actually does,
+that's a bug worth flagging.
