@@ -89,6 +89,11 @@ export function BottomSheet({
         Animated.timing(overlayOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
       ]).start();
     } else if (rendered) {
+      // Drop the keyboard the instant we start closing — otherwise it lingers
+      // for a beat after the sheet has slid away (it'd only dismiss once the
+      // TextInput unmounts). Dismissing here lets the keyboard animate out in
+      // sync with the sheet.
+      Keyboard.dismiss();
       Animated.parallel([
         Animated.spring(translateY, { toValue: HIDDEN_OFFSET, useNativeDriver: true, damping: 28, stiffness: 280 }),
         Animated.timing(overlayOpacity, { toValue: 0, duration: 180, useNativeDriver: true }),
