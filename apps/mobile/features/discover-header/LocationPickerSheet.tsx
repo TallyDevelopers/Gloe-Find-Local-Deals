@@ -1,7 +1,7 @@
 import { trpc } from '@gloe/api-client';
-import { Input, Stack, Text, radius, space, useTheme } from '@gloe/ui';
-import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Keyboard, Modal, Pressable, View } from 'react-native';
+import { BottomSheet, Input, Stack, Text, radius, space, useTheme } from '@gloe/ui';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Keyboard, Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon } from '../icon/Icon';
@@ -26,8 +26,6 @@ export function LocationPickerSheet({ open, onClose }: LocationPickerSheetProps)
   const { color: palette } = useTheme();
   const { location, setLocation, requestLocation } = useSelectedLocation();
   const utils = trpc.useUtils();
-  const translateY = useRef(new Animated.Value(800)).current;
-  const overlayOpacity = useRef(new Animated.Value(0)).current;
 
   // Address / city search. As you type, we debounce the input and hit Google
   // Places autocomplete (server-proxied, key stays on the API) so suggestions
@@ -54,41 +52,14 @@ export function LocationPickerSheet({ open, onClose }: LocationPickerSheetProps)
   );
   const suggestions = suggestQuery.data ?? [];
 
-  useEffect(() => {
-    if (open) {
-      Animated.parallel([
-        Animated.spring(translateY, {
-          toValue: 0,
-          useNativeDriver: true,
-          damping: 22,
-          stiffness: 280,
-        }),
-        Animated.timing(overlayOpacity, {
-          toValue: 1,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-      ]).start();
-    }
-  }, [open, translateY, overlayOpacity]);
-
   const close = () => {
     Keyboard.dismiss();
-    Animated.parallel([
-      Animated.spring(translateY, {
-        toValue: 800,
-        useNativeDriver: true,
-        damping: 28,
-        stiffness: 280,
-      }),
-      Animated.timing(overlayOpacity, { toValue: 0, duration: 180, useNativeDriver: true }),
-    ]).start(() => {
-      // Reset the search field so reopening starts clean.
-      setQuery('');
-      setDebounced('');
-      setSearchError(null);
-      onClose();
-    });
+    // Reset the search field so reopening starts clean. The sheet animates out
+    // on its own once `open` flips false.
+    setQuery('');
+    setDebounced('');
+    setSearchError(null);
+    onClose();
   };
 
   const handlePick = (loc: SelectedLocation) => {
@@ -119,45 +90,13 @@ export function LocationPickerSheet({ open, onClose }: LocationPickerSheetProps)
   };
 
   return (
-    <Modal transparent animationType="none" visible={open} onRequestClose={close}>
-      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
-        <Animated.View
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: palette.surface.overlay,
-            opacity: overlayOpacity,
-          }}
-        >
-          <Pressable style={{ flex: 1 }} onPress={close} />
-        </Animated.View>
-
-        <Animated.View
-          style={{
-            transform: [{ translateY }],
-            backgroundColor: palette.surface.primary,
-            borderTopLeftRadius: radius['2xl'],
-            borderTopRightRadius: radius['2xl'],
-            paddingTop: space[4],
-            paddingHorizontal: space[6],
-            paddingBottom: insets.bottom + space[6],
-          }}
-        >
-          <View
-            style={{
-              alignSelf: 'center',
-              width: 40,
-              height: 4,
-              borderRadius: radius.pill,
-              backgroundColor: palette.neutral[300],
-              marginBottom: space[6],
-            }}
-          />
-
-          <Stack gap={6}>
+    <BottomSheet
+      open={open}
+      onClose={close}
+      keyboardAvoiding
+      style={{ paddingTop: space[4], paddingHorizontal: space[6], paddingBottom: insets.bottom + space[6] }}
+    >
+      <Stack gap={6}>
             <Stack gap={2}>
               <Text variant="display-sm" tone="primary" weight="medium">
                 Browse location
@@ -307,9 +246,7 @@ export function LocationPickerSheet({ open, onClose }: LocationPickerSheetProps)
                 })}
               </View>
             </Stack>
-          </Stack>
-        </Animated.View>
-      </View>
-    </Modal>
+      </Stack>
+    </BottomSheet>
   );
 }
