@@ -61,14 +61,16 @@ There's a San Diego coordinate baked in as a default — but it's **only a map c
 location, you're in `unset` and you see the gate.
 
 **Why it's built this way:** home stays pristine. We handle location invisibly when we can, ask
-politely once when we must, and never nag on a cold start. Once a location is set, the feed shows
-with almost no location chrome — just a small **location pill** (a pin + the city you're browsing)
-tucked between the search bar and the map button. It quietly answers "where am I searching?" at a
-glance, and tapping it lets you change where you're browsing any time (it opens the same picker), so
-you're never forced to detour into Map or Search to move your location. Before you're located there's
-no pill — the full-screen gate owns that state.
+politely once when we must, and never nag on a cold start. Once a location is set, the city you're
+browsing shows up **inside the search bar itself** — a small "📍 City" segment on the left, a hairline
+divider, then the usual "Search …" with its cycling treatment word. It quietly answers "where am I
+searching?" at a glance, and tapping the city opens the picker so you can change where you're browsing
+without detouring into Map or Search. We fold it into the search bar (rather than a separate pill)
+because a standalone pill either collided with the cycling placeholder or floated alone leaving dead
+space — one control reads clean. Before you're located there's no city segment; the full-screen gate
+owns that state.
 
-*Deeper: `GLOE.md` §6 "Location gate (GLO-26)". Code: `SelectedLocationProvider.tsx`, `LocationGate.tsx`, `LocationPinButton.tsx`, `discover.tsx`.*
+*Deeper: `GLOE.md` §6 "Location gate (GLO-26)". Code: `SelectedLocationProvider.tsx`, `LocationGate.tsx`, `SearchBar.tsx`, `discover.tsx`.*
 
 ### If you're in a city we haven't launched in yet
 
@@ -333,9 +335,19 @@ current star counts. If Google is down or unlinked, the page degrades gracefully
 Gloē reviews are **welded to a paid, redeemed voucher**: you can only review your *own* claim, only
 *after* it's been redeemed, and only *once* per claim (re-submitting edits it). This is enforced in
 two places — the app code *and* a database trigger — so reviews **can't be astroturfed**. It's the
-FTC-defensible "only real customers review" guarantee.
+FTC-defensible "only real customers review" guarantee. A review is a star rating, optional words, and
+up to **3 photos** (uploaded straight to storage via a signed URL).
 
-*Deeper: `GLOE.md` §6. Code: `reviews.ts`, `reviews.router.ts`, the `enforce_review_requires_redemption` DB trigger.*
+**Getting reviews written (the prompt).** Real reviews don't appear on their own, so the wallet
+*asks*. Any redeemed voucher you haven't reviewed yet shows an inline **"How was {spa}? Leave a
+review"** strip right on its own card — one prompt per deal, no separate list to scroll, so it scales
+even if you've redeemed dozens. Tapping it opens the review sheet (mobile) or modal (web); once you've
+left a review the strip disappears. The same flow is reachable from the redeemed voucher screen
+itself. There's **also** an optional "leave a review" *push* the moment a voucher is redeemed, but
+it's **off by default** — review prompts that nag get ignored — and is flipped on from admin god mode
+(Settings → "Review prompt push") only if we decide we want the extra reminder.
+
+*Deeper: `GLOE.md` §6. Code: `reviews.ts`, `reviews.router.ts`, the `enforce_review_requires_redemption` DB trigger; `ReviewSheet.tsx` (mobile) / `ReviewModal.tsx` (web); the wallet nudge in `wallet.tsx` / `wallet/page.tsx`; `platformSettings.ts` (`review_prompt_push_enabled`).*
 
 ### Saved
 

@@ -20,7 +20,7 @@ import { BrowseByCategory } from '../../../features/discover/BrowseByCategory';
 import { FilterPills } from '../../../features/discover-header/FilterPills';
 import { TreatmentPills } from '../../../features/discover-header/TreatmentPills';
 import { FilterSheet, type DiscoverFilters } from '../../../features/discover-header/FilterSheet';
-import { LocationPinButton } from '../../../features/discover-header/LocationPinButton';
+import { LocationPickerSheet } from '../../../features/discover-header/LocationPickerSheet';
 import { MapButton } from '../../../features/discover-header/MapButton';
 import { SearchBar } from '../../../features/discover-header/SearchBar';
 import { useSelectedLocation } from '../../../features/discover-header/SelectedLocationProvider';
@@ -53,6 +53,8 @@ export default function DiscoverScreen() {
     setSubtypeSlug(null);
   };
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  // Location picker, opened from the city segment inside the search bar.
+  const [locationPickerOpen, setLocationPickerOpen] = useState(false);
 
   // Count of non-default filter sections, for the "Filters · 2" affordance.
   const activeFilterCount =
@@ -180,18 +182,23 @@ export default function DiscoverScreen() {
         }
       >
         <Stack gap={4}>
-          {/* Search bar + square map-view button (ResortPass pattern). No
-              sign-in link here — the Profile tab + the auth-gate on any action
-              (buy/save) already handle it; a header link was just clutter.
-              Once a location is active, a compact pin button appears between
-              search and map — the persistent "change location" affordance
-              (GLO-26). It only shows when located; the unset state is owned by
-              the LocationGate takeover below. */}
+          {/* Search bar + square map-view button (ResortPass pattern). The
+              location lives INSIDE the search bar as a tappable left segment
+              ("📍 City │ Search…") once located — the "where am I searching?"
+              answer + tap-to-change affordance (GLO-26), folded into one control
+              so it neither collides with the cycling placeholder nor floats on
+              its own line. Before a location is set it's omitted (the LocationGate
+              takeover below owns that state). No sign-in link here — the Profile
+              tab + the auth-gate on buy/save already handle it. */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[3], paddingHorizontal: space[5] }}>
             <View style={{ flex: 1 }}>
-              <SearchBar onPress={() => router.push('/(app)/search')} />
+              <SearchBar
+                onPress={() => router.push('/(app)/search')}
+                {...(hasLocation
+                  ? { locationLabel: location.label, onPressLocation: () => setLocationPickerOpen(true) }
+                  : {})}
+              />
             </View>
-            {hasLocation ? <LocationPinButton /> : null}
             <MapButton onPress={() => router.push('/(app)/map')} />
           </View>
 
@@ -325,6 +332,7 @@ export default function DiscoverScreen() {
         onClose={() => setFilterSheetOpen(false)}
         onApply={setFilters}
       />
+      <LocationPickerSheet open={locationPickerOpen} onClose={() => setLocationPickerOpen(false)} />
       <StatusBarBackdrop />
     </View>
   );
