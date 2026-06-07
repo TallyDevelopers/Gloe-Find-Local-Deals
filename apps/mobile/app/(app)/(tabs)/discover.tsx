@@ -20,6 +20,7 @@ import { BrowseByCategory } from '../../../features/discover/BrowseByCategory';
 import { FilterPills } from '../../../features/discover-header/FilterPills';
 import { TreatmentPills } from '../../../features/discover-header/TreatmentPills';
 import { FilterSheet, type DiscoverFilters } from '../../../features/discover-header/FilterSheet';
+import { LocationPinButton } from '../../../features/discover-header/LocationPinButton';
 import { MapButton } from '../../../features/discover-header/MapButton';
 import { SearchBar } from '../../../features/discover-header/SearchBar';
 import { useSelectedLocation } from '../../../features/discover-header/SelectedLocationProvider';
@@ -181,11 +182,16 @@ export default function DiscoverScreen() {
         <Stack gap={4}>
           {/* Search bar + square map-view button (ResortPass pattern). No
               sign-in link here — the Profile tab + the auth-gate on any action
-              (buy/save) already handle it; a header link was just clutter. */}
+              (buy/save) already handle it; a header link was just clutter.
+              Once a location is active, a compact pin button appears between
+              search and map — the persistent "change location" affordance
+              (GLO-26). It only shows when located; the unset state is owned by
+              the LocationGate takeover below. */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space[3], paddingHorizontal: space[5] }}>
             <View style={{ flex: 1 }}>
               <SearchBar onPress={() => router.push('/(app)/search')} />
             </View>
+            {hasLocation ? <LocationPinButton /> : null}
             <MapButton onPress={() => router.push('/(app)/map')} />
           </View>
 

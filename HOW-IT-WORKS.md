@@ -62,9 +62,12 @@ location, you're in `unset` and you see the gate.
 
 **Why it's built this way:** home stays pristine. We handle location invisibly when we can, ask
 politely once when we must, and never nag on a cold start. Once a location is set, the feed shows
-with *zero* location chrome — changing it lives in Map and Search, not cluttering the home screen.
+with almost no location chrome — just a small **pin button** tucked between the search bar and the
+map button. Tap it any time to change where you're browsing (it opens the same picker), so you're
+never forced to detour into Map or Search to move your location. Before you're located there's no
+pin — the full-screen gate owns that state.
 
-*Deeper: `GLOE.md` §6 "Location gate (GLO-26)". Code: `SelectedLocationProvider.tsx`, `LocationGate.tsx`, `discover.tsx`.*
+*Deeper: `GLOE.md` §6 "Location gate (GLO-26)". Code: `SelectedLocationProvider.tsx`, `LocationGate.tsx`, `LocationPinButton.tsx`, `discover.tsx`.*
 
 ### If you're in a city we haven't launched in yet
 
