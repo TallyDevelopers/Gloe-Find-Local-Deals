@@ -179,16 +179,16 @@ export function ReviewSheet({ open, claimId, vendorName, onClose, onSaved }: Rev
   };
 
   return (
-    // Tall sheet (90%) so the whole form fits without fiddly internal scrolling,
-    // and the keyboard lifts the input into view. dismissOnBackdrop=false: this
-    // is a data-entry form — a stray backdrop tap must NOT throw away the review.
-    // Closing is intentional only: Cancel button or the swipe-down handle.
+    // Content-sized sheet: it takes only the room the form needs, then the whole
+    // sheet slides UP by the keyboard height (keyboardAvoiding) so title → input →
+    // buttons all stay on screen together — no internal scroll, nothing cut off.
+    // dismissOnBackdrop=false: this is a data-entry form — a stray backdrop tap
+    // must NOT throw away the review. Close only via Cancel or the swipe handle.
     <BottomSheet
       open={open}
       onClose={onClose}
       keyboardAvoiding
       dismissOnBackdrop={false}
-      maxHeight="90%"
       style={{ paddingHorizontal: space[5], paddingBottom: insets.bottom + space[4] }}
     >
       <BottomSheetScrollView>

@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Animated,
   Keyboard,
-  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -73,6 +72,10 @@ export function BottomSheet({
   const { color: palette } = useTheme();
   const translateY = useRef(new Animated.Value(HIDDEN_OFFSET)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
+  // How far the keyboard pushes the whole sheet up. We translate the entire
+  // sheet card by this — so title, input, and buttons move together as one
+  // piece and nothing gets cut off or hidden behind the keyboard.
+  const keyboardLift = useRef(new Animated.Value(0)).current;
 
   // Keep the Modal mounted while animating out, then drop it. Starts matching
   // `open` so an initially-open sheet renders immediately.
@@ -97,6 +100,37 @@ export function BottomSheet({
     // it would re-trigger the animation on the closing transition.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, translateY, overlayOpacity]);
+
+  // Slide the WHOLE sheet up by the keyboard height when a field is focused, so
+  // the entire form (title → input → buttons) clears the keyboard as one unit.
+  // We follow the keyboard's own show/hide events + duration so the sheet rides
+  // up perfectly in sync with it. iOS uses keyboardWillShow (fires before the
+  // keyboard animates); Android only has keyboardDidShow.
+  useEffect(() => {
+    if (!keyboardAvoiding) return;
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const onShow = (e: { endCoordinates: { height: number }; duration?: number }) => {
+      Animated.timing(keyboardLift, {
+        toValue: e.endCoordinates.height,
+        duration: e.duration ?? 250,
+        useNativeDriver: true,
+      }).start();
+    };
+    const onHide = (e: { duration?: number }) => {
+      Animated.timing(keyboardLift, {
+        toValue: 0,
+        duration: e.duration ?? 250,
+        useNativeDriver: true,
+      }).start();
+    };
+    const subShow = Keyboard.addListener(showEvt, onShow);
+    const subHide = Keyboard.addListener(hideEvt, onHide);
+    return () => {
+      subShow.remove();
+      subHide.remove();
+    };
+  }, [keyboardAvoiding, keyboardLift]);
 
   if (!rendered) return null;
 
@@ -128,7 +162,12 @@ export function BottomSheet({
       <Animated.View
         style={[
           {
-            transform: [{ translateY }],
+            // Entry slide (translateY) combined with the keyboard lift: subtract
+            // keyboardLift so the whole sheet rides UP above the keyboard as one
+            // piece — nothing cut off, no internal scroll needed.
+            transform: [
+              { translateY: Animated.subtract(translateY, keyboardLift) },
+            ],
             backgroundColor: palette.surface.primary,
             borderTopLeftRadius: radius['2xl'],
             borderTopRightRadius: radius['2xl'],
@@ -155,23 +194,13 @@ export function BottomSheet({
     </>
   );
 
-  // Keyboard handling: on iOS we rely on the inner ScrollView's
-  // `automaticallyAdjustKeyboardInsets` (set in BottomSheetScrollView) to inset
-  // the content and scroll the focused field into view — that's the reliable
-  // path inside a translucent modal. We deliberately do NOT also wrap in a
-  // padding-behavior KeyboardAvoidingView on iOS: the two stack and double-lift
-  // (input shoots up, leaving a gap). On Android, KAV `height` is still the
-  // right tool since automaticallyAdjustKeyboardInsets is iOS-only.
-  const needsAndroidKav = keyboardAvoiding && Platform.OS === 'android';
+  // Keyboard handling lives in the keyboardLift effect above: when
+  // keyboardAvoiding is set, the whole sheet translates up by the keyboard
+  // height so the entire form clears it as one piece. No KeyboardAvoidingView,
+  // no scroll-inset tricks — those cut the title off the top or hid the buttons.
   return (
     <Modal transparent statusBarTranslucent animationType="none" visible onRequestClose={dismiss}>
-      {needsAndroidKav ? (
-        <KeyboardAvoidingView behavior="height" style={{ flex: 1, justifyContent: 'flex-end' }}>
-          {sheet}
-        </KeyboardAvoidingView>
-      ) : (
-        <View style={{ flex: 1, justifyContent: 'flex-end' }}>{sheet}</View>
-      )}
+      <View style={{ flex: 1, justifyContent: 'flex-end' }}>{sheet}</View>
     </Modal>
   );
 }
@@ -192,11 +221,6 @@ export function BottomSheetScrollView({
     <ScrollView
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
-      // iOS automatically insets the scroll content by the keyboard height and
-      // scrolls the focused TextInput into view — this is what actually keeps
-      // what you're typing visible inside a bottom sheet (the KeyboardAvoiding
-      // wrapper alone under-lifts on a translucent modal). No-op on Android.
-      automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
       contentContainerStyle={contentContainerStyle}
     >
       {children}
