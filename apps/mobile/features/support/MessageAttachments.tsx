@@ -214,7 +214,7 @@ function PlayBadge({ palette }: { palette: ReturnType<typeof useTheme>['color'] 
           borderLeftWidth: 15,
           borderTopColor: 'transparent',
           borderBottomColor: 'transparent',
-          borderLeftColor: palette.text.primary,
+          borderLeftColor: '#1A130F',
         }}
       />
     </View>

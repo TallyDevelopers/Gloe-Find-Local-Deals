@@ -106,7 +106,7 @@ function VideoCard({ video, width, onPlay }: VideoCardProps) {
                 ...shadow.md,
               }}
             >
-              <Text style={{ fontSize: 22, color: palette.text.primary, marginLeft: 4 }}>▶</Text>
+              <Text style={{ fontSize: 22, color: '#1A130F', marginLeft: 4 }}>▶</Text>
             </View>
           </View>
           {video.duration ? (
@@ -121,7 +121,7 @@ function VideoCard({ video, width, onPlay }: VideoCardProps) {
                 borderRadius: radius.sm,
               }}
             >
-              <Text variant="caption" tone="inverse" weight="semibold">
+              <Text variant="caption" weight="semibold" style={{ color: '#FFFFFF' }}>
                 {video.duration}
               </Text>
             </View>

@@ -1,3 +1,6 @@
+export { BottomSheet, BottomSheetScrollView } from './BottomSheet';
+export type { BottomSheetProps } from './BottomSheet';
+
 export { Button } from './Button';
 export type { ButtonProps } from './Button';
 

@@ -1,7 +1,7 @@
-import { Button, Stack, Text, radius, space, useTheme } from '@gloe/ui';
+import { BottomSheet, BottomSheetScrollView, Button, Stack, Text, radius, space, useTheme } from '@gloe/ui';
 import * as Haptics from 'expo-haptics';
 import { useEffect, useState } from 'react';
-import { Modal, Pressable, ScrollView, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 /**
@@ -82,40 +82,17 @@ export function FilterSheet({ open, initial, onClose, onApply }: FilterSheetProp
   };
 
   return (
-    <Modal visible={open} animationType="slide" transparent onRequestClose={onClose}>
-      {/* Backdrop — tap to dismiss */}
-      <Pressable
-        onPress={onClose}
-        style={{ flex: 1, backgroundColor: 'rgba(20,16,10,0.45)', justifyContent: 'flex-end' }}
-      >
-        {/* Sheet — stops the backdrop press from bubbling */}
-        <Pressable
-          onPress={() => {}}
-          style={{
-            backgroundColor: palette.surface.primary,
-            borderTopLeftRadius: radius['2xl'],
-            borderTopRightRadius: radius['2xl'],
-            paddingTop: space[3],
-            paddingBottom: insets.bottom + space[3],
-            maxHeight: '85%',
-          }}
-        >
-          {/* Drag handle */}
-          <View style={{ alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: palette.border.default, marginBottom: space[3] }} />
+    <BottomSheet open={open} onClose={onClose} maxHeight="85%" style={{ paddingBottom: insets.bottom + space[3] }}>
+      {/* Header */}
+      <Stack direction="row" justify="space-between" align="center" style={{ paddingHorizontal: space[5], marginBottom: space[4] }}>
+        <Text variant="display-sm" tone="primary" weight="medium">Filters</Text>
+        <Pressable onPress={onClose} hitSlop={12}>
+          <Text variant="body-md" tone="secondary" weight="medium">Done</Text>
+        </Pressable>
+      </Stack>
 
-          {/* Header */}
-          <Stack direction="row" justify="space-between" align="center" style={{ paddingHorizontal: space[5], marginBottom: space[4] }}>
-            <Text variant="display-sm" tone="primary" weight="medium">Filters</Text>
-            <Pressable onPress={onClose} hitSlop={12}>
-              <Text variant="body-md" tone="secondary" weight="medium">Done</Text>
-            </Pressable>
-          </Stack>
-
-          <ScrollView
-            contentContainerStyle={{ paddingHorizontal: space[5], paddingBottom: space[6] }}
-            showsVerticalScrollIndicator={false}
-          >
-            <Stack gap={6}>
+      <BottomSheetScrollView contentContainerStyle={{ paddingHorizontal: space[5], paddingBottom: space[6] }}>
+        <Stack gap={6}>
               <FilterSection
                 title="Distance"
                 helper={`Currently ${distanceLabel}`}
@@ -137,28 +114,26 @@ export function FilterSheet({ open, initial, onClose, onApply }: FilterSheetProp
                 isSelected={(opt) => optionMatches(opt, draft, ['minDiscountPct'])}
                 onSelect={(patch) => setDraft((d) => ({ ...d, ...patch }))}
               />
-            </Stack>
-          </ScrollView>
+        </Stack>
+      </BottomSheetScrollView>
 
-          {/* Footer actions */}
-          <Stack direction="row" gap={3} style={{ paddingHorizontal: space[5], paddingTop: space[3], borderTopWidth: 1, borderTopColor: palette.border.subtle }}>
-            <View style={{ flex: 1 }}>
-              <Button
-                label="Clear all"
-                variant="secondary"
-                size="lg"
-                fullWidth
-                onPress={clearAll}
-                disabled={isClean}
-              />
-            </View>
-            <View style={{ flex: 2 }}>
-              <Button label="Apply" variant="primary" size="lg" fullWidth onPress={apply} />
-            </View>
-          </Stack>
-        </Pressable>
-      </Pressable>
-    </Modal>
+      {/* Footer actions */}
+      <Stack direction="row" gap={3} style={{ paddingHorizontal: space[5], paddingTop: space[3], borderTopWidth: 1, borderTopColor: palette.border.subtle }}>
+        <View style={{ flex: 1 }}>
+          <Button
+            label="Clear all"
+            variant="secondary"
+            size="lg"
+            fullWidth
+            onPress={clearAll}
+            disabled={isClean}
+          />
+        </View>
+        <View style={{ flex: 2 }}>
+          <Button label="Apply" variant="primary" size="lg" fullWidth onPress={apply} />
+        </View>
+      </Stack>
+    </BottomSheet>
   );
 }
 

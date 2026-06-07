@@ -32,9 +32,11 @@ export function TrendingRibbon({ bottom = 12 }: { bottom?: number }) {
     >
       <Text
         variant="caption"
-        tone="inverse"
         weight="bold"
-        style={{ fontSize: 10, letterSpacing: 0.5, textTransform: 'uppercase' }}
+        // Fixed white — the rose tab is a theme-independent literal, so the
+        // label must stay light in both themes (tone="inverse" would flip to
+        // dark ink in night mode and vanish against the rose).
+        style={{ color: '#FFFFFF', fontSize: 10, letterSpacing: 0.5, textTransform: 'uppercase' }}
       >
         Trending
       </Text>

@@ -391,7 +391,12 @@ function ComposeForm({
                   >
                     {o.dealTitle}
                   </Text>
-                  <Text variant="caption" tone="tertiary" numberOfLines={1}>
+                  <Text
+                    variant="caption"
+                    tone={selected ? undefined : 'tertiary'}
+                    numberOfLines={1}
+                    style={selected ? { color: palette.brand[600] } : undefined}
+                  >
                     {o.vendorName} · {o.claimStatus}
                     {o.redeemedAt ? ' · redeemed' : ''}
                   </Text>

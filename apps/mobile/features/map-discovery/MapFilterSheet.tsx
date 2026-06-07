@@ -1,8 +1,8 @@
 import { trpc } from '@gloe/api-client';
-import { Button, Stack, Text, radius, space, useTheme } from '@gloe/ui';
+import { BottomSheet, BottomSheetScrollView, Button, Stack, Text, radius, space, useTheme } from '@gloe/ui';
 import * as Haptics from 'expo-haptics';
 import { useEffect, useState } from 'react';
-import { Modal, Pressable, ScrollView, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
@@ -69,36 +69,16 @@ export function MapFilterSheet({ open, focus, initial, onClose, onApply }: MapFi
     : 'Filters';
 
   return (
-    <Modal visible={open} animationType="slide" transparent onRequestClose={onClose}>
-      <Pressable
-        onPress={onClose}
-        style={{ flex: 1, backgroundColor: 'rgba(20,16,10,0.45)', justifyContent: 'flex-end' }}
-      >
-        <Pressable
-          onPress={() => {}}
-          style={{
-            backgroundColor: palette.surface.primary,
-            borderTopLeftRadius: radius['2xl'],
-            borderTopRightRadius: radius['2xl'],
-            paddingTop: space[3],
-            paddingBottom: insets.bottom + space[3],
-            maxHeight: '85%',
-          }}
-        >
-          <View style={{ alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: palette.border.default, marginBottom: space[3] }} />
+    <BottomSheet open={open} onClose={onClose} maxHeight="85%" style={{ paddingBottom: insets.bottom + space[3] }}>
+      <Stack direction="row" justify="space-between" align="center" style={{ paddingHorizontal: space[5], marginBottom: space[4] }}>
+        <Text variant="display-sm" tone="primary" weight="medium">{title}</Text>
+        <Pressable onPress={onClose} hitSlop={12}>
+          <Text variant="body-md" tone="secondary" weight="medium">Done</Text>
+        </Pressable>
+      </Stack>
 
-          <Stack direction="row" justify="space-between" align="center" style={{ paddingHorizontal: space[5], marginBottom: space[4] }}>
-            <Text variant="display-sm" tone="primary" weight="medium">{title}</Text>
-            <Pressable onPress={onClose} hitSlop={12}>
-              <Text variant="body-md" tone="secondary" weight="medium">Done</Text>
-            </Pressable>
-          </Stack>
-
-          <ScrollView
-            contentContainerStyle={{ paddingHorizontal: space[5], paddingBottom: space[6] }}
-            showsVerticalScrollIndicator={false}
-          >
-            <Stack gap={6}>
+      <BottomSheetScrollView contentContainerStyle={{ paddingHorizontal: space[5], paddingBottom: space[6] }}>
+        <Stack gap={6}>
               {show('vibes') ? (
                 <Section title="Vibe" helper="The feel of the spa — pick any.">
                   <ChipRow>
@@ -167,40 +147,38 @@ export function MapFilterSheet({ open, focus, initial, onClose, onApply }: MapFi
                   </ChipRow>
                 </Section>
               ) : null}
-            </Stack>
-          </ScrollView>
+        </Stack>
+      </BottomSheetScrollView>
 
-          <Stack direction="row" gap={3} style={{ paddingHorizontal: space[5], paddingTop: space[3], borderTopWidth: 1, borderTopColor: palette.border.subtle }}>
-            <View style={{ flex: 1 }}>
-              <Button
-                label="Clear all"
-                variant="secondary"
-                size="lg"
-                fullWidth
-                disabled={isClean}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  setDraft({ ...EMPTY_MAP_FILTERS });
-                }}
-              />
-            </View>
-            <View style={{ flex: 2 }}>
-              <Button
-                label="Show results"
-                variant="primary"
-                size="lg"
-                fullWidth
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  onApply(draft);
-                  onClose();
-                }}
-              />
-            </View>
-          </Stack>
-        </Pressable>
-      </Pressable>
-    </Modal>
+      <Stack direction="row" gap={3} style={{ paddingHorizontal: space[5], paddingTop: space[3], borderTopWidth: 1, borderTopColor: palette.border.subtle }}>
+        <View style={{ flex: 1 }}>
+          <Button
+            label="Clear all"
+            variant="secondary"
+            size="lg"
+            fullWidth
+            disabled={isClean}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setDraft({ ...EMPTY_MAP_FILTERS });
+            }}
+          />
+        </View>
+        <View style={{ flex: 2 }}>
+          <Button
+            label="Show results"
+            variant="primary"
+            size="lg"
+            fullWidth
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onApply(draft);
+              onClose();
+            }}
+          />
+        </View>
+      </Stack>
+    </BottomSheet>
   );
 }
 

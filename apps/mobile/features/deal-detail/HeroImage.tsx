@@ -85,7 +85,7 @@ export function HeroImage({ images }: HeroImageProps) {
             borderRadius: radius.pill,
           }}
         >
-          <Text style={{ color: palette.text.inverse, fontSize: 12, fontWeight: '600' }}>
+          <Text style={{ color: '#FFFFFF', fontSize: 12, fontWeight: '600' }}>
             {activeIndex + 1} / {images.length}
           </Text>
         </View>

@@ -59,7 +59,7 @@ export function SegmentedControl<T extends string>({
                   justifyContent: 'center',
                 }}
               >
-                <Text variant="caption" tone="inverse" weight="bold">
+                <Text variant="caption" tone={isActive ? 'inverse' : 'primary'} weight="bold">
                   {option.badge}
                 </Text>
               </View>

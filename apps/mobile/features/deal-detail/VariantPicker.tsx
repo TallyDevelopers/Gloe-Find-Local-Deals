@@ -48,8 +48,9 @@ export function VariantPicker({ variants, selectedId, onSelect }: VariantPickerP
               <Stack gap={1} align="flex-start">
                 <Text
                   variant="body-md"
-                  tone="primary"
+                  tone={isSelected ? undefined : 'primary'}
                   weight={isSelected ? 'semibold' : 'medium'}
+                  style={isSelected ? { color: palette.brand[800] } : undefined}
                 >
                   {variant.label}
                 </Text>

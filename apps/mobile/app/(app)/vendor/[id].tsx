@@ -93,7 +93,7 @@ export default function VendorScreen() {
               justifyContent: 'center',
             }}
           >
-            <Text variant="body-md" tone="inverse" weight="semibold">←</Text>
+            <Text variant="body-md" weight="semibold" style={{ color: '#FFFFFF' }}>←</Text>
           </Pressable>
           {/* Save vendor — top-right floating heart. Mirrors deal card heart styling. */}
           <Pressable
@@ -447,7 +447,7 @@ function ReviewCard({
             backgroundColor: palette.brand[100],
             alignItems: 'center', justifyContent: 'center',
           }}>
-            <Text variant="body-sm" tone="primary" weight="semibold">{authorName.charAt(0).toUpperCase()}</Text>
+            <Text variant="body-sm" weight="semibold" style={{ color: palette.brand[600] }}>{authorName.charAt(0).toUpperCase()}</Text>
           </View>
         )}
         <View style={{ flex: 1, minWidth: 0 }}>

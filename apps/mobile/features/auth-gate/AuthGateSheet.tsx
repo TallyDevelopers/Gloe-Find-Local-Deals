@@ -1,17 +1,7 @@
 import { useFaceId, useSignInFlow, useSignUpFlow, useSocialAuth } from '@gloe/auth';
-import { Button, Input, Stack, Text, Wordmark, radius, space, useTheme } from '@gloe/ui';
-import { useEffect, useState } from 'react';
-import {
-  Animated,
-  KeyboardAvoidingView,
-  Linking,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  View,
-  useAnimatedValue,
-} from 'react-native';
+import { BottomSheet, BottomSheetScrollView, Button, Input, Stack, Text, Wordmark, space, useTheme } from '@gloe/ui';
+import { useState } from 'react';
+import { Linking, Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { SocialAuthButtons } from './SocialAuthButtons';
@@ -38,8 +28,6 @@ type Mode = 'sign-in' | 'sign-up' | 'verify';
 export function AuthGateSheet({ prompt, onClose, onAuthed }: AuthGateSheetProps) {
   const insets = useSafeAreaInsets();
   const { color: palette } = useTheme();
-  const translateY = useAnimatedValue(800);
-  const overlayOpacity = useAnimatedValue(0);
 
   const signInFlow = useSignInFlow();
   const signUpFlow = useSignUpFlow();
@@ -52,15 +40,6 @@ export function AuthGateSheet({ prompt, onClose, onAuthed }: AuthGateSheetProps)
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
 
-  useEffect(() => {
-    if (prompt) {
-      Animated.parallel([
-        Animated.spring(translateY, { toValue: 0, useNativeDriver: true, damping: 24, stiffness: 260 }),
-        Animated.timing(overlayOpacity, { toValue: 1, duration: 220, useNativeDriver: true }),
-      ]).start();
-    }
-  }, [prompt, translateY, overlayOpacity]);
-
   const resetAll = () => {
     setMode('sign-in');
     setEmail('');
@@ -72,15 +51,9 @@ export function AuthGateSheet({ prompt, onClose, onAuthed }: AuthGateSheetProps)
     faceId.reset();
   };
 
-  const animateOut = (after: () => void) => {
-    Animated.parallel([
-      Animated.spring(translateY, { toValue: 800, useNativeDriver: true, damping: 28, stiffness: 280 }),
-      Animated.timing(overlayOpacity, { toValue: 0, duration: 180, useNativeDriver: true }),
-    ]).start(() => after());
-  };
-
-  const handleClose = () => animateOut(() => { resetAll(); onClose(); });
-  const handleAuthed = () => animateOut(() => { resetAll(); onAuthed(); });
+  // The sheet animates out on its own once `prompt` clears (open → false).
+  const handleClose = () => { resetAll(); onClose(); };
+  const handleAuthed = () => { resetAll(); onAuthed(); };
 
   const switchMode = (next: Mode) => {
     setPassword('');
@@ -137,49 +110,21 @@ export function AuthGateSheet({ prompt, onClose, onAuthed }: AuthGateSheetProps)
   const faceLabel = faceId.biometricType === 'fingerprint' ? 'Sign in with Touch ID' : 'Sign in with Face ID';
 
   return (
-    <Modal transparent animationType="none" visible={prompt !== null} onRequestClose={handleClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1, justifyContent: 'flex-end' }}
+    <BottomSheet
+      open={prompt !== null}
+      onClose={handleClose}
+      keyboardAvoiding
+      maxHeight="94%"
+      style={{
+        shadowColor: '#2B2019',
+        shadowOffset: { width: 0, height: -8 },
+        shadowOpacity: 0.12,
+        shadowRadius: 32,
+      }}
+    >
+      <BottomSheetScrollView
+        contentContainerStyle={{ paddingHorizontal: space[6], paddingBottom: insets.bottom + space[6] }}
       >
-        <Animated.View
-          style={{
-            position: 'absolute',
-            top: 0, left: 0, right: 0, bottom: 0,
-            backgroundColor: palette.surface.overlay,
-            opacity: overlayOpacity,
-          }}
-        >
-          <Pressable style={{ flex: 1 }} onPress={handleClose} />
-        </Animated.View>
-
-        <Animated.View
-          style={{
-            transform: [{ translateY }],
-            backgroundColor: palette.surface.primary,
-            borderTopLeftRadius: radius['2xl'],
-            borderTopRightRadius: radius['2xl'],
-            paddingTop: space[3],
-            maxHeight: '94%',
-            shadowColor: '#2B2019',
-            shadowOffset: { width: 0, height: -8 },
-            shadowOpacity: 0.12,
-            shadowRadius: 32,
-          }}
-        >
-          {/* Drag handle */}
-          <View
-            style={{
-              alignSelf: 'center', width: 38, height: 4, borderRadius: radius.pill,
-              backgroundColor: palette.neutral[300], marginBottom: space[4],
-            }}
-          />
-
-          <ScrollView
-            contentContainerStyle={{ paddingHorizontal: space[6], paddingBottom: insets.bottom + space[6] }}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
             {/* --- Logo + sign-in/up toggle --- */}
             <Stack gap={2} align="center" style={{ marginBottom: space[6] }}>
               <Wordmark size={34} tone="gold" />
@@ -332,10 +277,8 @@ export function AuthGateSheet({ prompt, onClose, onAuthed }: AuthGateSheetProps)
                 </Text>
               </Stack>
             )}
-          </ScrollView>
-        </Animated.View>
-      </KeyboardAvoidingView>
-    </Modal>
+      </BottomSheetScrollView>
+    </BottomSheet>
   );
 }
 

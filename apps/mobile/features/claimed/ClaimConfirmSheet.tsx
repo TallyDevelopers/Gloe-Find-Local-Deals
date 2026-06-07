@@ -1,7 +1,6 @@
-import { Button, Stack, Text, radius, space, useTheme } from '@gloe/ui';
+import { BottomSheet, Button, Stack, Text, radius, space, useTheme } from '@gloe/ui';
 import { useRouter } from 'expo-router';
-import { useEffect, useRef } from 'react';
-import { Animated, Modal, Pressable, View } from 'react-native';
+import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { formatPrice } from '../discover/format';
@@ -45,59 +44,20 @@ export function ClaimConfirmSheet({
   const router = useRouter();
   const { color: palette } = useTheme();
   const { createClaim } = useClaimedDeals();
-  const translateY = useRef(new Animated.Value(800)).current;
-  const overlayOpacity = useRef(new Animated.Value(0)).current;
   const isOpen = deal !== null && variant !== null;
-
-  useEffect(() => {
-    if (isOpen) {
-      Animated.parallel([
-        Animated.spring(translateY, {
-          toValue: 0,
-          useNativeDriver: true,
-          damping: 22,
-          stiffness: 280,
-        }),
-        Animated.timing(overlayOpacity, {
-          toValue: 1,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-      ]).start();
-    }
-  }, [isOpen, translateY, overlayOpacity]);
-
-  const close = () => {
-    Animated.parallel([
-      Animated.spring(translateY, {
-        toValue: 800,
-        useNativeDriver: true,
-        damping: 28,
-        stiffness: 280,
-      }),
-      Animated.timing(overlayOpacity, {
-        toValue: 0,
-        duration: 180,
-        useNativeDriver: true,
-      }),
-    ]).start(() => onClose());
-  };
 
   const handleConfirm = async () => {
     if (!deal || !variant) return;
     try {
       const claim = await createClaim({ dealId: deal.id, variantId: variant.id });
-      Animated.parallel([
-        Animated.spring(translateY, { toValue: 800, useNativeDriver: true, damping: 28, stiffness: 280 }),
-        Animated.timing(overlayOpacity, { toValue: 0, duration: 180, useNativeDriver: true }),
-      ]).start(() => {
-        onClose();
-        router.push(`/(app)/my-deal/${claim.id}`);
-      });
+      // Close the sheet, then route to the new voucher. The sheet animates out
+      // on its own once `open` flips false via onClose.
+      onClose();
+      router.push(`/(app)/my-deal/${claim.id}`);
     } catch (e) {
       // TODO: surface a toast / error state. For now, log and close.
       console.warn('Claim failed', e);
-      close();
+      onClose();
     }
   };
 
@@ -108,45 +68,12 @@ export function ClaimConfirmSheet({
   const cannotClaim = remaining === 0;
 
   return (
-    <Modal transparent animationType="none" visible={isOpen} onRequestClose={close}>
-      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
-        <Animated.View
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: palette.surface.overlay,
-            opacity: overlayOpacity,
-          }}
-        >
-          <Pressable style={{ flex: 1 }} onPress={close} />
-        </Animated.View>
-
-        <Animated.View
-          style={{
-            transform: [{ translateY }],
-            backgroundColor: palette.surface.primary,
-            borderTopLeftRadius: radius['2xl'],
-            borderTopRightRadius: radius['2xl'],
-            paddingTop: space[4],
-            paddingHorizontal: space[6],
-            paddingBottom: insets.bottom + space[6],
-          }}
-        >
-          <View
-            style={{
-              alignSelf: 'center',
-              width: 40,
-              height: 4,
-              borderRadius: radius.pill,
-              backgroundColor: palette.neutral[300],
-              marginBottom: space[6],
-            }}
-          />
-
-          <Stack gap={6}>
+    <BottomSheet
+      open={isOpen}
+      onClose={onClose}
+      style={{ paddingTop: space[4], paddingHorizontal: space[6], paddingBottom: insets.bottom + space[6] }}
+    >
+      <Stack gap={6}>
             <Stack gap={2}>
               <Text variant="display-sm" tone="primary" weight="medium">
                 Claim this deal?
@@ -218,11 +145,9 @@ export function ClaimConfirmSheet({
                 onPress={handleConfirm}
                 disabled={cannotClaim}
               />
-              <Button label="Not now" variant="ghost" size="md" fullWidth onPress={close} />
+              <Button label="Not now" variant="ghost" size="md" fullWidth onPress={onClose} />
             </Stack>
-          </Stack>
-        </Animated.View>
-      </View>
-    </Modal>
+      </Stack>
+    </BottomSheet>
   );
 }

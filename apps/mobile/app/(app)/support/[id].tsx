@@ -452,7 +452,11 @@ function MessageRow({ message, palette }: { message: ThreadMessage; palette: Pal
           </Text>
         ) : null}
         {message.body ? (
-          <Text variant="body-md" tone="primary">
+          <Text
+            variant="body-md"
+            tone={isCustomer ? undefined : 'primary'}
+            style={isCustomer ? { color: palette.brand[800] } : undefined}
+          >
             {message.body}
           </Text>
         ) : null}
@@ -461,9 +465,13 @@ function MessageRow({ message, palette }: { message: ThreadMessage; palette: Pal
         ) : null}
         <Text
           variant="caption"
-          tone="tertiary"
+          tone={isCustomer ? undefined : 'tertiary'}
           align={isCustomer ? 'right' : 'left'}
-          style={{ marginTop: 4, fontSize: 11 }}
+          style={{
+            marginTop: 4,
+            fontSize: 11,
+            ...(isCustomer ? { color: palette.brand[600] } : null),
+          }}
         >
           {pending ? 'Sending…' : formatTime(message.createdAt)}
         </Text>
