@@ -1,5 +1,5 @@
+import { trpc } from '@gloe/api-client';
 import { Input, Stack, Text, radius, space, useTheme } from '@gloe/ui';
-import * as Location from 'expo-location';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, Keyboard, Modal, Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -17,23 +17,42 @@ interface LocationPickerSheetProps {
 }
 
 /**
- * Bottom sheet for changing the browse location. Three ways in: free-text
- * address/city search (geocoded on submit), "Use my current location" (GPS),
- * and a curated list of popular markets.
+ * Bottom sheet for changing the browse location. Three ways in: a live
+ * autocompleting address/city search (Google Places via our `geocode` router),
+ * "Use my current location" (GPS), and a curated list of popular markets.
  */
 export function LocationPickerSheet({ open, onClose }: LocationPickerSheetProps) {
   const insets = useSafeAreaInsets();
   const { color: palette } = useTheme();
   const { location, setLocation, requestLocation } = useSelectedLocation();
+  const utils = trpc.useUtils();
   const translateY = useRef(new Animated.Value(800)).current;
   const overlayOpacity = useRef(new Animated.Value(0)).current;
 
-  // Free-text address / city search. Geocoded on submit via the OS geocoder
-  // (no API key, no extra dep) — turns "Austin TX" or a street address into
-  // coords + a clean label, then sets it like any picked city.
+  // Address / city search. As you type, we debounce the input and hit Google
+  // Places autocomplete (server-proxied, key stays on the API) so suggestions
+  // populate live. Tapping a suggestion resolves it to coords via placeDetails.
   const [query, setQuery] = useState('');
-  const [searching, setSearching] = useState(false);
+  // The debounced value that actually drives the autocomplete query — keeps us
+  // from firing a request on every keystroke.
+  const [debounced, setDebounced] = useState('');
+  // True while resolving a tapped suggestion to coords (placeDetails).
+  const [resolving, setResolving] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+
+  // Debounce: 250ms after the last keystroke, promote query → debounced.
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(query.trim()), 250);
+    return () => clearTimeout(id);
+  }, [query]);
+
+  // Live suggestions. `types: 'geocode'` so plain city names autocomplete
+  // alongside full street addresses. Min length matches the router (3).
+  const suggestQuery = trpc.geocode.autocomplete.useQuery(
+    { query: debounced, types: 'geocode' },
+    { enabled: debounced.length >= 3, staleTime: 60_000, retry: false },
+  );
+  const suggestions = suggestQuery.data ?? [];
 
   useEffect(() => {
     if (open) {
@@ -66,6 +85,7 @@ export function LocationPickerSheet({ open, onClose }: LocationPickerSheetProps)
     ]).start(() => {
       // Reset the search field so reopening starts clean.
       setQuery('');
+      setDebounced('');
       setSearchError(null);
       onClose();
     });
@@ -76,42 +96,25 @@ export function LocationPickerSheet({ open, onClose }: LocationPickerSheetProps)
     close();
   };
 
-  // Geocode the typed address/city → coords, build a "City, ST" label from the
-  // reverse-geocode, and select it. Errors stay inline so the city list below
-  // remains a working fallback.
-  const handleSearch = async () => {
-    const q = query.trim();
-    if (!q || searching) return;
+  // A tapped suggestion → resolve its place_id to coords + a clean "City, ST"
+  // label via placeDetails, then select it. Errors stay inline so the popular-
+  // cities list below remains a working fallback.
+  const pickSuggestion = async (placeId: string) => {
+    if (resolving) return;
     Keyboard.dismiss();
-    setSearching(true);
+    setResolving(true);
     setSearchError(null);
     try {
-      const [hit] = await Location.geocodeAsync(q);
-      if (!hit) {
-        setSearchError("We couldn't find that place. Try a city or full address.");
-        return;
-      }
-      // Reverse-geocode for a clean, human label ("San Diego, CA") instead of
-      // echoing the raw query. Fall back to the typed text if it comes back empty.
-      let label = q;
-      try {
-        const [place] = await Location.reverseGeocodeAsync({
-          latitude: hit.latitude,
-          longitude: hit.longitude,
-        });
-        const city = place?.city ?? place?.subregion ?? place?.district;
-        const region = place?.region; // state/province
-        if (city && region) label = `${city}, ${region}`;
-        else if (city) label = city;
-        else if (region) label = region;
-      } catch {
-        // Keep the typed query as the label.
-      }
-      handlePick({ label, latitude: hit.latitude, longitude: hit.longitude });
+      const place = await utils.geocode.placeDetails.fetch({ placeId });
+      const label =
+        place.city && place.region
+          ? `${place.city}, ${place.region}`
+          : place.city || place.region || place.formattedAddress;
+      handlePick({ label, latitude: place.latitude, longitude: place.longitude });
     } catch {
-      setSearchError("We couldn't search right now. Try again or pick a city.");
+      setSearchError("We couldn't load that place. Try another or pick a city.");
     } finally {
-      setSearching(false);
+      setResolving(false);
     }
   };
 
@@ -164,31 +167,73 @@ export function LocationPickerSheet({ open, onClose }: LocationPickerSheetProps)
               </Text>
             </Stack>
 
-            {/* Address / city search — type anything and we geocode it on submit.
-                The keyboard "Search" key and the row's own submit both fire it. */}
-            <Input
-              placeholder="Enter an address or city"
-              value={query}
-              onChangeText={(t) => {
-                setQuery(t);
-                if (searchError) setSearchError(null);
-              }}
-              onSubmitEditing={handleSearch}
-              returnKeyType="search"
-              autoCapitalize="words"
-              autoCorrect={false}
-              error={searchError ?? undefined}
-              leftIcon={<Icon name="search" size={18} color={palette.text.tertiary} strokeWidth={2} />}
-              rightIcon={
-                searching ? (
-                  <ActivityIndicator size="small" color={palette.brand[500]} />
-                ) : query.trim() ? (
-                  <Pressable onPress={handleSearch} hitSlop={8}>
-                    <Icon name="arrowUpRight" size={18} color={palette.brand[600]} strokeWidth={2.25} />
-                  </Pressable>
-                ) : undefined
-              }
-            />
+            {/* Address / city search — suggestions populate live as you type
+                (Google Places autocomplete via our geocode router). */}
+            <Stack gap={3}>
+              <Input
+                placeholder="Enter an address or city"
+                value={query}
+                onChangeText={(t) => {
+                  setQuery(t);
+                  if (searchError) setSearchError(null);
+                }}
+                returnKeyType="search"
+                autoCapitalize="words"
+                autoCorrect={false}
+                error={searchError ?? undefined}
+                leftIcon={<Icon name="search" size={18} color={palette.text.tertiary} strokeWidth={2} />}
+                rightIcon={
+                  resolving || (suggestQuery.isFetching && debounced.length >= 3) ? (
+                    <ActivityIndicator size="small" color={palette.brand[500]} />
+                  ) : undefined
+                }
+              />
+
+              {/* Live suggestions list — shows once the query is long enough.
+                  Tapping one resolves it to coords and sets the location. */}
+              {debounced.length >= 3 ? (
+                <View
+                  style={{
+                    backgroundColor: palette.surface.elevated,
+                    borderRadius: radius.lg,
+                    overflow: 'hidden',
+                  }}
+                >
+                  {suggestions.length > 0 ? (
+                    suggestions.map((s, i) => (
+                      <Pressable
+                        key={s.placeId}
+                        onPress={() => pickSuggestion(s.placeId)}
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: space[3],
+                          paddingVertical: space[4],
+                          paddingHorizontal: space[5],
+                          borderBottomWidth: i === suggestions.length - 1 ? 0 : 1,
+                          borderBottomColor: palette.border.subtle,
+                        }}
+                      >
+                        <Icon name="pin" size={16} color={palette.text.tertiary} strokeWidth={2.25} />
+                        <Text variant="body-md" tone="primary" weight="medium" numberOfLines={1} style={{ flex: 1 }}>
+                          {s.description}
+                        </Text>
+                      </Pressable>
+                    ))
+                  ) : suggestQuery.isFetching ? (
+                    <View style={{ paddingVertical: space[5], alignItems: 'center' }}>
+                      <ActivityIndicator size="small" color={palette.brand[500]} />
+                    </View>
+                  ) : (
+                    <View style={{ paddingVertical: space[5], paddingHorizontal: space[5] }}>
+                      <Text variant="body-md" tone="secondary">
+                        No matches. Try a city or full address.
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              ) : null}
+            </Stack>
 
             {/* Use my location — GPS, the top option. Picks the device fix and
                 closes; falls through silently if permission is blocked (the

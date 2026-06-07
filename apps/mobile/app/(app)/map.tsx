@@ -268,16 +268,31 @@ export default function MapScreen() {
             <Icon name="chevronLeft" size={20} color={palette.text.primary} />
           </Pressable>
           {/* Tappable location — opens the city picker (change where you're
-              browsing; the map re-centers on the new location). */}
+              browsing; the map re-centers on the new location). Styled as an
+              elevated pill (pin + city + chevron) to match the back button and
+              read as a real control, not naked text. */}
           <Pressable
             onPress={() => setLocationPickerOpen(true)}
             hitSlop={8}
-            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: space[1] }}
+            accessibilityRole="button"
+            accessibilityLabel={`Browsing ${location.label}. Tap to change location.`}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: space[1],
+              maxWidth: '80%',
+              paddingVertical: space[2],
+              paddingHorizontal: space[3],
+              borderRadius: radius.pill,
+              backgroundColor: palette.surface.elevated,
+              ...shadow.sm,
+            }}
           >
-            <Text variant="body-md" tone="primary" weight="semibold" numberOfLines={1}>
+            <Icon name="pin" size={16} color={palette.text.primary} strokeWidth={2.25} />
+            <Text variant="body-md" tone="primary" weight="semibold" numberOfLines={1} style={{ flexShrink: 1 }}>
               {location.label}
             </Text>
-            <Icon name="chevronDown" size={16} color={palette.text.tertiary} strokeWidth={2.5} />
+            <Icon name="chevronDown" size={15} color={palette.text.tertiary} strokeWidth={2.5} />
           </Pressable>
         </Stack>
 

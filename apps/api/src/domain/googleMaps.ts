@@ -112,13 +112,22 @@ export type PlaceReviewsResult =
       }[];
     };
 
-/** Address type-ahead. Throws on a hard failure; returns [] for no matches. */
-export async function autocompleteAddress(query: string): Promise<PlacePrediction[]> {
+/**
+ * Address type-ahead. Throws on a hard failure; returns [] for no matches.
+ *
+ * `types` defaults to 'address' (street addresses — the deal-creation use case).
+ * Pass 'geocode' for the browse-location picker so plain city names ("Austin")
+ * autocomplete alongside full addresses. See Google's place-autocomplete types.
+ */
+export async function autocompleteAddress(
+  query: string,
+  types: 'address' | 'geocode' = 'address',
+): Promise<PlacePrediction[]> {
   const url = new URL(`${BASE}/place/autocomplete/json`);
   url.searchParams.set('input', query);
   url.searchParams.set('key', key());
   url.searchParams.set('components', 'country:us');
-  url.searchParams.set('types', 'address');
+  url.searchParams.set('types', types);
 
   const res = await fetch(url);
   const data = (await res.json()) as AutocompleteResponse;

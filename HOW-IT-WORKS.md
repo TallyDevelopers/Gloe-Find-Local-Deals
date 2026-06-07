@@ -276,9 +276,11 @@ The map is a full-screen, ResortPass-style discovery view, reached from a button
   centers; tap a pin and its card scrolls into view.
 - A **three-position draggable sheet** (peek / half / full) lets you browse the card list at whatever
   height you want.
-- The top chrome is three rows: your location, **category tabs**, and **filter chips** (Filter ·
-  Vibe · Price · Rating · Sort). Every filter maps 1:1 onto the same `deals.list` inputs the feed
-  uses — so applying a filter is just a parameter change, no special map backend.
+- The top chrome is three rows: your location **as a tappable pill** (pin + city + chevron, sitting
+  next to the back button — tap it to change where you're browsing and the map re-centers), **category
+  tabs**, and **filter chips** (Filter · Vibe · Price · Rating · Sort). Every filter maps 1:1 onto the
+  same `deals.list` inputs the feed uses — so applying a filter is just a parameter change, no special
+  map backend.
 - **"Search this area"** re-queries deals for wherever you've panned the map to.
 
 It's **iOS-first** by design (uses Apple Maps); Android is a deliberate fast-follow. And because it
