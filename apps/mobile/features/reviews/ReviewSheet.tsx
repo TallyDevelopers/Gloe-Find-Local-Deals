@@ -179,12 +179,16 @@ export function ReviewSheet({ open, claimId, vendorName, onClose, onSaved }: Rev
   };
 
   return (
-    // keyboardAvoiding lifts the sheet above the keyboard so the text field and
-    // Submit button stay visible while typing.
+    // Tall sheet (90%) so the whole form fits without fiddly internal scrolling,
+    // and the keyboard lifts the input into view. dismissOnBackdrop=false: this
+    // is a data-entry form — a stray backdrop tap must NOT throw away the review.
+    // Closing is intentional only: Cancel button or the swipe-down handle.
     <BottomSheet
       open={open}
       onClose={onClose}
       keyboardAvoiding
+      dismissOnBackdrop={false}
+      maxHeight="90%"
       style={{ paddingHorizontal: space[5], paddingBottom: insets.bottom + space[4] }}
     >
       <BottomSheetScrollView>

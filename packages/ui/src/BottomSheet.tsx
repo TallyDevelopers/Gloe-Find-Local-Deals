@@ -27,6 +27,12 @@ export interface BottomSheetProps {
    * keyboard. Off by default — only sheets with inputs need it.
    */
   keyboardAvoiding?: boolean;
+  /**
+   * Whether tapping the dimmed backdrop dismisses the sheet. Default true. Set
+   * false for data-entry sheets (e.g. leaving a review) where a stray tap would
+   * throw away unsaved work — those should only close via an explicit button.
+   */
+  dismissOnBackdrop?: boolean;
   /** Cap the sheet height (e.g. '85%'). Defaults to '92%'. Pass a number for px. */
   maxHeight?: ViewStyle['maxHeight'];
   /** Hide the grab handle at the top of the sheet. Shown by default. */
@@ -59,6 +65,7 @@ export function BottomSheet({
   onClose,
   children,
   keyboardAvoiding = false,
+  dismissOnBackdrop = true,
   maxHeight = '92%',
   hideHandle = false,
   style,
@@ -98,6 +105,10 @@ export function BottomSheet({
     onClose();
   };
 
+  // Backdrop tap: for normal sheets it closes; for data-entry sheets it only
+  // drops the keyboard (so the form stays put — a stray tap can't nuke the work).
+  const onBackdropPress = dismissOnBackdrop ? dismiss : () => Keyboard.dismiss();
+
   const sheet = (
     <>
       <Animated.View
@@ -111,7 +122,7 @@ export function BottomSheet({
           opacity: overlayOpacity,
         }}
       >
-        <Pressable style={{ flex: 1 }} onPress={dismiss} />
+        <Pressable style={{ flex: 1 }} onPress={onBackdropPress} />
       </Animated.View>
 
       <Animated.View
