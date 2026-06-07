@@ -140,5 +140,6 @@ function apiToClient(api: ApiClaim): ClaimedDeal {
     createdAt: new Date(api.createdAt).getTime(),
     expiresAt: new Date(api.expiresAt).getTime(),
     redeemedAt: api.redeemedAt ? new Date(api.redeemedAt).getTime() : null,
+    hasReview: api.hasReview,
   };
 }

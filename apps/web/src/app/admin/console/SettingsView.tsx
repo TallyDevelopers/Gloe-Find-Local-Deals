@@ -20,6 +20,7 @@ export function SettingsView() {
       </div>
       <DealReviewQueue />
       <TrendingSettings />
+      <ReviewPushSettings />
       <Card>
         <h2 style={{ fontSize: 18, marginBottom: 4 }}>Platform fees</h2>
         <p style={{ color: 'var(--text-tertiary)', fontSize: 13, marginBottom: 12 }}>
@@ -279,6 +280,68 @@ function TrendingSettings() {
           {save.isPending ? 'Saving…' : 'Save'}
         </button>
         {saved ? <span style={{ fontSize: 13, color: 'var(--success)', fontWeight: 600, paddingBottom: 9 }}>Saved ✓</span> : null}
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * Toggle the post-redemption "leave a review" push. OFF by default: the wallet
+ * already prompts for a review in-app on both mobile and web, which is the calm,
+ * non-annoying default. Flip this on only if you want the extra push the moment
+ * a voucher is redeemed. (Push delivery still requires the APNs key to be live.)
+ */
+function ReviewPushSettings() {
+  const utils = trpc.useUtils();
+  const q = trpc.admin.getReviewPromptPush.useQuery();
+  const save = trpc.admin.setReviewPromptPush.useMutation({
+    onSuccess: () => { void utils.admin.getReviewPromptPush.invalidate(); },
+  });
+  const enabled = q.data ?? false;
+
+  return (
+    <Card>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+        <div>
+          <h2 style={{ fontSize: 18, marginBottom: 4 }}>Review prompt push</h2>
+          <p style={{ color: 'var(--text-tertiary)', fontSize: 13, maxWidth: 520 }}>
+            Send a “leave a review” push the moment a voucher is redeemed. <strong>Off by default</strong> —
+            the wallet already nudges for a review in-app, so leave this off unless you want the extra reminder.
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={enabled}
+          disabled={q.isLoading || save.isPending}
+          onClick={() => save.mutate({ enabled: !enabled })}
+          style={{
+            flexShrink: 0,
+            width: 52,
+            height: 30,
+            borderRadius: 999,
+            border: 'none',
+            cursor: q.isLoading ? 'default' : 'pointer',
+            background: enabled ? 'var(--brand-500)' : 'var(--border-default)',
+            position: 'relative',
+            transition: 'background 120ms ease',
+            opacity: save.isPending ? 0.6 : 1,
+          }}
+        >
+          <span
+            style={{
+              position: 'absolute',
+              top: 3,
+              left: enabled ? 25 : 3,
+              width: 24,
+              height: 24,
+              borderRadius: '50%',
+              background: '#fff',
+              transition: 'left 120ms ease',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+            }}
+          />
+        </button>
       </div>
     </Card>
   );

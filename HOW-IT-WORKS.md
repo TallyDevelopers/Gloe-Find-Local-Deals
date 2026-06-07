@@ -52,9 +52,16 @@ There are exactly **three location states**: `unset`, `gps`, and `picked`.
   by a single full-screen **Location Gate** — one clean "share your location" ask. No half-feed,
   no empty grid. Nothing is fetched until you resolve it.
 - **If you tap it and allow,** the feed lights up. **If you deny,** we fall back to a **location
-  picker** with three ways in: type **any address or city** (we geocode it on the spot), tap **"Use
-  my current location"** (GPS), or pick one of the **popular markets**. Any of them sets your
+  picker** with three ways in: **start typing an address or city and suggestions populate live**
+  (Google-powered — "San Juan Cap…" surfaces "San Juan Capistrano, CA" before you finish typing), tap
+  **"Use my current location"** (GPS), or pick one of the **popular markets**. Any of them sets your
   location the same as GPS would.
+
+> 💡 **Cost note (for you, the founder):** sharing location via GPS and tapping a popular city are
+> *free* — they never touch Google. Only **typing** in the location search calls Google (the live
+> suggestions). At a few thousand users that's comfortably inside Google's $200/mo free credit, so
+> effectively $0. Past ~10k users we'll add "session tokens" to keep it cheap (there's a TODO in the
+> code). Worth setting a Google Cloud billing alert regardless, as an accident guard.
 
 There's a San Diego coordinate baked in as a default — but it's **only a map camera position**
 (so the map isn't "a blank ocean"), never surfaced as "your location." Until you have a real
@@ -339,13 +346,23 @@ FTC-defensible "only real customers review" guarantee. A review is a star rating
 up to **3 photos** (uploaded straight to storage via a signed URL).
 
 **Getting reviews written (the prompt).** Real reviews don't appear on their own, so the wallet
-*asks*. Any redeemed voucher you haven't reviewed yet shows an inline **"How was {spa}? Leave a
-review"** strip right on its own card — one prompt per deal, no separate list to scroll, so it scales
-even if you've redeemed dozens. Tapping it opens the review sheet (mobile) or modal (web); once you've
-left a review the strip disappears. The same flow is reachable from the redeemed voucher screen
-itself. There's **also** an optional "leave a review" *push* the moment a voucher is redeemed, but
-it's **off by default** — review prompts that nag get ignored — and is flipped on from admin god mode
-(Settings → "Review prompt push") only if we decide we want the extra reminder.
+*asks*. Any **redeemed** voucher you haven't reviewed yet shows an inline **"How was {spa}? ★ Leave a
+review"** strip welded to the bottom of *that voucher's own card* — a brand-tinted footer band, and
+the card stays bright (not faded like the rest of your "past" history) so it reads as a live call to
+action. One prompt per deal, no separate list to scroll, so it scales even if you've redeemed dozens.
+Note it only appears on *redeemed* vouchers — an **expired** voucher (bought but never used) gets no
+prompt, because you can't review a service you never received (the DB trigger enforces this too).
+
+Tapping the strip opens the review sheet (mobile) or modal (web): tap the stars, optionally type a few
+words, add up to 3 photos. On mobile the sheet **rides above the keyboard** — the whole sheet lifts so
+the text field and Submit button stay visible while you type. Once you've left a review the strip
+disappears and the button on the voucher screen flips to "Edit your review." The same flow is also
+reachable from the redeemed voucher screen itself.
+
+There's **also** an optional "leave a review" *push* the moment a voucher is redeemed, but it's **off
+by default** — review prompts that nag get ignored — and is flipped on from admin god mode (Settings →
+"Review prompt push") only if we decide we want the extra reminder. When it's on, tapping the push
+deep-links straight to the voucher and auto-opens the review sheet.
 
 *Deeper: `GLOE.md` §6. Code: `reviews.ts`, `reviews.router.ts`, the `enforce_review_requires_redemption` DB trigger; `ReviewSheet.tsx` (mobile) / `ReviewModal.tsx` (web); the wallet nudge in `wallet.tsx` / `wallet/page.tsx`; `platformSettings.ts` (`review_prompt_push_enabled`).*
 

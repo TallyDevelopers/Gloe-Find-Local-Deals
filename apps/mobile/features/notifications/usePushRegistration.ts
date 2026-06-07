@@ -37,6 +37,11 @@ export function usePushRegistration() {
       if (data.type === 'support_reply' && typeof data.ticketId === 'string') {
         router.push(`/(app)/support/${data.ticketId}`);
       }
+      // Post-redemption review nudge (only sent when admin enables the push).
+      // Land on the voucher and auto-open the review sheet via ?review=1.
+      if (data.type === 'review_prompt' && typeof data.claimId === 'string') {
+        router.push(`/(app)/my-deal/${data.claimId}?review=1`);
+      }
     }
     // Cold start: app launched by tapping a notification.
     Notifications.getLastNotificationResponseAsync().then((response) => {

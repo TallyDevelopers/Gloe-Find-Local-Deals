@@ -2,10 +2,12 @@
 
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import { useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 
-import { Check, Navigation, Phone } from '../../../../components/consumer/icons';
+import { Check, Navigation, Phone, Star } from '../../../../components/consumer/icons';
 import { formatExpiry, formatPrice } from '../../../../components/consumer/format';
+import { ReviewModal } from '../../../../components/consumer/ReviewModal';
 import { trpc } from '../../../../lib/trpc';
 
 /**
@@ -16,6 +18,7 @@ import { trpc } from '../../../../lib/trpc';
 export default function VoucherPage() {
   const params = useParams<{ id: string }>();
   const claim = trpc.claims.byId.useQuery({ id: params.id }, { enabled: !!params.id });
+  const [reviewOpen, setReviewOpen] = useState(false);
 
   if (claim.isLoading) return <div className="consumer-container" style={{ paddingTop: 40 }}>Loading…</div>;
   if (claim.error || !claim.data) {
@@ -70,6 +73,14 @@ export default function VoucherPage() {
             </div>
             <div style={{ fontFamily: 'var(--font-display)', fontSize: 20, marginTop: 14 }}>Redeemed</div>
             <p style={{ color: 'var(--text-secondary)', marginTop: 6 }}>Hope you loved it ✨</p>
+            <button
+              type="button"
+              onClick={() => setReviewOpen(true)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginTop: 16, padding: '11px 20px', borderRadius: 'var(--radius-pill)', border: 'none', background: 'var(--brand-500)', color: 'var(--text-inverse)', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}
+            >
+              <Star size={16} color="var(--text-inverse)" fill="var(--text-inverse)" />
+              {c.hasReview ? 'Edit your review' : 'Leave a review'}
+            </button>
           </div>
         ) : (
           <div style={{ padding: '24px 0' }}>
@@ -114,6 +125,13 @@ export default function VoucherPage() {
       <p style={{ marginTop: 20, fontSize: 12, color: 'var(--text-tertiary)', textAlign: 'center' }}>
         This code is unique to your account. Please don’t share it.
       </p>
+
+      <ReviewModal
+        claimId={reviewOpen ? c.id : null}
+        vendorName={c.snapshot.vendorName}
+        onClose={() => setReviewOpen(false)}
+        onSaved={() => claim.refetch()}
+      />
     </div>
   );
 }

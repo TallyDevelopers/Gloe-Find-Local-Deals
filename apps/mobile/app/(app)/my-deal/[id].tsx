@@ -29,15 +29,21 @@ import { AddToWalletBadge } from '../../../features/wallet/AddToWalletBadge';
  *   - expired  → quiet "expired" state, link to similar deals
  */
 export default function MyDealScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, review } = useLocalSearchParams<{ id: string; review?: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { getById } = useClaimedDeals();
+  const { getById, refetch } = useClaimedDeals();
   const { color: palette } = useTheme();
   const [, forceTick] = useState(0);
   const [reviewOpen, setReviewOpen] = useState(false);
 
   const claim = id ? getById(id) : undefined;
+
+  // Auto-open the review sheet when arriving from the review-prompt push
+  // (deep link adds ?review=1). Only once, and only for a redeemed voucher.
+  useEffect(() => {
+    if (review === '1' && claim?.status === 'redeemed') setReviewOpen(true);
+  }, [review, claim?.status]);
 
   // Fetch live vendor info (phone, address, coords) for the Call + Directions
   // quick-action buttons. The cached list claim doesn't include these — they
@@ -240,7 +246,7 @@ export default function MyDealScreen() {
               prefills if they've already left one (idempotent on claim_id). */}
           {isRedeemed ? (
             <Button
-              label="Leave a review"
+              label={claim.hasReview ? 'Edit your review' : 'Leave a review'}
               variant="primary"
               size="md"
               fullWidth
@@ -275,6 +281,9 @@ export default function MyDealScreen() {
         claimId={claim.id}
         vendorName={snapshot.vendorName ?? 'the vendor'}
         onClose={() => setReviewOpen(false)}
+        onSaved={() => {
+          void refetch();
+        }}
       />
       <StatusBarBackdrop />
     </View>

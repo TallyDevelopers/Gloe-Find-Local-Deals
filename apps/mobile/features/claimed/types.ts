@@ -22,4 +22,6 @@ export interface ClaimedDeal {
   createdAt: number;       // ms epoch
   expiresAt: number;       // ms epoch — typically createdAt + 7 days
   redeemedAt: number | null;
+  /** True once the user has left a review for this claim — hides the wallet nudge. */
+  hasReview: boolean;
 }

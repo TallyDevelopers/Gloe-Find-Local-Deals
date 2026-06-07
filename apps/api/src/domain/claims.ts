@@ -40,6 +40,12 @@ export interface Claim {
   createdAt: string;
   expiresAt: string;
   redeemedAt: string | null;
+  /**
+   * True if this user has already left a review for this claim. Drives the
+   * wallet's "leave a review" nudge (show it only on redeemed-and-unreviewed
+   * deals). Computed on the list query; `getClaimByIdForUser` also sets it.
+   */
+  hasReview: boolean;
   /** Present on getClaimByIdForUser only — list rows omit to keep the query cheap. */
   vendor?: ClaimVendorLive;
 }
@@ -153,6 +159,7 @@ export async function createClaim(sql: Sql, input: CreateClaimInput): Promise<Cl
     createdAt: row.created_at,
     expiresAt: row.expires_at,
     redeemedAt: null,
+    hasReview: false, // brand-new claim — nothing to review yet
   };
 }
 
@@ -169,12 +176,14 @@ export async function listClaimsForUser(sql: Sql, userId: string): Promise<Claim
     created_at: string;
     expires_at: string;
     redeemed_at: string | null;
+    has_review: boolean;
   }[]>`
-    SELECT id, deal_id, variant_id, vendor_id, snapshot, qr_payload, human_code,
-           status, created_at, expires_at, redeemed_at
-    FROM public.claims
-    WHERE user_id = ${userId}
-    ORDER BY created_at DESC
+    SELECT c.id, c.deal_id, c.variant_id, c.vendor_id, c.snapshot, c.qr_payload, c.human_code,
+           c.status, c.created_at, c.expires_at, c.redeemed_at,
+           EXISTS (SELECT 1 FROM public.reviews r WHERE r.claim_id = c.id) AS has_review
+    FROM public.claims c
+    WHERE c.user_id = ${userId}
+    ORDER BY c.created_at DESC
   `;
   return rows.map((r) => ({
     id: r.id,
@@ -188,6 +197,7 @@ export async function listClaimsForUser(sql: Sql, userId: string): Promise<Claim
     createdAt: r.created_at,
     expiresAt: r.expires_at,
     redeemedAt: r.redeemed_at,
+    hasReview: r.has_review,
   }));
 }
 
@@ -216,10 +226,12 @@ export async function getClaimByIdForUser(
     vendor_postal_code: string | null;
     vendor_lat: number | null;
     vendor_lng: number | null;
+    has_review: boolean;
   }[]>`
     SELECT
       c.id, c.deal_id, c.variant_id, c.vendor_id, c.snapshot, c.qr_payload, c.human_code,
       c.status, c.created_at, c.expires_at, c.redeemed_at,
+      EXISTS (SELECT 1 FROM public.reviews r WHERE r.claim_id = c.id) AS has_review,
       v.phone           AS vendor_phone,
       v.address_line1   AS vendor_address_line1,
       v.address_line2   AS vendor_address_line2,
@@ -250,6 +262,7 @@ export async function getClaimByIdForUser(
     createdAt: r.created_at,
     expiresAt: r.expires_at,
     redeemedAt: r.redeemed_at,
+    hasReview: r.has_review,
     vendor: {
       phone: r.vendor_phone,
       address: fullAddress,
@@ -413,14 +426,14 @@ export async function redeemClaimByVendor(
   // Atomic: only flip if active AND belongs to this vendor AND not expired.
   // Four conditions in one write; two requests racing on the same voucher,
   // exactly one wins.
-  const flipped = await sql<{ id: string }[]>`
+  const flipped = await sql<{ id: string; user_id: string; vendor_name: string | null }[]>`
     UPDATE public.claims
     SET status = 'redeemed', redeemed_at = now()
     WHERE id = ${claimId}
       AND vendor_id = ${vendorId}
       AND status = 'active'
       AND expires_at > now()
-    RETURNING id
+    RETURNING id, user_id, snapshot->>'vendorName' AS vendor_name
   `;
 
   if (flipped.length === 0) {
@@ -451,6 +464,30 @@ export async function redeemClaimByVendor(
     vendorId, attemptedBy, codeAttempted: claimId,
     claimId, outcome: 'success', errorCode: null,
   });
+
+  // Optional "leave a review" nudge — OFF by default, flipped on from admin god
+  // mode. The wallet already shows an in-app review prompt on redeemed-unreviewed
+  // deals (mobile + web), so this push is the extra, opt-in layer. Best-effort:
+  // never blocks or rolls back the redemption. data.type drives the mobile deep
+  // link in usePushRegistration.ts.
+  const redeemed = flipped[0]!; // guaranteed: flipped.length === 0 returned above
+  void (async () => {
+    try {
+      const { getReviewPromptPushEnabled } = await import('./platformSettings');
+      if (!(await getReviewPromptPushEnabled(sql))) return;
+      const vendorName = redeemed.vendor_name ?? 'your visit';
+      const { sendApnsPushToUser } = await import('./apns');
+      await sendApnsPushToUser(sql, redeemed.user_id, {
+        title: 'How was your visit?',
+        body: `Leave a review for ${vendorName} ✨`,
+        data: { type: 'review_prompt', claimId },
+        threadId: 'reviews',
+      });
+    } catch {
+      // Pushes are nice-to-have; swallow so a notification failure never
+      // affects the redemption response.
+    }
+  })();
 
   const { shouldAutoReleaseForClaim, releaseTransferForClaim } = await import('./payouts');
   if (!(await shouldAutoReleaseForClaim(sql, claimId))) {

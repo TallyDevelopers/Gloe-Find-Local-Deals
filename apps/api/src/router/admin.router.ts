@@ -59,7 +59,12 @@ import { refundTransaction, forceRefundRedeemed, windDownVendor } from '../domai
 import { dealInput, dealFields } from './vendor.router';
 import { createVendor } from '../domain/vendorSignup';
 import { startVendorOnboarding } from '../domain/vendorStripe';
-import { getTrendingConfig, setTrendingConfig } from '../domain/platformSettings';
+import {
+  getTrendingConfig,
+  setTrendingConfig,
+  getReviewPromptPushEnabled,
+  setReviewPromptPushEnabled,
+} from '../domain/platformSettings';
 import { adminProcedure, protectedProcedure, router } from './trpc';
 
 /** Throws FORBIDDEN unless the caller is an `owner` (not just an admin). */
@@ -197,6 +202,14 @@ export const adminRouter = router({
   setTrendingConfig: adminProcedure
     .input(z.object({ minPurchases: z.number().int().min(1).max(10000), windowDays: z.number().int().min(1).max(365) }))
     .mutation(({ ctx, input }) => setTrendingConfig(ctx.sql, input)),
+
+  /** Whether a "leave a review" push fires on redemption (god-mode; off by default). */
+  getReviewPromptPush: adminProcedure.query(({ ctx }) => getReviewPromptPushEnabled(ctx.sql)),
+
+  /** Toggle the post-redemption review push (god-mode). The wallet nudge is always on. */
+  setReviewPromptPush: adminProcedure
+    .input(z.object({ enabled: z.boolean() }))
+    .mutation(({ ctx, input }) => setReviewPromptPushEnabled(ctx.sql, input.enabled)),
 
   /** Set the editorial "Gloē's take" + perk chips on a spa (admin-only). */
   setVendorTake: adminProcedure

@@ -10,6 +10,7 @@ import { useClaimedDeals } from '../../../features/claimed/ClaimedDealsProvider'
 import { formatPrice } from '../../../features/discover/format';
 import { Icon } from '../../../features/icon/Icon';
 import { StatusBarBackdrop } from '../../../features/layout/StatusBarBackdrop';
+import { ReviewSheet } from '../../../features/reviews/ReviewSheet';
 import type { ClaimedDeal } from '../../../features/claimed/types';
 
 /**
@@ -31,6 +32,9 @@ export default function WalletScreen() {
   const { color: palette } = useTheme();
   const { activeClaims, pastClaims, refetch } = useClaimedDeals();
   const [refreshing, setRefreshing] = useState(false);
+  // The claim whose review sheet is open (null = closed). Driven from the
+  // "leave a review" nudge on redeemed-and-unreviewed past vouchers.
+  const [reviewClaim, setReviewClaim] = useState<ClaimedDeal | null>(null);
 
   const isSignedIn = status === 'signed-in';
 
@@ -135,6 +139,10 @@ export default function WalletScreen() {
                           key={claim.id}
                           claim={claim}
                           onPress={() => router.push(`/(app)/my-deal/${claim.id}`)}
+                          onReview={() => {
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                            setReviewClaim(claim);
+                          }}
                           dim
                         />
                       ))}
@@ -145,6 +153,18 @@ export default function WalletScreen() {
           )}
         </Stack>
       </ScrollView>
+
+      {/* Review sheet, opened from the "Share your experience" nudges. Refetch on
+          save so the reviewed claim drops out of the list immediately. */}
+      <ReviewSheet
+        open={reviewClaim !== null}
+        claimId={reviewClaim?.id ?? ''}
+        vendorName={reviewClaim?.snapshot.vendorName ?? 'the vendor'}
+        onClose={() => setReviewClaim(null)}
+        onSaved={() => {
+          void refetch();
+        }}
+      />
       <StatusBarBackdrop />
     </View>
   );
@@ -240,10 +260,13 @@ function HeroVoucherCard({ claim, onPress }: { claim: ClaimedDeal; onPress: () =
 function VoucherRow({
   claim,
   onPress,
+  onReview,
   dim,
 }: {
   claim: ClaimedDeal;
   onPress: () => void;
+  /** When set + the claim is redeemed-and-unreviewed, an inline review prompt is shown. */
+  onReview?: () => void;
   dim?: boolean;
 }) {
   const { color: palette } = useTheme();
@@ -254,35 +277,72 @@ function VoucherRow({
     : isExpired
       ? 'Expired'
       : formatExpiry(claim.expiresAt);
+  // Show the inline "leave a review" prompt right under any redeemed voucher
+  // that hasn't been reviewed yet — so it's one row per deal, no separate
+  // section and no extra scrolling no matter how many redemptions you have.
+  const canReview = !!onReview && isRedeemed && !claim.hasReview;
+  // A voucher inviting a review shouldn't look faded/"past" — keep it bright so
+  // the prompt reads as a live call to action, not archived history.
+  const dimmed = dim && !canReview;
 
   return (
-    <Pressable
-      onPress={onPress}
+    <View
       style={{
         backgroundColor: palette.surface.elevated,
         borderRadius: radius.lg,
-        padding: space[4],
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: space[3],
-        opacity: dim ? 0.6 : 1,
+        borderWidth: 1,
+        borderColor: canReview ? palette.brand[100] : palette.border.subtle,
+        overflow: 'hidden',
       }}
     >
-      <View style={{ flex: 1 }}>
-        <Stack gap={1}>
-          <Text variant="caption" tone="tertiary" weight="medium" numberOfLines={1}>
-            {claim.snapshot.vendorName}
+      <Pressable
+        onPress={onPress}
+        style={{
+          padding: space[4],
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: space[3],
+          opacity: dimmed ? 0.6 : 1,
+        }}
+      >
+        <View style={{ flex: 1 }}>
+          <Stack gap={1}>
+            <Text variant="caption" tone="tertiary" weight="medium" numberOfLines={1}>
+              {claim.snapshot.vendorName}
+            </Text>
+            <Text variant="body-md" tone="primary" weight="semibold" numberOfLines={1}>
+              {claim.snapshot.dealTitle}
+            </Text>
+            <Text variant="body-sm" tone="secondary">
+              {subline}
+            </Text>
+          </Stack>
+        </View>
+        <Icon name="chevronRight" size={18} color={palette.text.tertiary} />
+      </Pressable>
+
+      {canReview ? (
+        <Pressable
+          onPress={onReview}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: space[2],
+            paddingVertical: space[3] + 2,
+            paddingHorizontal: space[4],
+            borderTopWidth: 1,
+            borderTopColor: palette.brand[100],
+            backgroundColor: palette.brand[100],
+          }}
+        >
+          <Text style={{ fontSize: 15, lineHeight: 18, color: palette.brand[700] }}>★</Text>
+          <Text variant="body-sm" weight="semibold" style={{ color: palette.brand[700], flex: 1 }} numberOfLines={1}>
+            How was {claim.snapshot.vendorName}? Leave a review
           </Text>
-          <Text variant="body-md" tone="primary" weight="semibold" numberOfLines={1}>
-            {claim.snapshot.dealTitle}
-          </Text>
-          <Text variant="body-sm" tone="secondary">
-            {subline}
-          </Text>
-        </Stack>
-      </View>
-      <Icon name="chevronRight" size={18} color={palette.text.tertiary} />
-    </Pressable>
+          <Icon name="chevronRight" size={16} color={palette.brand[700]} />
+        </Pressable>
+      ) : null}
+    </View>
   );
 }
 

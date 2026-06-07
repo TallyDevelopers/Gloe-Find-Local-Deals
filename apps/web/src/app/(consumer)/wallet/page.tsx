@@ -3,10 +3,11 @@
 import type { Claim } from '@gloe/api-client';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { Suspense } from 'react';
+import { Suspense, useState } from 'react';
 
-import { Check } from '../../../components/consumer/icons';
+import { Check, ChevronRight, Star } from '../../../components/consumer/icons';
 import { formatExpiry, formatPrice } from '../../../components/consumer/format';
+import { ReviewModal } from '../../../components/consumer/ReviewModal';
 import { trpc } from '../../../lib/trpc';
 
 function isActive(c: Claim): boolean {
@@ -17,6 +18,8 @@ function WalletInner() {
   const params = useSearchParams();
   const justPurchased = params.get('purchased') === '1';
   const claims = trpc.claims.list.useQuery();
+  // The claim whose review modal is open (null = closed).
+  const [reviewClaim, setReviewClaim] = useState<Claim | null>(null);
 
   const active = (claims.data ?? []).filter(isActive).sort((a, b) => +new Date(a.expiresAt) - +new Date(b.expiresAt));
   const past = (claims.data ?? []).filter((c) => !isActive(c)).sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
@@ -51,47 +54,71 @@ function WalletInner() {
           {past.length > 0 ? (
             <Section label="Past">
               {past.map((c) => (
-                <VoucherRow key={c.id} claim={c} dim />
+                <VoucherRow key={c.id} claim={c} dim onReview={() => setReviewClaim(c)} />
               ))}
             </Section>
           ) : null}
         </>
       )}
+
+      <ReviewModal
+        claimId={reviewClaim?.id ?? null}
+        vendorName={reviewClaim?.snapshot.vendorName ?? 'the vendor'}
+        onClose={() => setReviewClaim(null)}
+        onSaved={() => claims.refetch()}
+      />
     </div>
   );
 }
 
-function VoucherRow({ claim, dim }: { claim: Claim; dim?: boolean }) {
+function VoucherRow({ claim, dim, onReview }: { claim: Claim; dim?: boolean; onReview?: () => void }) {
   const expiry = formatExpiry(claim.expiresAt);
   const statusLabel = claim.status === 'redeemed' ? 'Redeemed' : claim.status === 'active' ? expiry : 'Expired';
+  // Inline review prompt right under any redeemed-and-unreviewed voucher — one
+  // row per deal, so it scales no matter how many redemptions go unreviewed.
+  const canReview = !!onReview && claim.status === 'redeemed' && !claim.hasReview;
+
   return (
-    <Link
-      href={`/wallet/${claim.id}`}
-      className="deal-card"
-      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, padding: '16px 18px', color: 'inherit', opacity: dim ? 0.62 : 1 }}
-    >
-      <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)', fontWeight: 600 }}>{claim.snapshot.vendorName}</div>
-        <div style={{ fontFamily: 'var(--font-display)', fontSize: 18, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{claim.snapshot.dealTitle}</div>
-        <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 3 }}>
-          {claim.snapshot.variantLabel} · {formatPrice(claim.snapshot.dealPriceCents)}
+    <div className="deal-card" style={{ overflow: 'hidden', border: canReview ? '1px solid var(--brand-100)' : undefined, padding: 0 }}>
+      <Link
+        href={`/wallet/${claim.id}`}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, padding: '16px 18px', color: 'inherit', opacity: dim && !canReview ? 0.6 : 1 }}
+      >
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)', fontWeight: 600 }}>{claim.snapshot.vendorName}</div>
+          <div style={{ fontFamily: 'var(--font-display)', fontSize: 18, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{claim.snapshot.dealTitle}</div>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 3 }}>
+            {claim.snapshot.variantLabel} · {formatPrice(claim.snapshot.dealPriceCents)}
+          </div>
         </div>
-      </div>
-      <div style={{ textAlign: 'right', flexShrink: 0 }}>
-        <span
-          style={{
-            fontSize: 12,
-            fontWeight: 700,
-            padding: '5px 11px',
-            borderRadius: 'var(--radius-pill)',
-            background: claim.status === 'active' ? 'var(--brand-100)' : 'var(--surface-secondary)',
-            color: claim.status === 'active' ? 'var(--brand-600)' : 'var(--text-tertiary)',
-          }}
+        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+          <span
+            style={{
+              fontSize: 12,
+              fontWeight: 700,
+              padding: '5px 11px',
+              borderRadius: 'var(--radius-pill)',
+              background: claim.status === 'active' ? 'var(--brand-100)' : 'var(--surface-secondary)',
+              color: claim.status === 'active' ? 'var(--brand-600)' : 'var(--text-tertiary)',
+            }}
+          >
+            {statusLabel}
+          </span>
+        </div>
+      </Link>
+
+      {canReview ? (
+        <button
+          type="button"
+          onClick={onReview}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '13px 18px', borderTop: '1px solid var(--brand-100)', background: 'var(--brand-100)', color: 'var(--brand-700)', font: 'inherit', fontWeight: 600, fontSize: 14, cursor: 'pointer', textAlign: 'left' }}
         >
-          {statusLabel}
-        </span>
-      </div>
-    </Link>
+          <Star size={16} color="var(--brand-700)" fill="var(--brand-700)" />
+          <span style={{ flex: 1 }}>How was {claim.snapshot.vendorName}? Leave a review</span>
+          <ChevronRight size={16} color="var(--brand-700)" />
+        </button>
+      ) : null}
+    </div>
   );
 }
 

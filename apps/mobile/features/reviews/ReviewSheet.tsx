@@ -3,7 +3,7 @@ import { Button, Stack, Text, radius, space, useTheme } from '@gloe/ui';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CachedImage } from '../image/CachedImage';
@@ -184,6 +184,12 @@ export function ReviewSheet({ open, claimId, vendorName, onClose, onSaved }: Rev
         onPress={onClose}
         style={{ flex: 1, backgroundColor: 'rgba(20,16,10,0.45)', justifyContent: 'flex-end' }}
       >
+        {/* Lift the whole sheet above the keyboard so the text field and the
+            Submit button stay visible while typing. Without this the keyboard
+            slides up *over* the bottom-anchored sheet and hides the input. */}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
         <Pressable
           onPress={() => {}}
           style={{
@@ -261,6 +267,7 @@ export function ReviewSheet({ open, claimId, vendorName, onClose, onSaved }: Rev
             </Stack>
           </ScrollView>
         </Pressable>
+        </KeyboardAvoidingView>
       </Pressable>
     </Modal>
   );

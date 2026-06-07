@@ -35,3 +35,30 @@ export async function setTrendingConfig(sql: Sql, cfg: TrendingConfig): Promise<
   `;
   return { minPurchases, windowDays };
 }
+
+/**
+ * Whether to send a "leave a review" push the moment a voucher is redeemed.
+ *
+ * Deliberately OFF by default. The wallet already nudges redeemed-unreviewed
+ * deals in-app on both mobile and web, which is the calm, non-annoying default.
+ * This push is the optional aggressive layer — flip it on from admin god mode
+ * if/when the review volume needs the extra prompt. See [[vibes-feature]] /
+ * trending-config for the same key/value pattern.
+ */
+const REVIEW_PROMPT_PUSH_KEY = 'review_prompt_push_enabled';
+
+export async function getReviewPromptPushEnabled(sql: Sql): Promise<boolean> {
+  const rows = await sql<{ value: string }[]>`
+    SELECT value FROM public.platform_settings WHERE key = ${REVIEW_PROMPT_PUSH_KEY} LIMIT 1
+  `;
+  return rows[0]?.value === 'true';
+}
+
+export async function setReviewPromptPushEnabled(sql: Sql, enabled: boolean): Promise<boolean> {
+  await sql`
+    INSERT INTO public.platform_settings (key, value, updated_at)
+    VALUES (${REVIEW_PROMPT_PUSH_KEY}, ${enabled ? 'true' : 'false'}, now())
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+  `;
+  return enabled;
+}
