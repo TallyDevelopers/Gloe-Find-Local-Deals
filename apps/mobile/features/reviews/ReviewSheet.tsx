@@ -1,9 +1,9 @@
 import { trpc } from '@gloe/api-client';
-import { Button, Stack, Text, radius, space, useTheme } from '@gloe/ui';
+import { BottomSheet, BottomSheetScrollView, Button, Stack, Text, radius, space, useTheme } from '@gloe/ui';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { CachedImage } from '../image/CachedImage';
@@ -179,33 +179,16 @@ export function ReviewSheet({ open, claimId, vendorName, onClose, onSaved }: Rev
   };
 
   return (
-    <Modal visible={open} animationType="slide" transparent onRequestClose={onClose}>
-      <Pressable
-        onPress={onClose}
-        style={{ flex: 1, backgroundColor: 'rgba(20,16,10,0.45)', justifyContent: 'flex-end' }}
-      >
-        {/* Lift the whole sheet above the keyboard so the text field and the
-            Submit button stay visible while typing. Without this the keyboard
-            slides up *over* the bottom-anchored sheet and hides the input. */}
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
-        <Pressable
-          onPress={() => {}}
-          style={{
-            backgroundColor: palette.surface.primary,
-            borderTopLeftRadius: radius['2xl'],
-            borderTopRightRadius: radius['2xl'],
-            paddingTop: space[3],
-            paddingBottom: insets.bottom + space[4],
-            paddingHorizontal: space[5],
-            maxHeight: '92%',
-          }}
-        >
-          <View style={{ alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: palette.border.default, marginBottom: space[4] }} />
-
-          <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-            <Stack gap={5}>
+    // keyboardAvoiding lifts the sheet above the keyboard so the text field and
+    // Submit button stay visible while typing.
+    <BottomSheet
+      open={open}
+      onClose={onClose}
+      keyboardAvoiding
+      style={{ paddingHorizontal: space[5], paddingBottom: insets.bottom + space[4] }}
+    >
+      <BottomSheetScrollView>
+        <Stack gap={5}>
               <Stack gap={1}>
                 <Text variant="display-sm" tone="primary" weight="medium">
                   {isEditing ? 'Edit your review' : 'How was your visit?'}
@@ -265,11 +248,8 @@ export function ReviewSheet({ open, claimId, vendorName, onClose, onSaved }: Rev
                 </View>
               </Stack>
             </Stack>
-          </ScrollView>
-        </Pressable>
-        </KeyboardAvoidingView>
-      </Pressable>
-    </Modal>
+      </BottomSheetScrollView>
+    </BottomSheet>
   );
 }
 
