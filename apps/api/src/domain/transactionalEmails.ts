@@ -27,10 +27,13 @@ export async function sendRefundEmail(
       email: string | null;
       payer_email: string | null;
       first_name: string | null;
+      consumer_paid_cents: number;
+      refunded_cents: number;
       deal_title: string | null;
       vendor_name: string | null;
     }[]>`
       SELECT u.email, t.payer_email, u.first_name,
+             t.consumer_paid_cents, t.refunded_cents,
              (c.snapshot ->> 'dealTitle')  AS deal_title,
              (c.snapshot ->> 'vendorName') AS vendor_name
       FROM public.transactions t
@@ -48,7 +51,10 @@ export async function sendRefundEmail(
         firstName: r?.first_name ?? null,
         dealTitle: r?.deal_title ?? 'your purchase',
         vendorName: r?.vendor_name ?? 'the spa',
+        originalPaidCents: r?.consumer_paid_cents ?? amountCents,
         amountCents,
+        // refunded_cents is read AFTER the refund row updated it, so it's the cumulative total.
+        totalRefundedCents: r?.refunded_cents ?? amountCents,
         isFullRefund,
       }),
     );

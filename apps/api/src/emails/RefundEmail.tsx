@@ -7,8 +7,12 @@ export interface RefundData {
   firstName: string | null;
   dealTitle: string;
   vendorName: string;
+  /** What the customer originally paid, in cents. */
+  originalPaidCents: number;
   /** Amount refunded on THIS action, in cents. */
   amountCents: number;
+  /** Cumulative refunded on this order AFTER this action, in cents. */
+  totalRefundedCents: number;
   /** True = full refund (voucher cancelled); false = partial. */
   isFullRefund: boolean;
 }
@@ -33,10 +37,12 @@ export function RefundEmail(d: RefundData) {
         <Section style={{ marginTop: 12, borderTop: '1px solid #ece6db', paddingTop: 12 }}>
           <table style={{ width: '100%' }}>
             <tbody>
-              <tr>
-                <td style={{ fontSize: 14, color: '#6b6358' }}>Refunded</td>
-                <td style={{ fontSize: 14, color: '#1a1410', textAlign: 'right', fontWeight: 700 }}>{money(d.amountCents)}</td>
-              </tr>
+              <Line label="Original total" value={money(d.originalPaidCents)} />
+              <Line label="Refunded now" value={'−' + money(d.amountCents)} accent />
+              {d.totalRefundedCents !== d.amountCents ? (
+                <Line label="Refunded in total" value={'−' + money(d.totalRefundedCents)} />
+              ) : null}
+              <Line label="Remaining charge" value={money(d.originalPaidCents - d.totalRefundedCents)} bold divider />
             </tbody>
           </table>
         </Section>
@@ -50,6 +56,19 @@ export function RefundEmail(d: RefundData) {
           : ' This was a partial refund — your voucher is still active for the remaining balance.'}
       </Text>
     </BaseLayout>
+  );
+}
+
+function Line({ label, value, bold, accent, divider }: { label: string; value: string; bold?: boolean; accent?: boolean; divider?: boolean }) {
+  const td: React.CSSProperties = {
+    fontSize: 14, paddingTop: divider ? 8 : 2,
+    borderTop: divider ? '1px solid #ece6db' : undefined,
+  };
+  return (
+    <tr>
+      <td style={{ ...td, color: '#6b6358' }}>{label}</td>
+      <td style={{ ...td, textAlign: 'right', fontWeight: bold ? 700 : 400, color: accent ? '#b8806f' : '#1a1410' }}>{value}</td>
+    </tr>
   );
 }
 
