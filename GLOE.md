@@ -37,7 +37,7 @@ Last consolidated: 2026-05-29. Last updated: 2026-06-01 (search & discovery engi
 | **Concierge support** | In-app chat with Gloē, photo/video, god-mode reply | §6 · §8 Admin | ✅ |
 | **Bottom navigation** | Discover · Saved · Wallet · Profile | §6E App shell | ✅ |
 | **Loyalty points** | Members earn points (purchases + actions) and redeem them toward bookings | §9 Credit · Linear GLO-24 | 🟡 planned |
-| **Reviews** | Gloē reviews (rating + words + up to 3 photos, welded to a redeemed voucher) + live Google reviews on each deal; leads with whichever has more. Wallet prompts for a review on every redeemed-but-unreviewed voucher (mobile + web); optional post-redemption push is admin-toggled, off by default | §6 Consumer · Linear GLO-8 | ✅ |
+| **Reviews** | Gloē reviews (rating + words + up to 3 photos, welded to a redeemed voucher) + live Google reviews on each deal; leads with whichever has more. Wallet prompts for a review on every redeemed-but-unreviewed voucher (mobile + web); optional review-prompt push fires a configurable number of hours after redemption (admin-toggled via the notification registry, off by default, skips if already reviewed) | §6 Consumer · Linear GLO-8 | ✅ |
 | **Vendor storefront** | Public spa profile — hero, logo, "Gloē's take", hours, vibe, amenities, providers, deals, video reel, reviews, map | §7 Vendor · WEB.md | ✅ |
 | **Vendor profile videos** | Spas upload short "Inside the spa" clips (vendor-level, shown on the profile) | §7 Vendor | ✅ |
 | **Location maps** | Cached static map of each spa, auto-captured when their address is set | §5 · §7 | ✅ |
@@ -376,6 +376,8 @@ All tables in Supabase Postgres. PostGIS extension on. RLS enabled (auth at DB l
 | `payouts` | Stripe payouts mirror | id, vendor_id, stripe_payout_id, amount_cents, status, arrival_estimate_at, arrived_at, failure_message |
 | `platform_fees` | Fee tiers (admin-editable) | label, min_cents, max_cents, percent_bps, flat_cents, min_fee_cents, vendor_id (null=global, set=override), active |
 | `device_tokens` | iOS push targets | user_id, platform, token, last_seen_at |
+| `notification_types` | Push registry (one row per type) | key, label, enabled, delay_minutes, title_template, body_template, thread_id |
+| `notification_queue` | Pending delayed pushes (cron drains) | type_key, user_id, vars, data, dedup_key, send_after, sent_at, skipped_reason |
 | `pass_registrations` | Apple Wallet pass devices | device_library_identifier, pass_type_identifier, serial_number (=claim.id), push_token, authentication_token |
 | `audit_log` | Every mutation | action, actor_id, resource_ids (JSON), meta (JSON), created_at |
 | `reviews` | Deal reviews | id, deal_id, author_id, rating, comment, vendor_response |
@@ -661,7 +663,9 @@ Gloē pings the customer **when it matters** — a reply from support, a voucher
 
 ### 🔧 Under the hood
 
-**Direct APNs** (no Expo push middleman): ES256 JWT auth with the `.p8` key (`apps/api/src/domain/apns.ts`). Device tokens are registered by `features/notifications/PushRegistrationBridge.tsx` + `usePushRegistration.ts` → stored in the `devices` table (`devices.ts` / `devices.router.ts`). A `410 Gone` from APNs prunes the dead token. Fired on events like a support agent reply (§8). Capability + entitlement notes are in §11.
+**Direct APNs** (no Expo push middleman): ES256 JWT auth with the `.p8` key (`apps/api/src/domain/apns.ts`). Device tokens are registered by `features/notifications/PushRegistrationBridge.tsx` + `usePushRegistration.ts` → stored in the `devices` table (`devices.ts` / `devices.router.ts`). A `410 Gone` from APNs prunes the dead token. Capability + entitlement notes are in §11.
+
+**Notification registry** (`apps/api/src/domain/notifications.ts`): every push type is a row in `notification_types` (key, `enabled`, `delay_minutes`, `{{var}}` copy templates). No code sends a push directly — call-sites call `sendNotification(key, userId, …)`, which checks the registry: disabled → no-op; `delay_minutes = 0` → send now; `> 0` → enqueue into `notification_queue`. An in-API cron (60s tick in `index.ts`) drains due rows, re-checking per-type guards (e.g. *skip the review prompt if she already reviewed*) before sending. Idempotent via a partial index on unsent rows + a `dedup_key`. Seeded types: **gift_booked** + **support_reply** (immediate), **review_prompt** (default 3h after redemption, off by default). Admins manage all of it — toggle, delay, copy — in the **Notifications** panel under god-mode → Settings (`admin.listNotificationTypes` / `updateNotificationType`). Adding a push type = one INSERT + one `sendNotification` call; it appears in the panel automatically.
 
 ---
 

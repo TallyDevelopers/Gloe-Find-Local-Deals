@@ -1571,14 +1571,12 @@ export async function createAgentReply(
     WHERE id = ${ticketId}
   `;
 
-  // Fire-and-forget push to the customer. No-ops gracefully if APNs unconfigured.
-  const { sendApnsPushToUser } = await import('./apns');
-  void sendApnsPushToUser(sql, ticket.user_id, {
-    title: 'Gloē Support',
-    body: body.slice(0, 120),
-    threadId: 'support-tickets',
+  // Fire-and-forget push to the customer, via the notification registry
+  // (admin-toggleable in notification_types). No-ops if disabled or APNs unconfigured.
+  const { sendNotification } = await import('./notifications');
+  void sendNotification(sql, 'support_reply', ticket.user_id, {
+    vars: { body: body.slice(0, 120) },
     data: { type: 'support_reply', ticketId },
-    sound: 'default',
   });
 
   return { ok: true as const };

@@ -361,12 +361,14 @@ the text field and Submit button stay visible while you type. Once you've left a
 disappears and the button on the voucher screen flips to "Edit your review." The same flow is also
 reachable from the redeemed voucher screen itself.
 
-There's **also** an optional "leave a review" *push* the moment a voucher is redeemed, but it's **off
-by default** — review prompts that nag get ignored — and is flipped on from admin god mode (Settings →
-"Review prompt push") only if we decide we want the extra reminder. When it's on, tapping the push
-deep-links straight to the voucher and auto-opens the review sheet.
+There's **also** an optional "leave a review" *push* — but unlike the instant wallet nudge, it fires a
+**configurable number of hours after the visit** (default 3h, DoorDash-style), so it lands once she's
+home rather than while she's still in the chair. It's **off by default** — review prompts that nag get
+ignored — and flipped on (with its delay + copy) from admin god mode (Settings → **Notifications**). The
+cron skips it if she already left a review in the meantime, and sends only once per voucher. When it
+does fire, tapping it deep-links straight to the voucher and auto-opens the review sheet.
 
-*Deeper: `GLOE.md` §6. Code: `reviews.ts`, `reviews.router.ts`, the `enforce_review_requires_redemption` DB trigger; `ReviewSheet.tsx` (mobile) / `ReviewModal.tsx` (web); the wallet nudge in `wallet.tsx` / `wallet/page.tsx`; `platformSettings.ts` (`review_prompt_push_enabled`).*
+*Deeper: `GLOE.md` §6 + §6D. Code: `reviews.ts`, `reviews.router.ts`, the `enforce_review_requires_redemption` DB trigger; `ReviewSheet.tsx` (mobile) / `ReviewModal.tsx` (web); the wallet nudge in `wallet.tsx` / `wallet/page.tsx`; the push registry in `notifications.ts` (`review_prompt` type).*
 
 ### Saved
 
@@ -733,16 +735,27 @@ Gloē talks **straight to Apple's push gateway** (APNs) — no Expo middleman �
 credentials. Devices register their push token on every signed-in launch, and the permission ask is
 **lazy** (only *after* sign-in, so a scary system prompt never wrecks the first-launch experience).
 
-Here's the honest founder-facing truth: the plumbing is production-grade, but **only two events actually
-fire a push today** —
+**Every push runs through one registry.** Instead of notification logic scattered across the codebase,
+there's a single table where each push type is a row — on/off, how long after the event it fires, and the
+copy itself. One admin screen (god-mode → Settings → **Notifications**) controls all of them, and adding a
+new type later makes it show up there automatically. The three live types today:
 
-1. **A support agent replies** to your ticket (this one fully deep-links to the thread on tap).
-2. **A gift link gets booked** (notifies the gifter — though its tap-to-open isn't wired yet).
+1. **Support reply** — a support agent answers your ticket (deep-links to the thread on tap). *Immediate.*
+2. **Gift booked** — your gift link gets redeemed, so the gifter knows. *Immediate.*
+3. **Review prompt** — asks for a review a **configurable few hours after** a visit (default 3h, off by
+   default). It's the one *delayed* push: it rides a queue that an in-process cron drains once due, and it
+   politely **skips itself if you already reviewed** in the meantime.
 
-That's it. There's **no "your voucher expires soon," no "you have a booking," no "new deal near you"**
-nudge. The channel is almost silent — a big untapped retention lever. (Tracked: GLO-20 push campaigns.)
+The delayed ones don't send inline — they're enqueued with a "send after" time and a dedup key (so the
+same visit never double-prompts), and the cron re-checks the rules right before sending. Beyond these three
+the channel is still quiet — no "voucher expires soon," no "new deal near you" — a big untapped retention
+lever, but now with the controls in place to turn them on safely. (Tracked: GLO-20 push campaigns.)
 
-*Deeper: `GLOE.md` §6D. Code: `apns.ts`, `usePushRegistration.ts`. Linear: GLO-20.*
+> ⚠️ **One caveat:** none of this *delivers* until the APNs signing key (`.p8`) and its env vars are live.
+> The registry, queue, cron, and admin panel are all built and correct — they just need push itself
+> switched on. Until then the toggles set intent; the pushes don't leave the building.
+
+*Deeper: `GLOE.md` §6D. Code: `notifications.ts` (registry + queue + cron), `apns.ts`, `usePushRegistration.ts`; admin panel in `SettingsView.tsx`. Linear: GLO-20.*
 
 ---
 

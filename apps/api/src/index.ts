@@ -128,13 +128,12 @@ app.post('/webhooks/stripe', async (c) => {
         });
 
         // Someone paid the gift link → push the gifter so they know their
-        // friend booked. Fire-and-forget; never block the webhook on push.
-        const { sendApnsPushToUser } = await import('./domain/apns');
+        // friend booked. Routed through the notification registry (admin-toggleable
+        // in notification_types). Fire-and-forget; never block the webhook on push.
+        const { sendNotification } = await import('./domain/notifications');
         const payerName = session.customer_details?.name?.split(' ')[0] ?? 'Someone';
-        void sendApnsPushToUser(sql, m.userId, {
-          title: `${payerName} booked your gift `,
-          body: 'Their voucher is on the way. Tap to view the booking.',
-          threadId: 'gift-bookings',
+        void sendNotification(sql, 'gift_booked', m.userId, {
+          vars: { payerName },
           data: { type: 'gift_booked', dealId: m.dealId },
         });
       } catch (e) {
@@ -249,3 +248,22 @@ const port = Number(process.env.PORT) || 4000;
 serve({ fetch: app.fetch, port, hostname: '0.0.0.0' }, (info) => {
   console.log(`▲ Gloe API listening on http://0.0.0.0:${info.port}`);
 });
+
+// Delayed-notification cron. Drains the notification_queue (e.g. the review
+// prompt that fires hours after a redemption) once rows come due. In-process so
+// it shares the API's DB pool + APNs session; idempotent so a missed/overlapping
+// tick is harmless. 60s cadence is plenty — the delays are measured in hours.
+const NOTIFICATION_TICK_MS = 60_000;
+setInterval(() => {
+  void (async () => {
+    try {
+      const { processDueNotifications } = await import('./domain/notifications');
+      const r = await processDueNotifications(sql);
+      if (r.sent || r.skipped || r.failed) {
+        console.log(`[notifications] sent=${r.sent} skipped=${r.skipped} failed=${r.failed}`);
+      }
+    } catch (e) {
+      console.error('[notifications] tick failed:', (e as Error).message);
+    }
+  })();
+}, NOTIFICATION_TICK_MS).unref(); // unref so the interval never blocks shutdown

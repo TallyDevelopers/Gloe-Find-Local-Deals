@@ -20,7 +20,7 @@ export function SettingsView() {
       </div>
       <DealReviewQueue />
       <TrendingSettings />
-      <ReviewPushSettings />
+      <NotificationsSettings />
       <Card>
         <h2 style={{ fontSize: 18, marginBottom: 4 }}>Platform fees</h2>
         <p style={{ color: 'var(--text-tertiary)', fontSize: 13, marginBottom: 12 }}>
@@ -285,67 +285,187 @@ function TrendingSettings() {
   );
 }
 
+/** A reusable on/off switch, matching the rest of admin. */
+function Toggle({
+  on, disabled, onClick,
+}: { on: boolean; disabled?: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      disabled={disabled}
+      onClick={onClick}
+      style={{
+        flexShrink: 0, width: 52, height: 30, borderRadius: 999, border: 'none',
+        cursor: disabled ? 'default' : 'pointer',
+        background: on ? 'var(--brand-500)' : 'var(--border-default)',
+        position: 'relative', transition: 'background 120ms ease',
+        opacity: disabled ? 0.6 : 1,
+      }}
+    >
+      <span style={{
+        position: 'absolute', top: 3, left: on ? 25 : 3, width: 24, height: 24,
+        borderRadius: '50%', background: '#fff', transition: 'left 120ms ease',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+      }} />
+    </button>
+  );
+}
+
+/** Render a minutes count as a friendly delay label. */
+function delayLabel(min: number): string {
+  if (min <= 0) return 'Immediately';
+  if (min < 60) return `${min} min later`;
+  const h = min / 60;
+  if (Number.isInteger(h)) return `${h} hour${h === 1 ? '' : 's'} later`;
+  return `${h.toFixed(1)} hours later`;
+}
+
 /**
- * Toggle the post-redemption "leave a review" push. OFF by default: the wallet
- * already prompts for a review in-app on both mobile and web, which is the calm,
- * non-annoying default. Flip this on only if you want the extra push the moment
- * a voucher is redeemed. (Push delivery still requires the APNs key to be live.)
+ * Notifications control panel — the single place to manage every push the app
+ * sends. Each row is a registry type (notification_types): toggle it on/off, set
+ * how long after the triggering event it fires, and edit the copy. Adding a new
+ * push type server-side makes it appear here automatically.
+ *
+ * Heads-up: nothing actually delivers until APNs is live (the .p8 key + env
+ * vars). These toggles control *intent*; delivery is gated on push being set up.
  */
-function ReviewPushSettings() {
+function NotificationsSettings() {
   const utils = trpc.useUtils();
-  const q = trpc.admin.getReviewPromptPush.useQuery();
-  const save = trpc.admin.setReviewPromptPush.useMutation({
-    onSuccess: () => { void utils.admin.getReviewPromptPush.invalidate(); },
+  const q = trpc.admin.listNotificationTypes.useQuery();
+  const stats = trpc.admin.getNotificationQueueStats.useQuery();
+  const save = trpc.admin.updateNotificationType.useMutation({
+    onSuccess: () => {
+      void utils.admin.listNotificationTypes.invalidate();
+      void utils.admin.getNotificationQueueStats.invalidate();
+    },
   });
-  const enabled = q.data ?? false;
+  const types = q.data ?? [];
 
   return (
     <Card>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
-        <div>
-          <h2 style={{ fontSize: 18, marginBottom: 4 }}>Review prompt push</h2>
-          <p style={{ color: 'var(--text-tertiary)', fontSize: 13, maxWidth: 520 }}>
-            Send a “leave a review” push the moment a voucher is redeemed. <strong>Off by default</strong> —
-            the wallet already nudges for a review in-app, so leave this off unless you want the extra reminder.
-          </p>
-        </div>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={enabled}
-          disabled={q.isLoading || save.isPending}
-          onClick={() => save.mutate({ enabled: !enabled })}
-          style={{
-            flexShrink: 0,
-            width: 52,
-            height: 30,
-            borderRadius: 999,
-            border: 'none',
-            cursor: q.isLoading ? 'default' : 'pointer',
-            background: enabled ? 'var(--brand-500)' : 'var(--border-default)',
-            position: 'relative',
-            transition: 'background 120ms ease',
-            opacity: save.isPending ? 0.6 : 1,
-          }}
-        >
-          <span
-            style={{
-              position: 'absolute',
-              top: 3,
-              left: enabled ? 25 : 3,
-              width: 24,
-              height: 24,
-              borderRadius: '50%',
-              background: '#fff',
-              transition: 'left 120ms ease',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
-            }}
-          />
-        </button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+        <h2 style={{ fontSize: 18 }}>Notifications</h2>
+        {stats.data ? (
+          <span style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
+            {stats.data.pending} queued · {stats.data.sentLast24h} sent · {stats.data.skippedLast24h} skipped (24h)
+          </span>
+        ) : null}
       </div>
+      <p style={{ color: 'var(--text-tertiary)', fontSize: 13, marginBottom: 14, maxWidth: 560 }}>
+        Every push the app can send. Toggle each on/off, set how long after the event it fires,
+        and edit the copy. Delivery requires the APNs key to be live — until then these set intent only.
+      </p>
+      {q.isLoading ? (
+        <div style={{ color: 'var(--text-tertiary)', fontSize: 14 }}>Loading…</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {types.map((t, i) => (
+            <NotificationRow
+              key={t.key}
+              type={t}
+              first={i === 0}
+              saving={save.isPending && save.variables?.key === t.key}
+              onToggle={() => save.mutate({ key: t.key, enabled: !t.enabled })}
+              onSave={(patch) => save.mutate({ key: t.key, ...patch })}
+            />
+          ))}
+        </div>
+      )}
     </Card>
   );
 }
+
+interface NotifType {
+  key: string;
+  label: string;
+  description: string;
+  enabled: boolean;
+  delayMinutes: number;
+  titleTemplate: string;
+  bodyTemplate: string;
+  threadId: string | null;
+  updatedAt: string;
+}
+
+function NotificationRow({
+  type, first, saving, onToggle, onSave,
+}: {
+  type: NotifType;
+  first: boolean;
+  saving: boolean;
+  onToggle: () => void;
+  onSave: (patch: { delayMinutes?: number; titleTemplate?: string; bodyTemplate?: string }) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [hours, setHours] = useState(String(type.delayMinutes / 60));
+  const [title, setTitle] = useState(type.titleTemplate);
+  const [body, setBody] = useState(type.bodyTemplate);
+
+  const saveEdits = () => {
+    const h = parseFloat(hours);
+    onSave({
+      delayMinutes: Number.isFinite(h) && h >= 0 ? Math.round(h * 60) : type.delayMinutes,
+      titleTemplate: title.trim() || type.titleTemplate,
+      bodyTemplate: body.trim() || type.bodyTemplate,
+    });
+    setEditing(false);
+  };
+
+  return (
+    <div style={{ borderTop: first ? 'none' : '1px solid var(--border-subtle)', padding: '14px 0' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 15, fontWeight: 600 }}>{type.label}</span>
+            <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: 'var(--surface-secondary)', color: 'var(--text-tertiary)' }}>
+              {delayLabel(type.delayMinutes)}
+            </span>
+          </div>
+          <p style={{ color: 'var(--text-tertiary)', fontSize: 13, marginTop: 3, maxWidth: 520 }}>{type.description}</p>
+          {!editing ? (
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 6 }}>
+              <span style={{ fontWeight: 600 }}>{type.titleTemplate}</span> — {type.bodyTemplate}
+              <button onClick={() => setEditing(true)} style={editLink}>Edit</button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10, padding: 12, background: 'var(--surface-secondary)', borderRadius: 'var(--radius-md)' }}>
+              <label style={fieldLabel}>Delay (hours after the event — 0 = immediately)
+                <input type="number" min={0} step={0.5} value={hours} onChange={(e) => setHours(e.target.value)} style={settingInput} />
+              </label>
+              <label style={fieldLabel}>Title
+                <input value={title} onChange={(e) => setTitle(e.target.value)} style={{ ...settingInput, width: '100%' }} />
+              </label>
+              <label style={fieldLabel}>Body (use {'{{vendorName}}'} etc. for variables)
+                <input value={body} onChange={(e) => setBody(e.target.value)} style={{ ...settingInput, width: '100%' }} />
+              </label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={saveEdits} disabled={saving} style={linkBtn}>{saving ? 'Saving…' : 'Save'}</button>
+                <button onClick={() => { setEditing(false); setHours(String(type.delayMinutes / 60)); setTitle(type.titleTemplate); setBody(type.bodyTemplate); }} style={cancelBtn}>Cancel</button>
+              </div>
+            </div>
+          )}
+        </div>
+        <Toggle on={type.enabled} disabled={saving} onClick={onToggle} />
+      </div>
+    </div>
+  );
+}
+
+const fieldLabel: React.CSSProperties = {
+  display: 'flex', flexDirection: 'column', gap: 4,
+  fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
+  letterSpacing: '0.06em', color: 'var(--text-tertiary)',
+};
+const editLink: React.CSSProperties = {
+  marginLeft: 8, padding: 0, border: 'none', background: 'none',
+  color: 'var(--brand-600)', fontSize: 12, fontWeight: 700, cursor: 'pointer',
+};
+const cancelBtn: React.CSSProperties = {
+  padding: '8px 14px', fontSize: 13, fontWeight: 700, borderRadius: 999,
+  border: '1px solid var(--border-default)', background: 'var(--surface-default)', color: 'var(--text-secondary)', cursor: 'pointer',
+};
 
 const settingInput: React.CSSProperties = {
   width: 90,

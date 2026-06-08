@@ -465,28 +465,20 @@ export async function redeemClaimByVendor(
     claimId, outcome: 'success', errorCode: null,
   });
 
-  // Optional "leave a review" nudge — OFF by default, flipped on from admin god
-  // mode. The wallet already shows an in-app review prompt on redeemed-unreviewed
-  // deals (mobile + web), so this push is the extra, opt-in layer. Best-effort:
-  // never blocks or rolls back the redemption. data.type drives the mobile deep
-  // link in usePushRegistration.ts.
+  // Schedule the "leave a review" push through the notification registry. Whether
+  // it fires (and how many hours later) is admin-controlled in notification_types;
+  // delivery happens via the queue + cron, NOT inline. The wallet already shows an
+  // in-app review prompt on redeemed-unreviewed deals, so this is the extra layer.
+  // dedupKey makes a re-redeem of the same claim idempotent; data.type drives the
+  // mobile deep link in usePushRegistration.ts. Best-effort, never blocks redemption.
   const redeemed = flipped[0]!; // guaranteed: flipped.length === 0 returned above
   void (async () => {
-    try {
-      const { getReviewPromptPushEnabled } = await import('./platformSettings');
-      if (!(await getReviewPromptPushEnabled(sql))) return;
-      const vendorName = redeemed.vendor_name ?? 'your visit';
-      const { sendApnsPushToUser } = await import('./apns');
-      await sendApnsPushToUser(sql, redeemed.user_id, {
-        title: 'How was your visit?',
-        body: `Leave a review for ${vendorName} ✨`,
-        data: { type: 'review_prompt', claimId },
-        threadId: 'reviews',
-      });
-    } catch {
-      // Pushes are nice-to-have; swallow so a notification failure never
-      // affects the redemption response.
-    }
+    const { sendNotification } = await import('./notifications');
+    await sendNotification(sql, 'review_prompt', redeemed.user_id, {
+      vars: { vendorName: redeemed.vendor_name ?? 'your visit' },
+      data: { type: 'review_prompt', claimId },
+      dedupKey: `review_prompt:${claimId}`,
+    });
   })();
 
   const { shouldAutoReleaseForClaim, releaseTransferForClaim } = await import('./payouts');

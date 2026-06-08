@@ -59,12 +59,12 @@ import { refundTransaction, forceRefundRedeemed, windDownVendor } from '../domai
 import { dealInput, dealFields } from './vendor.router';
 import { createVendor } from '../domain/vendorSignup';
 import { startVendorOnboarding } from '../domain/vendorStripe';
+import { getTrendingConfig, setTrendingConfig } from '../domain/platformSettings';
 import {
-  getTrendingConfig,
-  setTrendingConfig,
-  getReviewPromptPushEnabled,
-  setReviewPromptPushEnabled,
-} from '../domain/platformSettings';
+  listNotificationTypes,
+  updateNotificationType,
+  getQueueStats,
+} from '../domain/notifications';
 import { adminProcedure, protectedProcedure, router } from './trpc';
 
 /** Throws FORBIDDEN unless the caller is an `owner` (not just an admin). */
@@ -203,13 +203,24 @@ export const adminRouter = router({
     .input(z.object({ minPurchases: z.number().int().min(1).max(10000), windowDays: z.number().int().min(1).max(365) }))
     .mutation(({ ctx, input }) => setTrendingConfig(ctx.sql, input)),
 
-  /** Whether a "leave a review" push fires on redemption (god-mode; off by default). */
-  getReviewPromptPush: adminProcedure.query(({ ctx }) => getReviewPromptPushEnabled(ctx.sql)),
+  /** Notification registry: every push type with its enabled/delay/copy. */
+  listNotificationTypes: adminProcedure.query(({ ctx }) => listNotificationTypes(ctx.sql)),
 
-  /** Toggle the post-redemption review push (god-mode). The wallet nudge is always on. */
-  setReviewPromptPush: adminProcedure
-    .input(z.object({ enabled: z.boolean() }))
-    .mutation(({ ctx, input }) => setReviewPromptPushEnabled(ctx.sql, input.enabled)),
+  /** Pending/sent/skipped counts for the delayed-push queue (panel header stats). */
+  getNotificationQueueStats: adminProcedure.query(({ ctx }) => getQueueStats(ctx.sql)),
+
+  /** Edit one push type (god-mode): toggle it, change the delay, or tweak copy. */
+  updateNotificationType: adminProcedure
+    .input(
+      z.object({
+        key: z.string().min(1),
+        enabled: z.boolean().optional(),
+        delayMinutes: z.number().int().min(0).max(43200).optional(), // ≤ 30 days
+        titleTemplate: z.string().min(1).max(200).optional(),
+        bodyTemplate: z.string().min(1).max(500).optional(),
+      }),
+    )
+    .mutation(({ ctx, input }) => updateNotificationType(ctx.sql, input)),
 
   /** Set the editorial "Gloē's take" + perk chips on a spa (admin-only). */
   setVendorTake: adminProcedure
