@@ -314,7 +314,7 @@ releaseTransferForClaim(claimId)
 
 **Post-redemption / lost-dispute reconciliation.** If the vendor was already paid for a disputed-then-redeemed order, an owner runs `reconcileLostDispute` (`vendorOps.ts`, exposed as `admin.reconcileLostDispute`, surfaced as the **"Claw back vendor share"** button in the god-mode transaction drawer's dispute panel). It reverses the vendor's transfer (`transfers.createReversal`, which can drive their Connect balance negative) and writes `dispute.reconciled`. It deliberately does **not** call `refunds.create` — the chargeback already returned the customer's money, so a second refund would double-pay. (Vendor chargeback-liability language belongs in the ToS — see §10.)
 
-**Build order:** ship the pre-redemption path (webhook + freeze + wall #12) before first real customers; the post-redemption clawback can stay manual initially.
+**Repeat-offender flag.** Disputes are tracked per vendor. God mode paints a red **⚠ high dispute rate** flag on the Vendors list + a vendor's detail page (a "Disputes" scorecard: in-window / all-time / open / lost / rate) when they cross an **admin-set threshold**. The line is yours to draw — `Settings → Dispute-risk flag` (a toggle + "more than N disputes in the last D days", stored in `platform_settings`: `dispute_risk_enabled` / `dispute_risk_max` / `dispute_risk_window_days`; see `getDisputeRiskConfig`). It only flags — it never auto-suspends; you decide whether to wind the vendor down.
 
 ### Reconciliation
 

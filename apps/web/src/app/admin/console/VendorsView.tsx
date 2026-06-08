@@ -90,6 +90,7 @@ export function VendorsView() {
               <Th>City</Th>
               <Th sortable onClick={() => setSortKey('deals')}     active={sortKey === 'deals'}     align="right">Deals</Th>
               <Th sortable onClick={() => setSortKey('purchases')} active={sortKey === 'purchases'} align="right">Buys</Th>
+              <Th align="right">Disputes</Th>
               <Th sortable onClick={() => setSortKey('gross')}     active={sortKey === 'gross'}     align="right">Gross</Th>
               <Th align="right">Gloē income</Th>
               <Th>Stripe</Th>
@@ -100,9 +101,9 @@ export function VendorsView() {
           </thead>
           <tbody>
             {q.isLoading ? (
-              <tr><td colSpan={10} style={{ padding: 20, color: 'var(--text-tertiary)' }}>Loading…</td></tr>
+              <tr><td colSpan={11} style={{ padding: 20, color: 'var(--text-tertiary)' }}>Loading…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td colSpan={10} style={{ padding: 20, color: 'var(--text-tertiary)' }}>No vendors match.</td></tr>
+              <tr><td colSpan={11} style={{ padding: 20, color: 'var(--text-tertiary)' }}>No vendors match.</td></tr>
             ) : rows.map((v) => (
               <tr
                 key={v.id}
@@ -110,11 +111,19 @@ export function VendorsView() {
                 onClick={() => router.push(`/admin/vendor/${v.id}`)}
               >
                 <Td>
-                  <div style={{ fontWeight: 600, color: 'var(--brand-600)' }}>{v.businessName}</div>
+                  <div style={{ fontWeight: 600, color: 'var(--brand-600)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {v.businessName}
+                    {v.isHighDisputeRisk ? (
+                      <span title="High dispute rate — over your threshold" style={{ fontSize: 10, fontWeight: 800, color: '#fff', background: 'var(--error)', padding: '1px 6px', borderRadius: 999 }}>⚠</span>
+                    ) : null}
+                  </div>
                 </Td>
                 <Td>{v.city}</Td>
                 <Td align="right" mono>{v.dealCount}</Td>
                 <Td align="right" mono>{v.purchases}</Td>
+                <Td align="right" mono style={{ color: v.isHighDisputeRisk ? 'var(--error)' : v.disputeInWindow > 0 ? 'var(--text-primary)' : 'var(--text-tertiary)', fontWeight: v.isHighDisputeRisk ? 800 : 400 }}>
+                  {v.disputeInWindow}
+                </Td>
                 <Td align="right" mono>{money(v.grossCents)}</Td>
                 <Td align="right" mono style={{ color: 'var(--brand-600)' }}>{money(v.incomeCents)}</Td>
                 <Td>

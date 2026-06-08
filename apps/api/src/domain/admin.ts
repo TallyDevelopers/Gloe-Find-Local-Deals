@@ -4,6 +4,7 @@ import {
   attachmentsForMessages,
   type AttachmentInput,
 } from './supportAttachments';
+import { getDisputeRiskConfig } from './platformSettings';
 
 /* ============================================================
  * Global search — powers the ⌘K palette in god mode.
@@ -1063,6 +1064,8 @@ export async function getTopVendors(sql: Sql, limit = 10) {
 
 /** Full vendor roster with sales + payout/Stripe readiness for management. */
 export async function getVendorRoster(sql: Sql) {
+  // Dispute flag uses the same admin-chosen policy as the vendor detail page.
+  const riskCfg = await getDisputeRiskConfig(sql);
   const rows = await sql<{
     id: string;
     business_name: string;
@@ -1076,6 +1079,7 @@ export async function getVendorRoster(sql: Sql) {
     purchases: number;
     gross_cents: number;
     income_cents: number;
+    dispute_in_window: number;
     created_at: string;
   }[]>`
     SELECT v.id, v.business_name, v.status, v.city,
@@ -1085,6 +1089,9 @@ export async function getVendorRoster(sql: Sql) {
       COALESCE((SELECT COUNT(*)::int FROM public.transactions t WHERE t.vendor_id = v.id AND t.status IN ('paid','released','partially_refunded')),0) AS purchases,
       COALESCE((SELECT SUM(consumer_paid_cents) FROM public.transactions t WHERE t.vendor_id = v.id AND t.status IN ('paid','released','partially_refunded')),0)::int AS gross_cents,
       COALESCE((SELECT SUM(platform_fee_cents) FROM public.transactions t WHERE t.vendor_id = v.id AND t.status IN ('paid','released','partially_refunded')),0)::int AS income_cents,
+      COALESCE((SELECT COUNT(*)::int FROM public.transactions t WHERE t.vendor_id = v.id
+                AND t.disputed_at IS NOT NULL
+                AND t.disputed_at >= now() - (${riskCfg.windowDays} || ' days')::interval),0) AS dispute_in_window,
       v.created_at
     FROM public.vendors v
     ORDER BY gross_cents DESC, v.created_at DESC
@@ -1102,6 +1109,8 @@ export async function getVendorRoster(sql: Sql) {
     purchases: r.purchases,
     grossCents: r.gross_cents,
     incomeCents: r.income_cents,
+    disputeInWindow: r.dispute_in_window,
+    isHighDisputeRisk: riskCfg.enabled && r.dispute_in_window > riskCfg.maxDisputes,
     createdAt: r.created_at,
   }));
 }
@@ -1165,6 +1174,36 @@ export async function getVendorDetail(sql: Sql, vendorId: string) {
     ORDER BY created_at DESC LIMIT 5
   `;
   const pa = payoutAgg[0]!;
+
+  // Dispute scorecard (GLO-34). A "dispute" = any transaction that ever had a
+  // chargeback opened (disputed_at set), regardless of how it later resolved.
+  // We measure the count over the admin-chosen window and flag against the
+  // admin-chosen threshold — both live in platform_settings, not in code.
+  const riskCfg = await getDisputeRiskConfig(sql);
+  const disputeAgg = await sql<{
+    total: number;
+    in_window: number;
+    lost: number;
+    open: number;
+    last_disputed_at: string | null;
+  }[]>`
+    SELECT
+      COUNT(*) FILTER (WHERE disputed_at IS NOT NULL)::int AS total,
+      COUNT(*) FILTER (WHERE disputed_at IS NOT NULL
+                         AND disputed_at >= now() - (${riskCfg.windowDays} || ' days')::interval)::int AS in_window,
+      COUNT(*) FILTER (WHERE dispute_status IN ('lost','charge_refunded'))::int AS lost,
+      COUNT(*) FILTER (WHERE status = 'disputed')::int AS open,
+      MAX(disputed_at) AS last_disputed_at
+    FROM public.transactions
+    WHERE vendor_id = ${vendorId}
+  `;
+  const da = disputeAgg[0]!;
+  // Rate over the vendor's whole life (disputes ÷ paid orders). purchases counts
+  // paid/released/partially_refunded; a disputed txn leaves that set, so add
+  // disputes back into the denominator to keep the rate honest.
+  const disputeDenom = v.purchases + da.total;
+  const disputeRate = disputeDenom > 0 ? da.total / disputeDenom : 0;
+  const isHighDisputeRisk = riskCfg.enabled && da.in_window > riskCfg.maxDisputes;
 
   const heldRows = await sql<{
     claim_id: string;
@@ -1277,6 +1316,16 @@ export async function getVendorDetail(sql: Sql, vendorId: string) {
       autoReleaseOnRedemption: v.auto_release_on_redemption,
       gloeTake: v.gloe_take,
       gloePerks: v.gloe_perks ?? [],
+      // Dispute scorecard + the policy it was judged against (so the UI can
+      // explain "5 in 90d — over your limit of 2").
+      disputeTotal: da.total,
+      disputeInWindow: da.in_window,
+      disputeLost: da.lost,
+      disputeOpen: da.open,
+      disputeRate, // 0..1, disputes ÷ (paid orders + disputes)
+      lastDisputedAt: da.last_disputed_at,
+      isHighDisputeRisk,
+      disputeRiskConfig: riskCfg, // { enabled, maxDisputes, windowDays }
     },
     heldPayouts: heldRows.map((r) => ({
       claimId: r.claim_id,

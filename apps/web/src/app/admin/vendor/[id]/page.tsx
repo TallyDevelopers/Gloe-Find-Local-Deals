@@ -177,6 +177,44 @@ export default function VendorDetailPage() {
               ) : null}
             </Card>
 
+            {/* Disputes / chargebacks — the "should I slash this vendor?" card. */}
+            <Card>
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+                <h2 style={{ fontSize: 19 }}>Disputes</h2>
+                {data.vendor.isHighDisputeRisk ? (
+                  <span style={{ fontSize: 12, fontWeight: 800, color: '#fff', background: 'var(--error)', padding: '3px 10px', borderRadius: 999 }}>
+                    ⚠ HIGH DISPUTE RATE
+                  </span>
+                ) : null}
+              </div>
+              <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+                <PayoutStat
+                  label={`In last ${data.vendor.disputeRiskConfig.windowDays}d`}
+                  value={String(data.vendor.disputeInWindow)}
+                  alert={data.vendor.isHighDisputeRisk}
+                />
+                <PayoutStat label="All time" value={String(data.vendor.disputeTotal)} />
+                <PayoutStat label="Open now" value={String(data.vendor.disputeOpen)} alert={data.vendor.disputeOpen > 0} />
+                <PayoutStat label="Lost" value={String(data.vendor.disputeLost)} alert={data.vendor.disputeLost > 0} />
+                <PayoutStat label="Rate" value={`${(data.vendor.disputeRate * 100).toFixed(1)}%`} alert={data.vendor.disputeRate > 0.01} />
+              </div>
+              <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 12, marginBottom: 0 }}>
+                {data.vendor.disputeRiskConfig.enabled ? (
+                  data.vendor.isHighDisputeRisk ? (
+                    <>Over your limit of <strong>{data.vendor.disputeRiskConfig.maxDisputes}</strong> in {data.vendor.disputeRiskConfig.windowDays} days.{' '}
+                      {data.vendor.disputeLost > 0 || data.vendor.disputeOpen > 0
+                        ? 'Reverse any vendor payouts on disputed orders from the Transactions tab, then consider winding them down below.'
+                        : 'Watch them.'}</>
+                  ) : (
+                    <>Under your limit of <strong>{data.vendor.disputeRiskConfig.maxDisputes}</strong> in {data.vendor.disputeRiskConfig.windowDays} days. Tune the line in Settings → Dispute-risk flag.</>
+                  )
+                ) : (
+                  <>Flagging is off (Settings → Dispute-risk flag). Counts shown for reference only.</>
+                )}
+                {data.vendor.lastDisputedAt ? <> · last dispute {new Date(data.vendor.lastDisputedAt).toLocaleDateString()}</> : null}
+              </p>
+            </Card>
+
             <ReleaseControls
               vendorId={id}
               autoRelease={data.vendor.autoReleaseOnRedemption}
@@ -829,7 +867,10 @@ function DealQuickEditModal({
               />
             </Field>
 
-            <Field label="Photos">
+            {/* asLabel={false}: the uploader has its own buttons/inputs, so a
+                wrapping <label> would forward stray clicks to a control and
+                silently delete photos. Render as a plain group instead. */}
+            <Field label="Photos" asLabel={false}>
               <PhotoUploader urls={photos} onChange={setPhotos} />
             </Field>
 
@@ -864,10 +905,29 @@ function DealQuickEditModal({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  children,
+  asLabel = true,
+}: {
+  label: string;
+  children: React.ReactNode;
+  // A <label> forwards clicks to its associated control. That's right for a
+  // single input, but wrong for composite widgets (e.g. PhotoUploader) where a
+  // stray click in blank space would trigger a button inside. Pass asLabel={false}
+  // for those to render a plain <div> with a non-label heading.
+  asLabel?: boolean;
+}) {
+  const heading = (
+    <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-tertiary)' }}>{label}</span>
+  );
+  const style = { display: 'flex', flexDirection: 'column', gap: 4 } as const;
+  if (!asLabel) {
+    return <div style={style}>{heading}{children}</div>;
+  }
   return (
-    <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-tertiary)' }}>{label}</span>
+    <label style={style}>
+      {heading}
       {children}
     </label>
   );

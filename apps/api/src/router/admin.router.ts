@@ -59,7 +59,7 @@ import { refundTransaction, forceRefundRedeemed, reconcileLostDispute, windDownV
 import { dealInput, dealFields } from './vendor.router';
 import { createVendor } from '../domain/vendorSignup';
 import { startVendorOnboarding } from '../domain/vendorStripe';
-import { getTrendingConfig, setTrendingConfig } from '../domain/platformSettings';
+import { getTrendingConfig, setTrendingConfig, getDisputeRiskConfig, setDisputeRiskConfig } from '../domain/platformSettings';
 import {
   listNotificationTypes,
   updateNotificationType,
@@ -202,6 +202,21 @@ export const adminRouter = router({
   setTrendingConfig: adminProcedure
     .input(z.object({ minPurchases: z.number().int().min(1).max(10000), windowDays: z.number().int().min(1).max(365) }))
     .mutation(({ ctx, input }) => setTrendingConfig(ctx.sql, input)),
+
+  /** The admin-chosen dispute-risk policy: what counts as "too many" disputes. */
+  getDisputeRiskConfig: adminProcedure.query(({ ctx }) => getDisputeRiskConfig(ctx.sql)),
+
+  /** Set the dispute-risk policy (god-mode). Owner-gated — it's a money/judgment lever. */
+  setDisputeRiskConfig: adminProcedure
+    .input(z.object({
+      enabled: z.boolean(),
+      maxDisputes: z.number().int().min(1).max(1000),
+      windowDays: z.number().int().min(1).max(365),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await assertOwner(ctx);
+      return setDisputeRiskConfig(ctx.sql, input);
+    }),
 
   /** Notification registry: every push type with its enabled/delay/copy. */
   listNotificationTypes: adminProcedure.query(({ ctx }) => listNotificationTypes(ctx.sql)),

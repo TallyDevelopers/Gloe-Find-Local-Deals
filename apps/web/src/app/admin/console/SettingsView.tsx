@@ -20,6 +20,7 @@ export function SettingsView() {
       </div>
       <DealReviewQueue />
       <TrendingSettings />
+      <DisputeRiskSettings />
       <NotificationsSettings />
       <Card>
         <h2 style={{ fontSize: 18, marginBottom: 4 }}>Platform fees</h2>
@@ -281,6 +282,98 @@ function TrendingSettings() {
         </button>
         {saved ? <span style={{ fontSize: 13, color: 'var(--success)', fontWeight: 600, paddingBottom: 9 }}>Saved ✓</span> : null}
       </div>
+    </Card>
+  );
+}
+
+/**
+ * Dispute-risk policy (GLO-34). YOU decide what "too many disputes" means —
+ * the code doesn't guess. This sets the line that flips a vendor to the red
+ * "⚠ high dispute rate" flag on the Vendors list + their detail page.
+ */
+function DisputeRiskSettings() {
+  const utils = trpc.useUtils();
+  const q = trpc.admin.getDisputeRiskConfig.useQuery();
+  const save = trpc.admin.setDisputeRiskConfig.useMutation({
+    onSuccess: () => {
+      void utils.admin.getDisputeRiskConfig.invalidate();
+      void utils.admin.vendorRoster.invalidate();
+    },
+  });
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [maxDisputes, setMaxDisputes] = useState('');
+  const [windowDays, setWindowDays] = useState('');
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Prefill once the config lands (only if the user hasn't touched it yet).
+  if (q.data && enabled === null && maxDisputes === '' && windowDays === '') {
+    setEnabled(q.data.enabled);
+    setMaxDisputes(String(q.data.maxDisputes));
+    setWindowDays(String(q.data.windowDays));
+  }
+
+  const submit = async () => {
+    setError(null);
+    try {
+      await save.mutateAsync({
+        enabled: enabled ?? true,
+        maxDisputes: Math.max(1, parseInt(maxDisputes, 10) || 2),
+        windowDays: Math.max(1, parseInt(windowDays, 10) || 90),
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1800);
+    } catch (e) {
+      // Owner-gated server-side — a moderator just sees this.
+      setError(e instanceof Error ? e.message : 'Could not save. (Owner only.)');
+    }
+  };
+
+  const n = Math.max(1, parseInt(maxDisputes, 10) || 2);
+  const d = Math.max(1, parseInt(windowDays, 10) || 90);
+
+  return (
+    <Card>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+        <div style={{ flex: 1 }}>
+          <h2 style={{ fontSize: 18, marginBottom: 4 }}>Dispute-risk flag</h2>
+          <p style={{ color: 'var(--text-tertiary)', fontSize: 13, marginBottom: 4, maxWidth: 560 }}>
+            There&apos;s no &quot;correct&quot; number of chargebacks that means a vendor is scamming —
+            it depends on your category and tolerance. <strong>So you draw the line.</strong> When a vendor
+            goes over it, god mode paints a red <strong>⚠ high dispute rate</strong> flag on the Vendors
+            list and their detail page so you can decide whether to cut them. (It only flags — it never
+            auto-suspends anyone.)
+          </p>
+          <p style={{ color: 'var(--text-tertiary)', fontSize: 12, marginBottom: 0, maxWidth: 560 }}>
+            <strong>The toggle</strong> mutes the flag entirely (e.g. pre-launch, when there&apos;s no volume
+            and every dispute is noise) without losing the number you picked.
+          </p>
+        </div>
+        <Toggle on={enabled ?? true} disabled={save.isPending} onClick={() => setEnabled(!(enabled ?? true))} />
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, flexWrap: 'wrap', marginTop: 16, opacity: (enabled ?? true) ? 1 : 0.5 }}>
+        <span style={{ fontSize: 13, color: 'var(--text-tertiary)', paddingBottom: 9 }}>Flag a vendor with more than</span>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-tertiary)' }}>Disputes</span>
+          <input type="number" min={1} value={maxDisputes} onChange={(e) => setMaxDisputes(e.target.value)} style={settingInput} />
+        </label>
+        <span style={{ fontSize: 13, color: 'var(--text-tertiary)', paddingBottom: 9 }}>in the last</span>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-tertiary)' }}>Days</span>
+          <input type="number" min={1} value={windowDays} onChange={(e) => setWindowDays(e.target.value)} style={settingInput} />
+        </label>
+        <button type="button" onClick={submit} disabled={save.isPending} style={linkBtn}>
+          {save.isPending ? 'Saving…' : 'Save'}
+        </button>
+        {saved ? <span style={{ fontSize: 13, color: 'var(--success)', fontWeight: 600, paddingBottom: 9 }}>Saved ✓</span> : null}
+      </div>
+      <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 10, marginBottom: 0 }}>
+        Right now: {(enabled ?? true)
+          ? <>a vendor is flagged at <strong>{n + 1}+ disputes</strong> within <strong>{d} days</strong>.</>
+          : <span style={{ color: 'var(--text-tertiary)' }}>flagging is off — no vendor is marked high-risk.</span>}
+      </p>
+      {error ? <p style={{ fontSize: 12, color: 'var(--error)', marginTop: 6, marginBottom: 0 }}>{error}</p> : null}
     </Card>
   );
 }
