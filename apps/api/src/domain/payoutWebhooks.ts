@@ -63,11 +63,14 @@ export async function handleStripeDisputeWebhook(
     vendor_id: string;
     status: string;
     stripe_transfer_id: string | null;
+    auto_clawback: boolean;
   }[]>`
-    SELECT id, vendor_id, status, stripe_transfer_id
-    FROM public.transactions
-    WHERE (${piId}::text IS NOT NULL AND stripe_payment_intent_id = ${piId})
-       OR (${chargeId}::text IS NOT NULL AND stripe_charge_id = ${chargeId})
+    SELECT t.id, t.vendor_id, t.status, t.stripe_transfer_id,
+           v.auto_clawback_on_dispute_lost AS auto_clawback
+    FROM public.transactions t
+    JOIN public.vendors v ON v.id = t.vendor_id
+    WHERE (${piId}::text IS NOT NULL AND t.stripe_payment_intent_id = ${piId})
+       OR (${chargeId}::text IS NOT NULL AND t.stripe_charge_id = ${chargeId})
     LIMIT 1
   `;
   const txn = txnRows[0];
@@ -164,8 +167,9 @@ export async function handleStripeDisputeWebhook(
     if (isClosed && !isWon) {
       // Lost (or otherwise closed against us): Stripe has already pulled the
       // funds. The freeze stands; the transaction remains effectively refunded.
-      // Flag for admin so any vendor transfer that already went out can be
-      // reversed via forceRefundRedeemed.
+      // If the vendor was already paid (a transfer exists) we'll claw it back
+      // AFTER this transaction commits — automatically if their flag is on,
+      // otherwise we flag it for an admin to do manually.
       await tx`
         UPDATE public.transactions
         SET dispute_status      = ${status},
@@ -173,6 +177,7 @@ export async function handleStripeDisputeWebhook(
             updated_at          = now()
         WHERE id = ${txn.id}
       `;
+      const willAutoClawback = !!txn.stripe_transfer_id && txn.auto_clawback;
       void writeAudit(sql, {
         action: 'dispute.lost',
         vendorId: txn.vendor_id,
@@ -182,7 +187,10 @@ export async function handleStripeDisputeWebhook(
           disputeStatus: status,
           disputeReason: reason,
           existingTransferId: txn.stripe_transfer_id,
-          needsAdminReview: !!txn.stripe_transfer_id,
+          autoClawbackEnabled: txn.auto_clawback,
+          willAutoClawback,
+          // Only needs a human if there's money to recover and auto is OFF.
+          needsAdminReview: !!txn.stripe_transfer_id && !txn.auto_clawback,
         },
       });
       return;
@@ -203,6 +211,28 @@ export async function handleStripeDisputeWebhook(
       meta: { stripeDisputeId: dispute.id, disputeStatus: status, disputeReason: reason },
     });
   });
+
+  // Auto-clawback (post-commit). On a LOST dispute where the vendor was already
+  // paid AND their auto-clawback flag is on, reverse their transfer now so the
+  // platform doesn't eat their share. Done OUTSIDE the transaction above because
+  // it makes a Stripe call (transfers.createReversal) and writes its own audit.
+  // Stripe lets the reversal push the vendor's balance negative and recoups it
+  // from their future sales — that's how we actually recover the money.
+  // actorUserId=null marks it as system/automatic. Refusals are audited inside
+  // reconcileLostDispute; never let a Stripe hiccup throw out of the webhook.
+  if (isClosed && !isWon && txn.stripe_transfer_id && txn.auto_clawback) {
+    try {
+      const { reconcileLostDispute } = await import('./vendorOps');
+      const r = await reconcileLostDispute(sql, txn.id, null);
+      if (r.reversed) {
+        console.log(`[dispute webhook] auto-clawback reversed ${r.reversedCents}c for txn ${txn.id}`);
+      } else {
+        console.warn(`[dispute webhook] auto-clawback skipped for txn ${txn.id}: ${r.error}`);
+      }
+    } catch (e) {
+      console.error('[dispute webhook] auto-clawback threw:', (e as Error).message);
+    }
+  }
 }
 
 /**

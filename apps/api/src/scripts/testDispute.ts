@@ -35,7 +35,7 @@ async function main() {
   const tag = randomUUID().slice(0, 8);
   console.log(`\n=== GLO-34 dispute E2E (tag ${tag}) ===\n`);
 
-  const created = { vendorId: '', userId: '', dealId: '', variantId: '', txnAId: '', txnBId: '', claimAId: '', claimBId: '' };
+  const created = { vendorId: '', userId: '', dealId: '', variantId: '', txnAId: '', txnBId: '', txnCId: '', claimAId: '', claimBId: '', claimCId: '' };
 
   try {
     // ---- seed ----
@@ -148,39 +148,73 @@ async function main() {
     check('transaction stays disputed after loss', bTxn2!.status === 'disputed', bTxn2);
     check('dispute_status = lost', bTxn2!.dispute_status === 'lost', bTxn2);
     await settle();
-    const [bLostAudit] = await sql<{ action: string }[]>`SELECT action FROM public.audit_log WHERE transaction_id = ${created.txnBId} AND action = 'dispute.lost' LIMIT 1`;
+    const [bLostAudit] = await sql<{ action: string; meta: Record<string, unknown> }[]>`SELECT action, meta FROM public.audit_log WHERE transaction_id = ${created.txnBId} AND action = 'dispute.lost' LIMIT 1`;
     check('audit dispute.lost written', !!bLostAudit);
+    // Vendor has auto_clawback ON by default + a transfer exists → it must have decided to auto-claw.
+    check('lost audit shows willAutoClawback=true (flag on + transfer)', bLostAudit?.meta?.willAutoClawback === true, bLostAudit?.meta);
+    check('lost audit needsAdminReview=false when auto-clawback on', bLostAudit?.meta?.needsAdminReview === false, bLostAudit?.meta);
+    // The auto-reversal was attempted (Stripe rejects the fake transfer id, so it
+    // lands as reconcile_refused — but the attempt + system actor prove it fired).
+    const [bReconcile] = await sql<{ action: string; actor_user_id: string | null }[]>`
+      SELECT action, actor_user_id FROM public.audit_log
+      WHERE transaction_id = ${created.txnBId} AND action IN ('dispute.reconciled','dispute.reconcile_refused')
+      ORDER BY created_at DESC LIMIT 1`;
+    check('auto-clawback attempt fired (reconciled/refused)', !!bReconcile, bReconcile);
+    check('auto-clawback ran as system (no actor)', bReconcile?.actor_user_id === null, bReconcile);
+
+    // ---- 4b. auto-clawback OFF → only flags, no reversal attempt ----
+    console.log('\n4b. dispute.lost with auto-clawback OFF (txn C):');
+    // Seed a third paid+redeemed+transferred txn whose vendor has the flag OFF.
+    await sql`UPDATE public.vendors SET auto_clawback_on_dispute_lost = false WHERE id = ${created.vendorId}`;
+    const [txnC] = await sql<{ id: string }[]>`
+      INSERT INTO public.transactions (vendor_id, user_id, consumer_paid_cents, platform_fee_cents, vendor_payout_cents, stripe_payment_intent_id, stripe_transfer_id, status, paid_at, released_at)
+      VALUES (${created.vendorId}, ${created.userId}, 10000, 2000, 8000, ${'pi_TEST_C_' + tag}, ${'tr_TEST_C_' + tag}, 'released', now(), now()) RETURNING id`;
+    created.txnCId = txnC!.id;
+    const [claimC] = await sql<{ id: string }[]>`
+      INSERT INTO public.claims (deal_id, vendor_id, variant_id, user_id, status, human_code, qr_payload, snapshot, expires_at, transaction_id, redeemed_at)
+      VALUES (${created.dealId}, ${created.vendorId}, ${created.variantId}, ${created.userId}, 'redeemed', ${'GLOE-C' + tag.slice(0,4).toUpperCase()}, ${'qr_C_' + tag},
+              ${snap(created.vendorId)}, now() + interval '60 days', ${created.txnCId}, now()) RETURNING id`;
+    created.claimCId = claimC!.id;
+    await handleStripeDisputeWebhook(sql, { type: 'charge.dispute.created', data: { object: { id: 'dp_TEST_C_' + tag, payment_intent: 'pi_TEST_C_' + tag, charge: 'ch_C_' + tag, status: 'needs_response', reason: 'fraudulent', amount: 10000 } } } as never);
+    await handleStripeDisputeWebhook(sql, { type: 'charge.dispute.closed', data: { object: { id: 'dp_TEST_C_' + tag, payment_intent: 'pi_TEST_C_' + tag, charge: 'ch_C_' + tag, status: 'lost', reason: 'fraudulent', amount: 10000 } } } as never);
+    await settle();
+    const [cLostAudit] = await sql<{ meta: Record<string, unknown> }[]>`SELECT meta FROM public.audit_log WHERE transaction_id = ${created.txnCId} AND action = 'dispute.lost' LIMIT 1`;
+    check('lost audit willAutoClawback=false when flag off', cLostAudit?.meta?.willAutoClawback === false, cLostAudit?.meta);
+    check('lost audit needsAdminReview=true when flag off + transfer', cLostAudit?.meta?.needsAdminReview === true, cLostAudit?.meta);
+    const cReconcile = await sql<{ action: string }[]>`SELECT action FROM public.audit_log WHERE transaction_id = ${created.txnCId} AND action IN ('dispute.reconciled','dispute.reconcile_refused')`;
+    check('NO auto-clawback attempt when flag off', cReconcile.length === 0, cReconcile);
 
     // ---- 5. dispute-risk scorecard + config flag ----
     console.log('\n5. dispute-risk scorecard (getVendorDetail):');
     const cfg = await getDisputeRiskConfig(sql);
     console.log(`   policy: enabled=${cfg.enabled} maxDisputes=${cfg.maxDisputes} windowDays=${cfg.windowDays}`);
     const detail = await getVendorDetail(sql, created.vendorId);
-    check('disputeTotal = 2', detail!.vendor.disputeTotal === 2, detail!.vendor.disputeTotal);
-    check('disputeInWindow = 2', detail!.vendor.disputeInWindow === 2, detail!.vendor.disputeInWindow);
-    check('disputeLost = 1', detail!.vendor.disputeLost === 1, detail!.vendor.disputeLost);
-    check('disputeOpen = 1 (txn B still disputed)', detail!.vendor.disputeOpen === 1, detail!.vendor.disputeOpen);
+    // 3 disputes now: A (won), B (lost), C (lost). B + C still disputed/open.
+    check('disputeTotal = 3', detail!.vendor.disputeTotal === 3, detail!.vendor.disputeTotal);
+    check('disputeInWindow = 3', detail!.vendor.disputeInWindow === 3, detail!.vendor.disputeInWindow);
+    check('disputeLost = 2', detail!.vendor.disputeLost === 2, detail!.vendor.disputeLost);
+    check('disputeOpen = 2 (txn B + C still disputed)', detail!.vendor.disputeOpen === 2, detail!.vendor.disputeOpen);
     check('isHighDisputeRisk reflects policy',
-      detail!.vendor.isHighDisputeRisk === (cfg.enabled && 2 > cfg.maxDisputes),
+      detail!.vendor.isHighDisputeRisk === (cfg.enabled && 3 > cfg.maxDisputes),
       { isHigh: detail!.vendor.isHighDisputeRisk, max: cfg.maxDisputes });
+    check('autoClawbackOnDisputeLost surfaced (we set it false in 4b)', detail!.vendor.autoClawbackOnDisputeLost === false, detail!.vendor.autoClawbackOnDisputeLost);
     check('disputeRiskConfig echoed back', detail!.vendor.disputeRiskConfig.maxDisputes === cfg.maxDisputes);
     check('disputeRate computed', typeof detail!.vendor.disputeRate === 'number' && detail!.vendor.disputeRate > 0, detail!.vendor.disputeRate);
   } finally {
-    // Hard cleanup — children first. audit_log rows reference txn/vendor; clear them too.
+    // Hard cleanup — everything hangs off the test vendor, so delete by vendor_id,
+    // children first (FKs: redemption_attempts → claims, audit_log → txn/vendor).
     console.log('\nCleaning up test data…');
-    if (created.txnAId || created.txnBId) {
-      await sql`DELETE FROM public.audit_log WHERE transaction_id IN (${created.txnAId || null}, ${created.txnBId || null}) OR vendor_id = ${created.vendorId || null}`;
+    const vid = created.vendorId || null;
+    if (vid) {
+      await sql`DELETE FROM public.redemption_attempts WHERE vendor_id = ${vid}`;
+      await sql`DELETE FROM public.audit_log WHERE vendor_id = ${vid}`;
+      await sql`DELETE FROM public.claims WHERE vendor_id = ${vid}`;
+      await sql`DELETE FROM public.transactions WHERE vendor_id = ${vid}`;
+      if (created.variantId) await sql`DELETE FROM public.deal_variants WHERE id = ${created.variantId}`;
+      if (created.dealId) await sql`DELETE FROM public.deals WHERE id = ${created.dealId}`;
+      await sql`DELETE FROM public.vendors WHERE id = ${vid}`;
     }
-    if (created.claimAId || created.claimBId) {
-      // lookupClaimForVendor logs redemption_attempts that FK the claim — clear first.
-      await sql`DELETE FROM public.redemption_attempts WHERE claim_id IN (${created.claimAId || null}, ${created.claimBId || null}) OR vendor_id = ${created.vendorId || null}`;
-      await sql`DELETE FROM public.claims WHERE id IN (${created.claimAId || null}, ${created.claimBId || null})`;
-    }
-    if (created.txnAId || created.txnBId) await sql`DELETE FROM public.transactions WHERE id IN (${created.txnAId || null}, ${created.txnBId || null})`;
-    if (created.variantId) await sql`DELETE FROM public.deal_variants WHERE id = ${created.variantId}`;
-    if (created.dealId) await sql`DELETE FROM public.deals WHERE id = ${created.dealId}`;
     if (created.userId) await sql`DELETE FROM public.users WHERE id = ${created.userId}`;
-    if (created.vendorId) await sql`DELETE FROM public.vendors WHERE id = ${created.vendorId}`;
     console.log('Cleaned up.');
   }
 

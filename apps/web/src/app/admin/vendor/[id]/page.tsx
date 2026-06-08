@@ -38,6 +38,9 @@ export default function VendorDetailPage() {
       void utils.admin.vendorRoster.invalidate();
     },
   });
+  const setClawback = trpc.admin.setVendorAutoClawback.useMutation({
+    onSuccess: () => { void utils.admin.vendorDetail.invalidate({ vendorId: id }); },
+  });
   const suspended = data?.vendor.status === 'suspended';
 
   const onboard = trpc.admin.startVendorStripeOnboarding.useMutation({
@@ -198,6 +201,25 @@ export default function VendorDetailPage() {
                 <PayoutStat label="Lost" value={String(data.vendor.disputeLost)} alert={data.vendor.disputeLost > 0} />
                 <PayoutStat label="Rate" value={`${(data.vendor.disputeRate * 100).toFixed(1)}%`} alert={data.vendor.disputeRate > 0.01} />
               </div>
+
+              {/* Auto-clawback toggle — on by default for every vendor. */}
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, padding: '14px 0 4px', marginTop: 12, borderTop: '1px solid var(--border-subtle)' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 15, fontWeight: 600 }}>Auto-claw back on a lost dispute</div>
+                  <div style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                    When ON and a dispute is <strong>lost</strong>, we automatically reverse this vendor&apos;s
+                    transfer so the platform doesn&apos;t eat their share (their Stripe balance can go negative;
+                    Stripe recoups it from their future sales). When OFF, we just flag it for you to claw back
+                    manually from the Transactions tab. <strong>On by default for every vendor.</strong>
+                  </div>
+                </div>
+                <Toggle
+                  on={data.vendor.autoClawbackOnDisputeLost}
+                  disabled={setClawback.isPending}
+                  onChange={(next) => setClawback.mutate({ vendorId: id, enabled: next })}
+                />
+              </div>
+
               <p style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 12, marginBottom: 0 }}>
                 {data.vendor.disputeRiskConfig.enabled ? (
                   data.vendor.isHighDisputeRisk ? (

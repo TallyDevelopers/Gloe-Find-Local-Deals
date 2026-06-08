@@ -46,6 +46,7 @@ export type AuditAction =
   | 'vendor.suspended'
   | 'vendor.reinstated'
   | 'vendor.auto_release.set'
+  | 'vendor.auto_clawback.set'
   | 'vendor.stripe_onboarding.started'
   | 'vendor.admin_bypass.set'
   | 'vendor.google_place_linked'

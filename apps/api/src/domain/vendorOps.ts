@@ -458,7 +458,8 @@ export async function windDownVendor(
 export async function reconcileLostDispute(
   sql: Sql,
   transactionId: string,
-  actorUserId: string,
+  /** God-mode operator who clicked it, or null when fired automatically by the webhook. */
+  actorUserId: string | null,
 ): Promise<{ reversed: boolean; reversedCents: number; error: string | null }> {
   const rows = await sql<{
     tx_id: string;
@@ -498,7 +499,7 @@ export async function reconcileLostDispute(
     vendorId: r.vendor_id,
     claimId: r.claim_id,
     transactionId: r.tx_id,
-    meta: { reversedCents: r.vendor_payout_cents, stripeTransferId: r.transfer_id },
+    meta: { reversedCents: r.vendor_payout_cents, stripeTransferId: r.transfer_id, auto: actorUserId === null },
   });
 
   return { reversed: true, reversedCents: r.vendor_payout_cents, error: null };

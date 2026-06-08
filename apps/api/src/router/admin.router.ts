@@ -31,6 +31,7 @@ import {
   reviewDeal,
   searchEverything,
   setVendorAutoReleaseOnRedemption,
+  setVendorAutoClawbackOnDisputeLost,
   setVendorSuspended,
 } from '../domain/admin';
 import { writeAudit } from '../domain/audit';
@@ -753,6 +754,20 @@ export const adminRouter = router({
       await setVendorAutoReleaseOnRedemption(ctx.sql, input.vendorId, input.enabled);
       void writeAudit(ctx.sql, {
         action: 'vendor.auto_release.set',
+        actorUserId: ctx.auth.userId,
+        vendorId: input.vendorId,
+        meta: { enabled: input.enabled },
+      });
+      return { enabled: input.enabled };
+    }),
+
+  /** God-mode toggle: auto-reverse this vendor's transfer when a dispute is lost? */
+  setVendorAutoClawback: adminProcedure
+    .input(z.object({ vendorId: z.string().uuid(), enabled: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      await setVendorAutoClawbackOnDisputeLost(ctx.sql, input.vendorId, input.enabled);
+      void writeAudit(ctx.sql, {
+        action: 'vendor.auto_clawback.set',
         actorUserId: ctx.auth.userId,
         vendorId: input.vendorId,
         meta: { enabled: input.enabled },

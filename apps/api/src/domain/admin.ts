@@ -901,6 +901,23 @@ export async function setVendorAutoReleaseOnRedemption(
   `;
 }
 
+/**
+ * Admin sets whether a LOST dispute auto-reverses this vendor's already-sent
+ * transfer (GLO-34). On by default for every vendor. Off → the webhook just
+ * flags it for a manual claw-back instead. See §4 Disputes.
+ */
+export async function setVendorAutoClawbackOnDisputeLost(
+  sql: Sql,
+  vendorId: string,
+  enabled: boolean,
+): Promise<void> {
+  await sql`
+    UPDATE public.vendors
+    SET auto_clawback_on_dispute_lost = ${enabled}, updated_at = now()
+    WHERE id = ${vendorId}
+  `;
+}
+
 /** True if the internal user id is in admin_users. */
 export async function isAdmin(sql: Sql, userId: string): Promise<boolean> {
   const rows = await sql<{ one: number }[]>`
@@ -1131,6 +1148,7 @@ export async function getVendorDetail(sql: Sql, vendorId: string) {
     stripe_account_status: string | null;
     google_place_id: string | null;
     auto_release_on_redemption: boolean;
+    auto_clawback_on_dispute_lost: boolean;
     gloe_take: string | null;
     gloe_perks: string[] | null;
     purchases: number;
@@ -1141,6 +1159,7 @@ export async function getVendorDetail(sql: Sql, vendorId: string) {
     SELECT v.id, v.display_id, v.business_name, v.status, v.city, v.region, v.address_line1, v.phone,
       (v.owner_user_id IS NOT NULL) AS has_owner, v.admin_bypass,
       v.stripe_account_status, v.google_place_id, v.auto_release_on_redemption,
+      v.auto_clawback_on_dispute_lost,
       v.gloe_take, v.gloe_perks,
       COALESCE((SELECT COUNT(*)::int FROM public.transactions t WHERE t.vendor_id=v.id AND t.status IN ('paid','released','partially_refunded')),0) AS purchases,
       COALESCE((SELECT SUM(consumer_paid_cents) FROM public.transactions t WHERE t.vendor_id=v.id AND t.status IN ('paid','released','partially_refunded')),0)::int AS gross_cents,
@@ -1314,6 +1333,7 @@ export async function getVendorDetail(sql: Sql, vendorId: string) {
         createdAt: f.created_at,
       })),
       autoReleaseOnRedemption: v.auto_release_on_redemption,
+      autoClawbackOnDisputeLost: v.auto_clawback_on_dispute_lost,
       gloeTake: v.gloe_take,
       gloePerks: v.gloe_perks ?? [],
       // Dispute scorecard + the policy it was judged against (so the UI can
