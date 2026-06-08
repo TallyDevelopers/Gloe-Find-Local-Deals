@@ -10,7 +10,7 @@ import { CommandPalette } from './CommandPalette';
 
 export type WorkspaceView =
   | 'pulse' | 'transactions' | 'vendors' | 'customers'
-  | 'payouts' | 'refunds' | 'fees' | 'support' | 'waitlist' | 'audit' | 'admins' | 'settings';
+  | 'payouts' | 'refunds' | 'fees' | 'support' | 'sections' | 'waitlist' | 'audit' | 'admins' | 'settings';
 
 const NAV: { key: WorkspaceView; label: string; badgeFor?: 'failed_payouts' | 'pending_deals' }[] = [
   { key: 'pulse',        label: 'Pulse' },
@@ -21,6 +21,7 @@ const NAV: { key: WorkspaceView; label: string; badgeFor?: 'failed_payouts' | 'p
   { key: 'refunds',      label: 'Refunds' },
   { key: 'fees',         label: 'Fees' },
   { key: 'support',      label: 'Support' },
+  { key: 'sections',     label: 'Discover' },
   { key: 'waitlist',     label: 'Waitlist' },
   { key: 'audit',        label: 'Audit' },
   { key: 'admins',       label: 'Admins' },
@@ -66,6 +67,9 @@ function NavIcon({ name }: { name: WorkspaceView }) {
       return <svg {...p}><path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.2-2.7a1.2 1.2 0 0 1 1.6 0C14.5 3.8 17 5 19 5a1 1 0 0 1 1 1z" /></svg>;
     case 'settings':
       return <svg {...p}><path d="M20 7h-9" /><path d="M14 17H5" /><circle cx="17" cy="17" r="3" /><circle cx="7" cy="7" r="3" /></svg>;
+    case 'sections':
+      // Layout/grid glyph — editorial merchandising rails.
+      return <svg {...p}><rect width="7" height="9" x="3" y="3" rx="1" /><rect width="7" height="5" x="14" y="3" rx="1" /><rect width="7" height="9" x="14" y="12" rx="1" /><rect width="7" height="5" x="3" y="16" rx="1" /></svg>;
   }
 }
 

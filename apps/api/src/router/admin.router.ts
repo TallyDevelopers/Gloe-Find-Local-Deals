@@ -66,6 +66,13 @@ import {
   updateNotificationType,
   getQueueStats,
 } from '../domain/notifications';
+import {
+  listDiscoverSections,
+  createDiscoverSection,
+  updateDiscoverSection,
+  deleteDiscoverSection,
+  reorderDiscoverSections,
+} from '../domain/discoverSections';
 import { adminProcedure, protectedProcedure, router } from './trpc';
 
 /** Throws FORBIDDEN unless the caller is an `owner` (not just an admin). */
@@ -237,6 +244,75 @@ export const adminRouter = router({
       }),
     )
     .mutation(({ ctx, input }) => updateNotificationType(ctx.sql, input)),
+
+  /* ─────────────── Discover editorial sections (GLO-27) ─────────────── */
+
+  /** All editorial home-feed sections (active + inactive), in display order. */
+  listDiscoverSections: adminProcedure.query(({ ctx }) => listDiscoverSections(ctx.sql)),
+
+  /** Author a new section: a tagline that pools 1..N categories into one rail. */
+  createDiscoverSection: adminProcedure
+    .input(z.object({
+      tagline: z.string().min(1).max(120),
+      categoryIds: z.array(z.string().uuid()).min(1).max(8),
+      imageUrl: z.string().url().nullable().optional(),
+      active: z.boolean().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const section = await createDiscoverSection(ctx.sql, input);
+      void writeAudit(ctx.sql, {
+        action: 'discover_section.created',
+        actorUserId: ctx.auth.userId,
+        meta: { sectionId: section.id, tagline: section.tagline, categoryIds: input.categoryIds },
+      });
+      return section;
+    }),
+
+  /** Edit a section: tagline, categories (replaces the set), image, order, active. */
+  updateDiscoverSection: adminProcedure
+    .input(z.object({
+      id: z.string().uuid(),
+      tagline: z.string().min(1).max(120).optional(),
+      categoryIds: z.array(z.string().uuid()).min(1).max(8).optional(),
+      imageUrl: z.string().url().nullable().optional(),
+      displayOrder: z.number().int().min(0).optional(),
+      active: z.boolean().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const section = await updateDiscoverSection(ctx.sql, input);
+      void writeAudit(ctx.sql, {
+        action: 'discover_section.updated',
+        actorUserId: ctx.auth.userId,
+        meta: { sectionId: input.id },
+      });
+      return section;
+    }),
+
+  deleteDiscoverSection: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      await deleteDiscoverSection(ctx.sql, input.id);
+      void writeAudit(ctx.sql, {
+        action: 'discover_section.deleted',
+        actorUserId: ctx.auth.userId,
+        meta: { sectionId: input.id },
+      });
+      return { ok: true };
+    }),
+
+  /** Persist a new section ordering (ids in their new order). */
+  reorderDiscoverSections: adminProcedure
+    .input(z.object({ orderedIds: z.array(z.string().uuid()) }))
+    .mutation(async ({ ctx, input }) => {
+      await reorderDiscoverSections(ctx.sql, input.orderedIds);
+      return { ok: true };
+    }),
+
+  /** Sign an upload URL for a section's tile art (reuses the vendor-media bucket
+   *  under a `discover-sections` namespace). */
+  signDiscoverSectionUpload: adminProcedure
+    .input(z.object({ fileExt: z.string().max(8) }))
+    .mutation(({ input }) => createSignedUpload('discover-sections', input.fileExt, 'photo')),
 
   /** Set the editorial "Gloē's take" + perk chips on a spa (admin-only). */
   setVendorTake: adminProcedure

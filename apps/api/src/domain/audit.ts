@@ -64,6 +64,10 @@ export type AuditAction =
   | 'dispute.reconcile_refused'// the claw-back was blocked (no transfer, etc.)
   // Deal admin
   | 'deal.admin_edited'  // god mode edited deal content (skips re-review)
+  // Discover editorial sections (GLO-27)
+  | 'discover_section.created'
+  | 'discover_section.updated'
+  | 'discover_section.deleted'
   // Support tickets
   | 'support.replied'      // agent replied to a support ticket
   | 'support.status_set'   // agent resolved / closed / reopened a ticket

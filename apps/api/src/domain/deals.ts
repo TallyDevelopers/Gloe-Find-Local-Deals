@@ -190,7 +190,15 @@ interface ListParams {
   userLat?: number;
   userLng?: number;
   maxDistanceMiles?: number;
+  /** Restrict to a single category by slug (primary OR secondary category match). */
   category?: string;
+  /**
+   * Restrict to ANY of these category slugs (primary OR secondary match), pooled
+   * into one result set, deduped + ranked together. Powers GLO-27 editorial
+   * sections that span multiple categories. Takes precedence over `category`
+   * when both are passed.
+   */
+  categories?: string[];
   limit?: number;
   offset?: number;
   /** Inclusive bounds on the cheapest variant of each deal, in cents. */
@@ -239,9 +247,14 @@ export interface DealPage {
 
 export async function listDeals(sql: Sql, params: ListParams = {}): Promise<DealPage> {
   const {
-    userLat, userLng, maxDistanceMiles = 50, category, limit = 50, offset = 0,
+    userLat, userLng, maxDistanceMiles = 50, category, categories, limit = 50, offset = 0,
     minPriceCents, maxPriceCents, minDiscountPct, q, subtypeSlug, minRating, vibes, sort, viewerSeed,
   } = params;
+  // Multi-category pooling (GLO-27): a list of slugs takes precedence over a
+  // single `category`. Empty/whitespace slugs are dropped so an empty array
+  // doesn't accidentally filter to nothing.
+  const categorySlugs = (categories ?? []).filter((c) => typeof c === 'string' && c.length > 0);
+  const hasCategoryList = categorySlugs.length > 0;
   const vibeFilter = Array.isArray(vibes) ? vibes.filter((v) => typeof v === 'string' && v.length > 0) : [];
   const hasVibes = vibeFilter.length > 0;
   const hasUserLocation = typeof userLat === 'number' && typeof userLng === 'number';
@@ -368,7 +381,14 @@ export async function listDeals(sql: Sql, params: ListParams = {}): Promise<Deal
     WHERE d.status = 'active'
       AND v.status = 'active'
       AND d.expires_at > now()
-      ${category ? sql`AND (
+      ${hasCategoryList ? sql`AND (
+        c.slug = ANY(${sql.array(categorySlugs)}::text[])
+        OR EXISTS (
+          SELECT 1 FROM public.service_categories c2
+           WHERE c2.id = d.secondary_category_id
+             AND c2.slug = ANY(${sql.array(categorySlugs)}::text[])
+        )
+      )` : category ? sql`AND (
         c.slug = ${category}
         OR EXISTS (
           SELECT 1 FROM public.service_categories c2
@@ -445,8 +465,20 @@ export async function listDeals(sql: Sql, params: ListParams = {}): Promise<Deal
 // ============================================================
 
 export interface DiscoverRail {
+  /** Stable key for the rail. A section's id, or the category slug in fallback mode. */
   slug: string;
+  /**
+   * The rail heading. For an editorial section (GLO-27) this is the admin-authored
+   * tagline ("Find fillers & Botox to boost your glow") — the category noun does
+   * NOT show. In per-category fallback mode it's the category display name.
+   */
   displayName: string;
+  /**
+   * The category slugs this rail pools. One entry in fallback mode; 1..N for an
+   * editorial section. The client passes these to a section-scoped "See all"
+   * view (deals.list with `categories`).
+   */
+  categorySlugs: string[];
   deals: DealSummary[];
   hasMore: boolean;
   /** Curated "browse by category" tile image (shared with the web), or null to
@@ -469,11 +501,26 @@ function curatedTileUrl(slug: string): string | null {
   return `${origin}/treatments/${file}.jpg`;
 }
 
+/** A "Browse by category" tile — always per raw category (a nav shortcut INTO a
+ *  category), independent of the editorial section rails. */
+export interface BrowseTile {
+  slug: string;
+  displayName: string;
+  dealCount: number;
+  tileImageUrl: string | null;
+  /** A representative deal photo for the tile when there's no curated art. */
+  fallbackPhotoUrl: string | null;
+}
+
 export interface DiscoverFeed {
   /** Sponsored deals for the top carousel. */
   featured: DealSummary[];
-  /** One rail per category that has deals (empty rails are omitted). */
+  /** The editorial section rails (GLO-27), or one-per-category in fallback mode.
+   *  Empty rails are omitted. */
   rails: DiscoverRail[];
+  /** "Browse by category" tiles — always per raw category, a nav shortcut into
+   *  each category. Stays per-category even when the rails are editorial. */
+  browse: BrowseTile[];
 }
 
 interface DiscoverFeedParams {
@@ -504,27 +551,114 @@ export async function getDiscoverFeed(sql: Sql, params: DiscoverFeedParams = {})
   // Fetch shared inputs ONCE, up front, so the rails don't each re-query them
   // (that fan-out — 9 rails × their own trending-config query — drained the
   // pool). No caching: a live read, just shared within this single request.
-  const [cats, trending] = await Promise.all([
+  // `sections` is the GLO-27 editorial layer: each row pools 1..N category slugs
+  // under one admin-authored tagline. When present it REPLACES the per-category
+  // rails; when absent the feed falls back to one rail per category so it's never
+  // blank (and so this ships before any section is authored).
+  const [cats, sections, trending] = await Promise.all([
     sql<{ slug: string; display_name: string }[]>`
       SELECT slug, display_name
       FROM public.service_categories
       WHERE active = true
       ORDER BY display_order
     `,
+    sql<{ id: string; tagline: string; image_url: string | null; category_slugs: string[] }[]>`
+      SELECT
+        s.id,
+        s.tagline,
+        s.image_url,
+        COALESCE(
+          array_agg(c.slug ORDER BY sc.position, c.display_order)
+            FILTER (WHERE c.slug IS NOT NULL),
+          '{}'
+        ) AS category_slugs
+      FROM public.discover_sections s
+      LEFT JOIN public.discover_section_categories sc ON sc.section_id = s.id
+      LEFT JOIN public.service_categories c ON c.id = sc.category_id AND c.active = true
+      WHERE s.active = true
+      GROUP BY s.id, s.tagline, s.image_url, s.display_order
+      ORDER BY s.display_order
+    `,
     getTrendingConfig(sql),
   ]);
 
-  // Fire featured + every category rail concurrently, each reusing the shared
-  // trending config. The warm pool absorbs the burst.
-  const [featuredPage, ...railPages] = await Promise.all([
+  // Editorial mode: one rail per active section that actually resolves to ≥1
+  // active category. (A section whose every category was deactivated/deleted
+  // pools nothing, so skip it.)
+  const editorialSections = sections.filter((s) => s.category_slugs.length > 0);
+
+  const railSpecs: { slug: string; displayName: string; categorySlugs: string[]; tileImageUrl: string | null }[] =
+    editorialSections.length > 0
+      ? editorialSections.map((s) => ({
+          slug: s.id,
+          displayName: s.tagline,
+          categorySlugs: s.category_slugs,
+          // Admin-set art first; else derive from the first category's curated
+          // tile; else null → client falls back to a deal photo. (category_slugs
+          // is non-empty here — editorialSections filtered out the empty ones.)
+          tileImageUrl: s.image_url ?? curatedTileUrl(s.category_slugs[0]!),
+        }))
+      : cats.map((c) => ({
+          slug: c.slug,
+          displayName: c.display_name,
+          categorySlugs: [c.slug],
+          tileImageUrl: curatedTileUrl(c.slug),
+        }));
+
+  // "Browse by category" tiles stay PER-CATEGORY (a nav shortcut into a raw
+  // category) even when the rails are editorial. Computed as ONE lightweight
+  // aggregate — count + a representative photo per active category, location-
+  // filtered to match the rails' "nearby" framing — instead of a listDeals fan-
+  // out per category (which is what the rails already pay for).
+  const { userLat: bLat, userLng: bLng } = shared;
+  const hasLoc = typeof bLat === 'number' && typeof bLng === 'number';
+  const browseRadiusMeters = (shared.maxDistanceMiles ?? 50) * 1609.344;
+  const browseRowsPromise = sql<{ slug: string; display_name: string; deal_count: number; photo_url: string | null }[]>`
+    SELECT
+      c.slug,
+      c.display_name,
+      COUNT(DISTINCT d.id) AS deal_count,
+      (
+        SELECT url FROM public.deal_photos p
+        WHERE p.deal_id = (
+          SELECT d2.id FROM public.deals d2
+          JOIN public.vendors v2 ON v2.id = d2.vendor_id
+          WHERE (d2.category_id = c.id OR d2.secondary_category_id = c.id)
+            AND d2.status = 'active' AND v2.status = 'active' AND d2.expires_at > now()
+            ${hasLoc ? sql`AND ST_DWithin(v2.location, ST_SetSRID(ST_MakePoint(${bLng}, ${bLat}), 4326)::geography, ${browseRadiusMeters})` : sql``}
+          ORDER BY d2.is_sponsored DESC, d2.created_at DESC
+          LIMIT 1
+        )
+        ORDER BY CASE WHEN p.photo_type = 'hero' THEN 0 ELSE 1 END, p.display_order
+        LIMIT 1
+      ) AS photo_url
+    FROM public.service_categories c
+    LEFT JOIN public.deals d
+      ON (d.category_id = c.id OR d.secondary_category_id = c.id)
+      AND d.status = 'active' AND d.expires_at > now()
+    LEFT JOIN public.vendors v ON v.id = d.vendor_id AND v.status = 'active'
+      ${hasLoc ? sql`AND ST_DWithin(v.location, ST_SetSRID(ST_MakePoint(${bLng}, ${bLat}), 4326)::geography, ${browseRadiusMeters})` : sql``}
+    WHERE c.active = true
+    GROUP BY c.id, c.slug, c.display_name, c.display_order
+    HAVING COUNT(DISTINCT d.id) FILTER (WHERE v.id IS NOT NULL) > 0
+    ORDER BY c.display_order
+  `;
+
+  // Fire featured + every rail + the browse aggregate concurrently, each reusing
+  // the shared trending config. The warm pool absorbs the burst. Each rail pools
+  // its categorySlugs (one in fallback mode, 1..N for a section) into a single
+  // deduped+ranked set.
+  const [featuredPage, browseRows, ...railPages] = await Promise.all([
     listDeals(sql, { ...shared, trending, limit: 10 }).then((p) => p.deals.filter((d) => d.isSponsored)),
-    ...cats.map((c) =>
-      listDeals(sql, { ...shared, trending, category: c.slug, limit: railLimit }).then((page) => ({
-        slug: c.slug,
-        displayName: c.display_name,
+    browseRowsPromise,
+    ...railSpecs.map((spec) =>
+      listDeals(sql, { ...shared, trending, categories: spec.categorySlugs, limit: railLimit }).then((page) => ({
+        slug: spec.slug,
+        displayName: spec.displayName,
+        categorySlugs: spec.categorySlugs,
         deals: page.deals,
         hasMore: page.hasMore,
-        tileImageUrl: curatedTileUrl(c.slug),
+        tileImageUrl: spec.tileImageUrl,
       })),
     ),
   ]);
@@ -533,6 +667,13 @@ export async function getDiscoverFeed(sql: Sql, params: DiscoverFeedParams = {})
     featured: featuredPage,
     // Drop empty rails so the client doesn't render bare headers.
     rails: (railPages as DiscoverRail[]).filter((r) => r.deals.length > 0),
+    browse: browseRows.map((r) => ({
+      slug: r.slug,
+      displayName: r.display_name,
+      dealCount: Number(r.deal_count),
+      tileImageUrl: curatedTileUrl(r.slug),
+      fallbackPhotoUrl: r.photo_url,
+    })),
   };
 }
 

@@ -12,6 +12,7 @@ import { GetTheApp } from '../../components/consumer/GetTheApp';
 import { useMediaQuery } from '../../components/consumer/useMediaQuery';
 import { LocationBanner } from '../../components/consumer/LocationBanner';
 import { ArrowRight, ChevronDown, Lock, MapPin, Search, ShieldCheck, Star, Wallet, Zap } from '../../components/consumer/icons';
+import { useCyclingPlaceholder } from '../../components/consumer/useCyclingPlaceholder';
 import { useDealLocationArgs, useLocation } from '../../lib/location';
 import { trpc } from '../../lib/trpc';
 
@@ -26,12 +27,19 @@ export default function HomePage() {
   const { location } = useLocation();
   const locArgs = useDealLocationArgs();
   const [q, setQ] = useState('');
+  // Cycle the hint through treatments (Try "Botox"… → "Hydrafacial"… → "GLP-1"…),
+  // matching the native search bar. Freeze it once the user starts typing.
+  const heroPlaceholder = useCyclingPlaceholder((w) => `Try “${w}”…`, { paused: q.length > 0 });
   // Denser, ResortPass-style rail cards on phones (more peek = "scroll me");
   // unchanged on desktop. Defaults to 260 on SSR/desktop.
   const railCardW = useMediaQuery('(max-width: 760px)') ? 196 : 260;
 
   const categories = trpc.categories.list.useQuery();
   const feed = trpc.deals.list.useQuery({ ...locArgs, limit: 100 });
+  // Editorial sections (GLO-27): admin-authored taglines that pool 1..N
+  // categories into one rail. When present they REPLACE the per-category rails;
+  // when absent the home falls back to one rail per category (never blank).
+  const sections = trpc.deals.discoverSections.useQuery();
 
   // Group the home feed by category once — powers the hero image, the browse
   // cards (representative photo + count), and every rail. One query, no N+1.
@@ -50,7 +58,35 @@ export default function HomePage() {
     router.push(q.trim() ? `/search?q=${encodeURIComponent(q.trim())}` : '/search');
   }
 
+  // Browse tiles + the per-category fallback rails: categories that have deals.
   const populated = (categories.data ?? []).filter((c) => (byCat.get(c.slug)?.length ?? 0) > 0);
+
+  // The editorial rails to render. Each section pools its categories' deals
+  // (deduped by deal id, since a deal can carry two of the section's categories)
+  // in the feed's existing relevance order. A section with no deals nearby is
+  // dropped. Falls back to one rail per populated category when no section is
+  // authored — identical to the prior behavior.
+  const editorialRails = useMemo(() => {
+    const built = (sections.data ?? []).map((s) => {
+      const seen = new Set<string>();
+      const deals: DealSummary[] = [];
+      for (const d of feed.data?.deals ?? []) {
+        if (s.categorySlugs.includes(d.category.slug) && !seen.has(d.id)) {
+          seen.add(d.id);
+          deals.push(d);
+        }
+      }
+      return { id: s.id, tagline: s.tagline, categorySlugs: s.categorySlugs, deals };
+    }).filter((r) => r.deals.length > 0);
+    if (built.length > 0) return built;
+    // Fallback: one rail per populated category, tagline = the category name.
+    return populated.map((c) => ({
+      id: c.slug,
+      tagline: c.displayName,
+      categorySlugs: [c.slug],
+      deals: byCat.get(c.slug) ?? [],
+    }));
+  }, [sections.data, feed.data, populated, byCat]);
 
   return (
     <div>
@@ -72,7 +108,13 @@ export default function HomePage() {
 
           <form className="hero-search" onSubmit={submitSearch}>
             <Search size={20} color="var(--text-tertiary)" />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Try “botox”, “hydrafacial”…" aria-label="Search treatments" />
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder={heroPlaceholder.placeholder}
+              className={heroPlaceholder.fading ? 'placeholder-fading' : undefined}
+              aria-label="Search treatments"
+            />
             <button type="submit" className="hero-search-btn">
               Search
             </button>
@@ -98,10 +140,12 @@ export default function HomePage() {
         </div>
       ) : null}
 
-      {/* Browse by treatment + a rail per category. Gated together on load and
+      {/* Browse by treatment + the editorial rails. Gated together on load and
           backed by a same-shape skeleton so the middle reserves its height —
-          the page paints top-to-bottom without the bottom sections jumping. */}
-      {feed.isLoading ? (
+          the page paints top-to-bottom without the bottom sections jumping.
+          Also wait on `sections` so we don't flash per-category rails before the
+          editorial taglines resolve. */}
+      {feed.isLoading || sections.isLoading ? (
         <HomeFeedSkeleton cardW={railCardW} />
       ) : (
         <>
@@ -129,21 +173,32 @@ export default function HomePage() {
             </div>
           ) : null}
 
-          {populated.map((c) => {
-            const deals = byCat.get(c.slug) ?? [];
+          {editorialRails.map((rail) => {
+            // A single-category rail still links to its SEO treatment page +
+            // shows a "View more" card. A multi-category editorial section has no
+            // single destination on web, so its heading isn't a link and the
+            // View-more card is omitted (the rail shows its pooled deals). The
+            // tagline is the heading either way — the category noun never shows.
+            const singleSlug = rail.categorySlugs.length === 1 ? rail.categorySlugs[0]! : null;
             return (
-              <div key={c.slug} style={{ marginTop: 8 }}>
+              <div key={rail.id} style={{ marginTop: 8 }}>
                 <div className="consumer-container" style={{ paddingTop: 12, paddingBottom: 0 }}>
                   <div className="section-head" style={{ marginBottom: 12 }}>
-                    <Link href={`/treatments/${c.slug}`} style={{ color: 'inherit' }}>
-                      <h2 style={{ margin: 0 }}>{c.displayName}</h2>
-                    </Link>
+                    {singleSlug ? (
+                      <Link href={`/treatments/${singleSlug}`} style={{ color: 'inherit' }}>
+                        <h2 style={{ margin: 0 }}>{rail.tagline}</h2>
+                      </Link>
+                    ) : (
+                      <h2 style={{ margin: 0 }}>{rail.tagline}</h2>
+                    )}
                   </div>
-                  <Carousel ariaLabel={c.displayName}>
-                    {deals.slice(0, 12).map((deal) => (
+                  <Carousel ariaLabel={rail.tagline}>
+                    {rail.deals.slice(0, 12).map((deal) => (
                       <DealCard key={deal.id} deal={deal} width={railCardW} />
                     ))}
-                    <ViewMoreCard slug={c.slug} label={c.displayName} count={deals.length} />
+                    {singleSlug ? (
+                      <ViewMoreCard slug={singleSlug} label={rail.tagline} count={rail.deals.length} />
+                    ) : null}
                   </Carousel>
                 </div>
               </div>

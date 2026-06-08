@@ -16,6 +16,7 @@
 
 ## Contents
 
+0. [What it's built on (the 60-second tech tour)](#what-its-built-on-the-60-second-tech-tour)
 1. [Opening the app](#1-opening-the-app)
 2. [Finding deals (the home feed)](#2-finding-deals-the-home-feed)
 3. [How ranking & "trending" actually work](#3-how-ranking--trending-actually-work)
@@ -31,6 +32,28 @@
 13. [Support / Concierge](#13-support--concierge)
 14. [The website (gloe.app)](#14-the-website-gloeapp)
 15. [What's NOT built yet](#15-whats-not-built-yet)
+
+---
+
+## What it's built on (the 60-second tech tour)
+
+You don't need this to use the rest of the doc — but if someone asks "what's Gloē actually made of," here's the honest answer, in plain terms.
+
+There are **three apps and one brain.** The brain is the **API** — it holds every rule (who can buy, what the fee is, when a vendor gets paid). The three apps are just different front doors to it: the **iPhone app** (what customers use), the **website** (the vendor portal + your admin "god mode"), and they all talk to that one API. One rulebook, three doors — change a rule once and it's true everywhere.
+
+The pieces, and why each is there:
+
+- **The language is TypeScript everywhere** — phone, website, server all speak the same one, so a typo or a mismatched price can't sneak between them; the computer catches it before a human does.
+- **The phone app is Expo / React Native** — one iPhone app, built to feel native.
+- **The website is Next.js.** It's the consumer marketplace *and* the vendor dashboard *and* god mode.
+- **The database is Postgres (via Supabase)** — the permanent record of every deal, voucher, and dollar. It also knows geography (for "near me") natively.
+- **Login is Clerk** — a hosted service that handles passwords, social sign-in, and security so we never store a raw password. (Apple sign-in is the one piece still pending.)
+- **Money is Stripe** — specifically Stripe Connect, which handles paying the spas, tax forms, and the whole dispute/chargeback machinery. **Stripe is the source of truth for money; our database just mirrors what Stripe confirms.**
+- **Emails are Resend** — receipts, refund confirmations, and expiry reminders, all branded. (Login codes come from Clerk separately.)
+- **Push notifications go straight to Apple** (no middleman), driven by an admin-controlled registry so you decide what fires and when.
+- **It all runs on Railway**, and pictures/videos live in Supabase Storage.
+
+The whole thing is **one codebase** (a "monorepo"), deliberately built on boring, proven tools so a solo founder can run the entire business without it falling over. *(For the exact versions + the "why" on each choice, see `GLOE.md` §3 "Stack (locked).")*
 
 ---
 
@@ -148,20 +171,37 @@ might never open. We warm on a real signal, not speculatively.
 
 ### The layout: rails → "See all" → 2-up grid
 
-- The home view shows one **horizontal rail per category**, with **4:3 cards** (shorter than the
+- The home view shows **horizontal rails** of deals, with **4:3 cards** (shorter than the
   old portrait cards, so more shows at a glance on small phones).
 - At the **end of each rail** is an inline **"See all" tile** — swipe past the last card and the
   next thing under your thumb is the "see everything" button. (The old top-right "See all →" link
-  is gone; the category label itself is also tappable.)
+  is gone; the rail heading itself is also tappable.)
 - Tapping "See all" doesn't navigate anywhere — it switches the *same screen* into a filtered
   view: a **2-up vertical grid** (~6 listings per screen on a small phone instead of ~1.5), driven
   by a separate query that loads up to 50 deals.
+
+### You decide what the sections say (the editorial layer)
+
+Those rail headings aren't the boring category name anymore. **You** write them. In the admin
+console under **Discover**, you create "sections" — each one is a **cute, benefit-led tagline** that
+*replaces* the category label, and you pick **which categories it pulls from** (one, or several).
+So instead of a rail called "Injectables," you can have **"Find fillers & Botox to boost your glow"**;
+instead of "Injectables" and "Skin" as two separate rails, you can pool them into one **"Look snatched"**
+rail. Add as many as you want, drag them into the order you want, hide one with a toggle, give it its
+own photo. It's saved in the database, so changing the copy is instant — **no app update, no code.**
+
+A couple of honest details:
+- The little **"Browse by category" photo tiles** at the top stay as plain category shortcuts (a fast
+  way to jump *into* a category) — only the rails below become editorial.
+- If you haven't written any sections yet, the feed quietly falls back to one rail per category, so it's
+  **never blank** — and a multi-category section's "See all" pools all its categories together on the
+  app. (On the website, a multi-category rail shows its deals but skips the "View more" link for now.)
 
 **Refreshes happen when:** your location changes, you change a category/filter, or you pull-to-refresh
 (which gives a little haptic buzz and re-fetches). Otherwise, after 30 seconds of staleness, the next
 time you focus the screen it quietly refreshes in the background.
 
-*Deeper: `GLOE.md` §6, §6A. Code: `discover.tsx`, `deals.router.ts`, `deals.ts` (`getDiscoverFeed`), `CachedImage.tsx`, `usePrefetch.ts`, `TrpcProvider.tsx`.*
+*Deeper: `GLOE.md` §6, §6A "Editorial sections (GLO-27)". Code: `discover.tsx`, `deals.router.ts`, `deals.ts` (`getDiscoverFeed`), `discoverSections.ts`, admin `SectionsView.tsx`.*
 
 ### Category pills & the treatment drill-down
 

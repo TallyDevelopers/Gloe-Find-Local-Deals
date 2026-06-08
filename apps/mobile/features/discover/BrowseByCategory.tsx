@@ -1,4 +1,3 @@
-import { type DealSummary } from '@gloe/api-client';
 import { Stack, Text, radius, space, useTheme } from '@gloe/ui';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Dimensions, FlatList, Pressable, View } from 'react-native';
@@ -12,9 +11,12 @@ const TILE_HEIGHT = Math.round((TILE_WIDTH * 4) / 5);
 export interface BrowseCategory {
   slug: string;
   displayName: string;
-  deals: DealSummary[];
+  /** Active deals in this category nearby (for the "N deals nearby" label). */
+  dealCount: number;
   /** Curated tile image from the API (shared with web). Null → deal-photo fallback. */
   tileImageUrl: string | null;
+  /** A representative deal photo used when there's no curated tile art. */
+  fallbackPhotoUrl: string | null;
 }
 
 interface Props {
@@ -46,8 +48,8 @@ export function BrowseByCategory({ categories, onSelect }: Props) {
         keyExtractor={(c) => c.slug}
         contentContainerStyle={{ paddingHorizontal: space[5], gap: space[4] }}
         renderItem={({ item }) => {
-          const img = item.tileImageUrl ?? item.deals.find((d) => d.primaryPhotoUrl)?.primaryPhotoUrl ?? null;
-          const count = item.deals.length;
+          const img = item.tileImageUrl ?? item.fallbackPhotoUrl;
+          const count = item.dealCount;
           return (
             <Pressable
               onPress={() => onSelect(item.slug)}

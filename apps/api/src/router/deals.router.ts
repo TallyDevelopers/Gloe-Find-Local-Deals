@@ -2,6 +2,7 @@ import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { detectSubtypeForText, getCategoryTreatments, getDeal, getDiscoverFeed, getTrendingTreatments, listDeals, suggestSearchTerms } from '../domain/deals';
+import { listActiveDiscoverSections } from '../domain/discoverSections';
 import { publicProcedure, router } from './trpc';
 
 const sortEnum = z.enum(['relevance', 'distance', 'price', 'rating', 'discount']);
@@ -15,6 +16,12 @@ export const dealsRouter = router({
           userLng: z.number().optional(),
           maxDistanceMiles: z.number().positive().optional(),
           category: z.string().optional(),
+          /**
+           * Pool deals across multiple category slugs into one set (deduped +
+           * ranked). Powers the "See all" of a multi-category editorial section
+           * (GLO-27). Takes precedence over `category` when both are present.
+           */
+          categories: z.array(z.string().max(60)).max(8).optional(),
           /** Optional treatment drill-down under the category (second pill row). */
           subtypeSlug: z.string().optional(),
           limit: z.number().int().positive().max(100).optional(),
@@ -71,6 +78,14 @@ export const dealsRouter = router({
       const viewerSeed = ctx.auth?.userId ?? input?.anonSeed;
       return getDiscoverFeed(ctx.sql, { ...(input ?? {}), viewerSeed });
     }),
+
+  /**
+   * Active editorial sections (GLO-27) with their category slugs + tagline +
+   * image, in display order. The web home pools deals across each section's
+   * categories client-side to render the editorial rails. Empty when no section
+   * is authored → the web falls back to per-category rails.
+   */
+  discoverSections: publicProcedure.query(({ ctx }) => listActiveDiscoverSections(ctx.sql)),
 
   /**
    * Full-text search over deals — fuzzy (typo-tolerant) + aesthetic synonym

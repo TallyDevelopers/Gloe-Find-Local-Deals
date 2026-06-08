@@ -26,6 +26,7 @@ Last consolidated: 2026-05-29. Last updated: 2026-06-01 (search & discovery engi
 | Feature | 💼 In plain English | 🔧 Where it's documented | Status |
 |---|---|---|---|
 | **Discover feed** | Browse the best aesthetic deals near you, ranked | §6 Consumer app | ✅ |
+| **Editorial sections** | Admin-authored cute taglines that replace category names + pool multiple categories into one rail | §6A → Editorial sections · Linear GLO-27 | ✅ |
 | **Map discovery** | ResortPass-style map — pins per spa, category tabs, swipeable cards | §6A → Map discovery · Linear GLO-25 | ✅ |
 | **Search** | Type a treatment — even misspelled or slang ("tox") — get nearby matches | §6A Search engine | ✅ |
 | **Claim & pay** | Buy a voucher in-app with Apple Pay or card | §6B Pay & share · §4 Money | ✅ |
@@ -167,14 +168,18 @@ Two-sided marketplace. Three frontends. One API. One DB. The API knows what *sho
 | API framework | Hono | Light, fast, edge-ready if we need it |
 | Type-safe RPC | tRPC | One source of truth for inputs/outputs |
 | Database | Postgres (Supabase) | PostGIS for geo, RLS for auth-at-DB |
-| Mobile | Expo (React Native) | iOS-first; dev-client (not Expo Go) due to native modules |
-| Web | Next.js (App Router) | Shared with mobile via packages/ |
-| UI | Tamagui | Same primitives mobile + web |
-| Auth | Clerk | Email/Apple/Google + 2FA, hosted |
-| Payments | Stripe Connect (Express) | KYC, payouts, 1099-K all handled |
-| Push | APNs direct (HTTP/2 + JWT) | No Expo push proxy in the loop |
-| Deploy | Railway | API + web; envs in dashboard |
+| Mobile | Expo (React Native), dev-client | iOS-first; dev-client (not Expo Go) due to native modules. Reanimated + Gesture Handler; Google Fonts (Fraunces/Inter/Outfit) |
+| Web | Next.js (App Router) | Consumer marketplace + vendor portal + admin god-mode; shared with mobile via packages/ |
+| UI | RN primitives (mobile) · plain CSS — `globals.css` brand tokens + inline styles (web) | No CSS framework; shared brand tokens/wordmark/fonts live in `packages/ui`. (No Tamagui — earlier plan, never adopted.) |
+| Data fetching | TanStack Query + tRPC client | `@gloe/api-client` wraps the tRPC router for both apps |
+| Auth | Clerk | Email + Google/Facebook/TikTok social (Apple pending — GLO-9); headless on mobile (`@clerk/clerk-expo`), `<SignIn/>` on web |
+| Payments | Stripe Connect (Express) | KYC, payouts, 1099-K, transfers + dispute/clawback all handled |
+| Transactional email | Resend + React Email | `sendEmail()` single door; branded templates in `apps/api/src/emails` (receipts, refunds, expiry reminders). Auth emails are Clerk's, separate |
+| Push | APNs direct (HTTP/2 + ES256 JWT) | No Expo push proxy in the loop; DB-driven notification registry + queue + cron |
+| Deploy | Railway | API + web; auto-deploy on `main`; envs in dashboard |
 | Storage | Supabase Storage | Photos + videos; pre-signed uploads |
+| Maps / geo | Google Maps + PostGIS | Vendor geocoding, distance, drive-time estimate |
+| Project mgmt | Linear | The "Gloē" project; GLO-* tickets are the living backlog |
 
 ### Repo layout
 
@@ -182,12 +187,13 @@ Two-sided marketplace. Three frontends. One API. One DB. The API knows what *sho
 GlowApp/
 ├─ apps/
 │  ├─ mobile/         Expo iOS consumer app
-│  ├─ web/            Next.js (vendor portal + admin)
-│  └─ api/            Hono + tRPC
+│  ├─ web/            Next.js (consumer marketplace + vendor portal + admin god-mode)
+│  └─ api/            Hono + tRPC (+ src/emails React Email templates)
 └─ packages/
    ├─ api-client/     tRPC client + shared types
-   ├─ ui/             Tamagui tokens + components
-   └─ ui/brand/       Wordmark, brand font (canonical)
+   ├─ ui/             Shared brand tokens, wordmark, fonts + RN components
+   ├─ auth/           Clerk helpers (expo-secure-store token cache)
+   └─ location/       expo-location helpers
 ```
 
 ### API domain modules (`apps/api/src/domain/`)
@@ -441,7 +447,7 @@ The iPhone app a customer actually uses: **find** a deal (Discover + Search), **
 
 | Tab | Status | Purpose |
 |---|---|---|
-| Discover | Shipped | Feed of deals near you. Per-category rails (4:3 cards) each ending in an inline "See all" tile → 2-up category grid; filter pills; location-gated home (§6A). |
+| Discover | Shipped | Feed of deals near you. **Admin-authored editorial section rails** (cute taglines that pool 1..N categories, GLO-27) — falls back to per-category rails when none authored. 4:3 cards each ending in an inline "See all" tile → 2-up grid; per-category Browse tiles; filter pills; location-gated home (§6A). |
 | Map | Shipped | ResortPass-style map discovery (GLO-25). Reached via the brand map button by the search bar. Full detail in §6A → "Map discovery". |
 | Saved | Shipped | Bookmarked deals + vendors. Segmented control. |
 | Wallet | Shipped | Active vouchers, past claims, soonest-expiring hero, credit balance (stub at $0). |
@@ -601,13 +607,21 @@ Pills are the **7 categories** by default. Tap one → an optional second row of
 
 ### Home rails & "See all" (`features/discover/`)
 
-The Discover **All** view renders one horizontal rail per service category (`CategoryRail.tsx`), fed by `deals.discoverFeed`. Presentation details (the recent polish pass):
+The Discover **All** view renders the rails fed by `deals.discoverFeed`. Presentation details:
 
 - **4:3 rail cards** — shorter than the old portrait cards, so more of the rail is visible at a glance on small phones.
-- **Inline "See all" tile** at the *end* of each rail (not a tired top-right "See all →" link — that's gone; the rail's category label stays tappable). Tapping it opens the category view.
-- **2-up category grid** — the category / See-all view lays deals out two-up, small-phone-friendly, with the See-all entry tile centered.
+- **Inline "See all" tile** at the *end* of each rail (not a tired top-right "See all →" link — that's gone; the rail's heading stays tappable). Tapping it opens the scoped view.
+- **2-up grid** — the See-all view lays deals out two-up, small-phone-friendly, with the See-all entry tile centered.
 
-(GLO-27 will later replace the dry category-noun rail headings with admin-authored editorial taglines that can pool multiple categories — not built yet; this section describes today's per-category behavior.)
+#### Editorial sections (GLO-27) — admin-authored taglines that pool categories
+
+The rail headings are **not** the dry category noun. They're **admin-authored editorial sections**: each is a warm tagline that *replaces* the category label, and a section can **pool deals from one OR several categories** under that one line. e.g. "Find fillers & Botox to boost your glow" (→ Injectables) or "Look snatched" (→ Injectables + Skin). The founder authors / reorders / toggles them in **Admin → Discover** (DB is the source of truth — no code release to change copy; mirrors `platform_fees` / trending config).
+
+- **Data:** `discover_sections` (tagline, image_url, display_order, active) + `discover_section_categories` join → `service_categories`. The taxonomy table is untouched; sections *reference* it.
+- **Backend:** `getDiscoverFeed` loads active sections and pools each section's categories via `listDeals({ categories: [...] })` — a single `c.slug = ANY(...)` query that dedups a deal carrying two of the section's categories. **No active sections → graceful fallback to one rail per category** (the feed is never blank; this shipped before any section was authored).
+- **"Browse by category" tiles stay per-category** — they're a nav shortcut *into* a raw category, so they're computed separately (`feed.browse`, one lightweight aggregate: count + a photo per category) and don't become editorial.
+- **"See all":** a single-category section opens the normal category view; a multi-category section opens a **pooled, tagline-titled** scope (`deals.list({ categories: [...] })`). *(Web parity note: the web home renders the editorial rails, but a multi-category section's "View more" is omitted on web — the SEO `/treatments/[slug]` page is single-category; full multi-category web listing is a fast-follow. Mobile fully delivers the pooled See-all.)*
+- **Code:** `discoverSections.ts` (domain), `admin.router.ts` (CRUD), `deals.ts` (`getDiscoverFeed` + multi-category `listDeals`), mobile `discover.tsx` / `CategoryRail.tsx` / `BrowseByCategory.tsx`, web `(consumer)/page.tsx`, admin `SectionsView.tsx`.
 
 ### Search screen (`apps/mobile/app/(app)/search.tsx`)
 

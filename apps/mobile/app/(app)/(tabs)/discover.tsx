@@ -5,7 +5,7 @@ import { keepPreviousData } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Dimensions, RefreshControl, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Dimensions, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useRequireAuth } from '../../../features/auth-gate/useRequireAuth';
@@ -14,6 +14,7 @@ import { usePrefetch } from '../../../features/prefetch/usePrefetch';
 import { useAnonSeed } from '../../../features/discover/anonSeed';
 import { CategoryRail } from '../../../features/discover/CategoryRail';
 import { ComingSoon } from '../../../features/discover/ComingSoon';
+import { Icon } from '../../../features/icon/Icon';
 import { DealCard } from '../../../features/discover/DealCard';
 import { LocationGate } from '../../../features/discover/LocationGate';
 import { BrowseByCategory } from '../../../features/discover/BrowseByCategory';
@@ -45,12 +46,31 @@ export default function DiscoverScreen() {
   // Optional treatment drill-down under the selected category (second pill row).
   const [subtypeSlug, setSubtypeSlug] = useState<string | null>(null);
   const [filters, setFilters] = useState<DiscoverFilters>({});
+  // A multi-category editorial section's "See all" (GLO-27): pool several
+  // categories under the section's tagline. Single-category navigation still
+  // goes through `categorySlug` (the pills + Browse tiles); this is only set
+  // when a section spans >1 category, where a single slug can't represent it.
+  const [sectionScope, setSectionScope] = useState<{ categories: string[]; title: string } | null>(null);
 
-  // Switching category clears any treatment drill-down — the old treatment
-  // doesn't belong to the new category.
+  // Switching category clears any treatment drill-down + section scope — the old
+  // treatment/section doesn't belong to the new category.
   const selectCategory = (slug: string | null) => {
     setCategorySlug(slug);
     setSubtypeSlug(null);
+    setSectionScope(null);
+  };
+
+  // Open a rail's "See all". A single-category section/rail routes to the normal
+  // category view (pills work); a multi-category section opens the pooled,
+  // tagline-titled scope.
+  const openRailSeeAll = (rail: { displayName: string; categorySlugs: string[] }) => {
+    if (rail.categorySlugs.length === 1) {
+      selectCategory(rail.categorySlugs[0]!);
+    } else {
+      setSubtypeSlug(null);
+      setCategorySlug(null);
+      setSectionScope({ categories: rail.categorySlugs, title: rail.displayName });
+    }
   };
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   // Location picker, opened from the city segment inside the search bar.
@@ -62,7 +82,8 @@ export default function DiscoverScreen() {
     (filters.minPriceCents !== undefined || filters.maxPriceCents !== undefined ? 1 : 0) +
     (filters.minDiscountPct !== undefined ? 1 : 0);
 
-  const isAllView = categorySlug === null;
+  // "All" = the editorial home feed: nothing selected, no section scope open.
+  const isAllView = categorySlug === null && sectionScope === null;
   const isSignedIn = status === 'signed-in';
 
   // Don't fire deal queries until the inputs have SETTLED. On cold start the
@@ -98,7 +119,9 @@ export default function DiscoverScreen() {
       userLng: location.longitude,
       maxDistanceMiles: filters.maxDistanceMiles ?? 50,
       limit: 50,
-      ...(categorySlug ? { category: categorySlug } : {}),
+      // A multi-category section scope pools its categories; otherwise the
+      // single selected category drives the grid.
+      ...(sectionScope ? { categories: sectionScope.categories } : categorySlug ? { category: categorySlug } : {}),
       ...(subtypeSlug ? { subtypeSlug } : {}),
       ...(filters.minPriceCents !== undefined ? { minPriceCents: filters.minPriceCents } : {}),
       ...(filters.maxPriceCents !== undefined ? { maxPriceCents: filters.maxPriceCents } : {}),
@@ -111,6 +134,7 @@ export default function DiscoverScreen() {
   // All-view data comes from the feed; filtered-view from deals.list.
   const featured = feedQuery.data?.featured ?? [];
   const rails = feedQuery.data?.rails ?? [];
+  const browse = feedQuery.data?.browse ?? [];
   const rest = dealsQuery.data?.deals ?? [];
 
   // The active query for loading/error/empty gating, by view.
@@ -207,12 +231,23 @@ export default function DiscoverScreen() {
               chrome; this only ever appears when there's nothing local to show. */}
           {!hasLocation ? <LocationGate /> : (
           <>
-          {/* On "All" the Browse-by-category tiles handle navigation, so the
-              pill row is hidden (and filtering the whole feed isn't meaningful).
-              Inside a category we show the pills (incl. the "All" pill to go
-              back), the treatment drill-down, and the Filters button — where
-              refining a list actually matters. */}
-          {!isAllView ? (
+          {/* A multi-category editorial section's "See all" (GLO-27): no single
+              category slug to drive the pills, so show a back link + the tagline
+              as the heading. Tapping back returns to the editorial feed. */}
+          {sectionScope ? (
+            <View style={{ paddingHorizontal: space[5], gap: space[2] }}>
+              <Pressable onPress={() => setSectionScope(null)} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: space[1] }}>
+                <Icon name="chevronLeft" size={18} color={palette.text.secondary} strokeWidth={2.5} />
+                <Text variant="body-sm" tone="secondary" weight="semibold">All</Text>
+              </Pressable>
+              <Text variant="display-sm" tone="primary" weight="medium">
+                {sectionScope.title}
+              </Text>
+            </View>
+          ) : !isAllView ? (
+            /* Inside a single category: pills (incl. "All" to go back), the
+               treatment drill-down, and Filters — where refining a list matters.
+               On "All" the Browse tiles handle navigation, so the pills hide. */
             <View style={{ paddingLeft: space[5], paddingRight: space[3] }}>
               <FilterPills
                 selectedSlug={categorySlug}
@@ -274,16 +309,22 @@ export default function DiscoverScreen() {
                is intentionally omitted for now; it returns when sponsored is a
                paid placement. */
             <Stack gap={8} style={{ marginTop: space[2] }}>
+              {/* Browse tiles stay per raw category (a nav shortcut INTO a
+                  category) even though the rails below are editorial sections. */}
               <BrowseByCategory
-                categories={rails.map((r) => ({
-                  slug: r.slug,
-                  displayName: r.displayName,
-                  deals: r.deals,
-                  tileImageUrl: r.tileImageUrl,
+                categories={browse.map((b) => ({
+                  slug: b.slug,
+                  displayName: b.displayName,
+                  dealCount: b.dealCount,
+                  tileImageUrl: b.tileImageUrl,
+                  fallbackPhotoUrl: b.fallbackPhotoUrl,
                 }))}
-                onSelect={(slug) => setCategorySlug(slug)}
+                onSelect={(slug) => selectCategory(slug)}
               />
 
+              {/* Editorial section rails (GLO-27): the heading is the admin-
+                  authored tagline, not the category noun. "See all" opens the
+                  section's category (single) or the pooled scope (multi). */}
               {rails.map((rail) => (
                 <CategoryRail
                   key={rail.slug}
@@ -291,7 +332,7 @@ export default function DiscoverScreen() {
                   deals={rail.deals}
                   savedIds={savedIds}
                   onSave={toggleSave}
-                  onSeeAll={() => setCategorySlug(rail.slug)}
+                  onSeeAll={() => openRailSeeAll(rail)}
                 />
               ))}
             </Stack>
