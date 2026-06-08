@@ -93,7 +93,7 @@ export type VoucherTab = 'active' | 'redeemed' | 'past';
  * Voucher list for the vendor's "Vouchers" card.
  * - active   = unredeemed, not expired
  * - redeemed = redeemed (any time)
- * - past     = expired or cancelled
+ * - past     = expired, cancelled, or frozen (under dispute)
  *
  * Capped at 50 rows per tab — if vendors run high volume we'll paginate.
  */
@@ -131,7 +131,7 @@ export async function listVendorVouchers(
       AND CASE
         WHEN ${tab} = 'active'   THEN c.status = 'active' AND c.expires_at > now()
         WHEN ${tab} = 'redeemed' THEN c.status = 'redeemed'
-        ELSE c.status IN ('expired','cancelled')
+        ELSE c.status IN ('expired','cancelled','frozen')
              OR (c.status = 'active' AND c.expires_at <= now())
       END
     ORDER BY

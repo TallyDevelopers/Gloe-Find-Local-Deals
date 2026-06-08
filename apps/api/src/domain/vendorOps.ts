@@ -437,3 +437,81 @@ export async function windDownVendor(
 
   return { refunded, failed, suspended: true };
 }
+
+/**
+ * Reconcile a LOST dispute (GLO-34): claw back the vendor's share.
+ *
+ * When `charge.dispute.created` fires we freeze the voucher and halt the
+ * payout. But if the voucher had ALREADY been redeemed, the vendor's transfer
+ * may have gone out before the dispute. If the dispute then resolves AGAINST
+ * us, Stripe has pulled the full charge back from the platform — so the
+ * platform is now out the vendor's share too. This reverses the vendor's
+ * transfer so the loss lands where it belongs.
+ *
+ * NOTE: this does NOT call Stripe `refunds.create` — on a lost dispute Stripe
+ * already refunded the customer by pulling the funds. A second refund would
+ * double-pay. The only money left to move is the vendor claw-back.
+ *
+ * Use it on a transaction whose status is `disputed`. Idempotent-ish: refuses
+ * if there's no transfer or it was already fully reversed.
+ */
+export async function reconcileLostDispute(
+  sql: Sql,
+  transactionId: string,
+  actorUserId: string,
+): Promise<{ reversed: boolean; reversedCents: number; error: string | null }> {
+  const rows = await sql<{
+    tx_id: string;
+    tx_status: string;
+    vendor_id: string;
+    transfer_id: string | null;
+    vendor_payout_cents: number;
+    claim_id: string | null;
+  }[]>`
+    SELECT
+      t.id AS tx_id, t.status AS tx_status, t.vendor_id,
+      t.stripe_transfer_id AS transfer_id, t.vendor_payout_cents,
+      (SELECT c.id FROM public.claims c WHERE c.transaction_id = t.id LIMIT 1) AS claim_id
+    FROM public.transactions t
+    WHERE t.id = ${transactionId}
+    LIMIT 1
+  `;
+  const r = rows[0];
+  if (!r) return fail('transaction_not_found', null, null);
+  if (r.tx_status !== 'disputed') return fail(`transaction is ${r.tx_status}, expected disputed`, r.vendor_id, r.claim_id);
+  if (!r.transfer_id) return fail('no vendor transfer to reverse (payout was correctly halted)', r.vendor_id, r.claim_id);
+  if (!(r.vendor_payout_cents > 0)) return fail('vendor_payout_cents is not positive', r.vendor_id, r.claim_id);
+
+  try {
+    await stripe().transfers.createReversal(
+      r.transfer_id,
+      { amount: r.vendor_payout_cents, metadata: { gloe_reason: 'dispute_lost', transaction_id: transactionId } },
+      { idempotencyKey: `dispute_reverse_txn_${transactionId}` },
+    );
+  } catch (e) {
+    return fail(`stripe reversal failed: ${e instanceof Error ? e.message : String(e)}`, r.vendor_id, r.claim_id);
+  }
+
+  void writeAudit(sql, {
+    action: 'dispute.reconciled',
+    actorUserId,
+    vendorId: r.vendor_id,
+    claimId: r.claim_id,
+    transactionId: r.tx_id,
+    meta: { reversedCents: r.vendor_payout_cents, stripeTransferId: r.transfer_id },
+  });
+
+  return { reversed: true, reversedCents: r.vendor_payout_cents, error: null };
+
+  function fail(err: string, vendorId: string | null, claimId: string | null) {
+    void writeAudit(sql, {
+      action: 'dispute.reconcile_refused',
+      actorUserId,
+      vendorId,
+      claimId,
+      transactionId,
+      meta: { reason: err },
+    });
+    return { reversed: false as const, reversedCents: 0, error: err };
+  }
+}

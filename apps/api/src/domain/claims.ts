@@ -4,7 +4,7 @@ import type postgres from 'postgres';
 
 import type { Sql } from '../db/client';
 
-export type ClaimStatus = 'active' | 'redeemed' | 'expired' | 'cancelled';
+export type ClaimStatus = 'active' | 'redeemed' | 'expired' | 'cancelled' | 'frozen';
 
 export interface ClaimSnapshot {
   dealTitle: string;
@@ -379,6 +379,12 @@ export async function lookupClaimForVendor(
   if (r.status === 'cancelled') {
     void audit(r.id, 'NOT_ACTIVE');
     throw new RedemptionError('This voucher was cancelled.', 'NOT_ACTIVE');
+  }
+  if (r.status === 'frozen') {
+    // Frozen = the purchase is under a payment dispute (GLO-34). Block
+    // redemption until the dispute resolves; if we win it flips back to active.
+    void audit(r.id, 'NOT_ACTIVE');
+    throw new RedemptionError('This voucher is on hold pending a payment review.', 'NOT_ACTIVE');
   }
   if (r.status === 'expired' || new Date(r.expires_at) < new Date()) {
     void audit(r.id, 'EXPIRED');

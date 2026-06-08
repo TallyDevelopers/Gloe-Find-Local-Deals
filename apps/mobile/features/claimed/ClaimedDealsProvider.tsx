@@ -136,7 +136,9 @@ function apiToClient(api: ApiClaim): ClaimedDeal {
     },
     qrPayload: api.qrPayload,
     humanCode: api.humanCode,
-    status: api.status === 'cancelled' ? 'expired' : api.status,
+    // 'cancelled' (refunded) and 'frozen' (under payment dispute) both render as
+    // a non-redeemable past voucher; the mobile UI only models active/redeemed/expired.
+    status: api.status === 'cancelled' || api.status === 'frozen' ? 'expired' : api.status,
     createdAt: new Date(api.createdAt).getTime(),
     expiresAt: new Date(api.expiresAt).getTime(),
     redeemedAt: api.redeemedAt ? new Date(api.redeemedAt).getTime() : null,

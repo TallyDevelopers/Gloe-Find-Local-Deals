@@ -10,7 +10,7 @@ import { sql } from './db/client';
 import { createContext } from './context/context';
 import { appRouter } from './router';
 import { fulfillPurchase } from './domain/checkout';
-import { handleStripePayoutWebhook } from './domain/payoutWebhooks';
+import { handleStripeDisputeWebhook, handleStripePayoutWebhook } from './domain/payoutWebhooks';
 import { constructWebhookEvent } from './domain/stripe';
 import { syncVendorStripeStatus } from './domain/vendorStripe';
 
@@ -72,6 +72,21 @@ app.post('/webhooks/stripe', async (c) => {
       await handleStripePayoutWebhook(sql, event);
     } catch (e) {
       console.error('Failed to handle payout webhook:', (e as Error).message);
+    }
+  }
+
+  // Dispute / chargeback lifecycle — freeze unredeemed vouchers, halt the
+  // vendor payout, flag already-redeemed ones for admin (GLO-34). Disputes on
+  // platform charges fire on the platform account (no event.account).
+  if (
+    event.type === 'charge.dispute.created' ||
+    event.type === 'charge.dispute.updated' ||
+    event.type === 'charge.dispute.closed'
+  ) {
+    try {
+      await handleStripeDisputeWebhook(sql, event);
+    } catch (e) {
+      console.error('Failed to handle dispute webhook:', (e as Error).message);
     }
   }
 

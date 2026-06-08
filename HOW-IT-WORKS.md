@@ -550,20 +550,37 @@ dollar someone *tried* to move and was **blocked** — with actor, reason, and S
 
 *Deeper: `GLOE.md` §4 Refunds. Code: `vendorOps.ts` (`refundClaim`, `refundTransaction`, `forceRefundRedeemed`).*
 
-### ⚠️ Disputes / chargebacks — the known gap
+### Disputes / chargebacks
 
-This is important and it's a **launch blocker (GLO-10)**: we **do not yet listen for Stripe dispute
-webhooks.** Today, if a customer files a bank dispute, the system behaves as if nothing happened — they
-keep a live, redeemable voucher, and (with auto-release on) the vendor could still get paid out of funds
-we no longer have. That's a double-loss path that scales with volume.
+When a customer files a bank dispute, Stripe sends a `charge.dispute.created` webhook and Gloē reacts
+**automatically** — no admin action required to stop the bleeding:
 
-The good news: the hard part (proportional transfer reversal) **already exists** from the refund work.
-The gap is just the missing webhook listener + a freeze + one extra release-wall.
+- **Freeze the voucher.** Every still-unredeemed voucher on that order flips to a new `frozen` status.
+  A frozen voucher can't be redeemed (the vendor's scanner says *"on hold pending a payment review"*), so
+  a disputer can't also walk away with the service.
+- **Halt the payout.** The transaction flips to `disputed`, which trips the payout wall — no vendor
+  transfer can fire while a dispute is open.
+- **Flag the awkward case.** If the voucher was *already redeemed* (service delivered, vendor maybe already
+  paid), we can't un-deliver it — so the transaction is flagged for admin review in god mode instead.
 
-> Heads up: a couple of admin UI elements (a "disputed" status filter and red status color) are already
-> in the interface but **backed by nothing yet** — they light up once this is built.
+Then the dispute resolves:
 
-*Deeper: `GLOE.md` §4 "Disputes (PLANNED)". Linear: GLO-10.*
+- **We win** (`charge.dispute.closed`, status `won`) → the freeze is undone: vouchers go back to `active`
+  and the transaction back to `paid`, so it works again and can pay out.
+- **We lose** → Stripe has already pulled the funds back from the platform. The freeze stands. If the
+  vendor was already paid on this order, an owner uses the **"Claw back vendor share"** button in the
+  transaction drawer (`reconcileLostDispute`) to reverse their transfer so the loss doesn't sit on Gloē.
+  We do *not* issue a second customer refund here — the chargeback already returned their money.
+
+The hard part (proportional transfer reversal) was reused from the refund work; the new pieces are the
+webhook listener, the freeze, the `disputed` payout wall, and the reconcile action. Every step writes an
+audit row (`dispute.opened` / `dispute.won` / `dispute.lost` / `dispute.reconciled`).
+
+> Ops note: this only works if `charge.dispute.created`, `.updated`, and `.closed` are enabled on the
+> Stripe webhook endpoint. Confirm them in the Stripe dashboard before launch.
+
+*Deeper: `GLOE.md` §4 Disputes. Code: `payoutWebhooks.ts` (`handleStripeDisputeWebhook`), `vendorOps.ts`
+(`reconcileLostDispute`). Linear: GLO-34.*
 
 ### A subtle accounting note worth knowing
 
@@ -810,7 +827,8 @@ built. Each is either tracked in Linear or worth a ticket.
   copy has no delivery mechanism behind it.
 
 ### Money safety
-- **No Stripe dispute/chargeback handling** — the double-loss path described in §8. → **GLO-10** (urgent).
+- ✅ **Stripe dispute/chargeback handling** — `charge.dispute.*` now freezes unredeemed vouchers, halts the
+  payout, flags already-redeemed orders, and reconciles a lost dispute. Shipped (GLO-34); see §8.
 - **No cleanup of abandoned "pending payment" rows** — canceled checkouts leave harmless orphan records.
 - **A brief oversell window** — two buyers can both pass the "spots left" check before either pays
   (inventory only decrements at payment).

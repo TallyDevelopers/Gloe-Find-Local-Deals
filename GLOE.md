@@ -51,7 +51,7 @@ Last consolidated: 2026-05-29. Last updated: 2026-06-01 (search & discovery engi
 
 - **✅ Shipped & working:** the full buy→redeem→get-paid loop, search & discovery, refunds, support, Apple Wallet passes, push, Gloē + Google reviews on deals, the redesigned vendor storefront (profile + "Inside the spa" video reel), cached location maps.
 - **🟡 In progress / planned:** loyalty points (planned — earn + redeem, see Linear GLO-24), Apple Wallet live status updates, search/click logging.
-- **❌ Launch blockers (do before App Store):** Sign in with Apple, dispute/chargeback webhook, ATT prompt, counsel-reviewed Terms/Privacy, provider license verification. **The canonical, living backlog now lives in Linear → "Gloē" project** (filter the `launch-blocker` label); §10 is the in-doc snapshot.
+- **❌ Launch blockers (do before App Store):** Sign in with Apple, ATT prompt, counsel-reviewed Terms/Privacy, provider license verification. (The **dispute/chargeback webhook** is now ✅ built — GLO-34 — pending enabling the `charge.dispute.*` events on the live Stripe endpoint.) **The canonical, living backlog now lives in Linear → "Gloē" project** (filter the `launch-blocker` label); §10 is the in-doc snapshot.
 
 > **Where work is tracked:** **Linear** (Gloē project, `GLO-*`) is the roadmap — what's next & why. **This doc** is what *exists* today. When a Linear ticket ships, it gets reflected here.
 
@@ -297,19 +297,22 @@ releaseTransferForClaim(claimId)
 - Then `refundPaymentIntent()` on the original charge.
 - Vendor's connected-account balance debited; we should not do this without their signed agreement.
 
-### Disputes & chargebacks (PLANNED — not yet built as of 2026-05-29)
+### Disputes & chargebacks (SHIPPED — GLO-34)
 
-**Status: no dispute webhook exists today.** `charge.dispute.created` is not handled. If a customer disputes via their bank right now, Stripe pulls the funds back automatically but our DB never learns of it — the transaction stays `paid` and the claim stays redeemable. The word "disputed" appears only as a filter option in admin (`admin.ts`), backed by nothing. This needs to ship before real volume.
+`charge.dispute.created`, `.updated`, and `.closed` are handled in `payoutWebhooks.ts` (`handleStripeDisputeWebhook`), wired from the `/webhooks/stripe` router. Disputes on platform charges fire on the platform account (no `event.account`), so we resolve the transaction directly from the dispute's `payment_intent`. **Register all three events in both the test and live Stripe webhook endpoints** — the code is inert without them.
 
-**Pre-redemption dispute (the common, easy case).** Money is still on Gloē's platform balance — no Transfer has fired yet, vendor hasn't been paid. The fix is mostly bookkeeping + a wall:
+**On `charge.dispute.created`:**
 
-1. **Webhook** — add `charge.dispute.created` (and `charge.dispute.closed`) to the Stripe webhook handler. Register the events in both test and live endpoints.
-2. **Freeze the claim** — on dispute open, flip the claim to a non-redeemable state (`cancelled`, or a new `disputed` status) so it **cannot be redeemed while the dispute is open**. This is the critical move: it blocks any future Transfer.
-3. **Mark the transaction** — set `transactions.status='disputed'`, snapshot the Stripe dispute id.
-4. **New wall #12** — `releaseTransferForClaim()` must refuse if the transaction has an open dispute. (Belt-and-suspenders: even if a claim somehow stays active, the transfer won't fire.)
-5. **On dispute won/lost (`charge.dispute.closed`)** — reconcile: if won, the claim can be reactivated (or left cancelled per policy); if lost, funds are already gone, close out the transaction as `refunded`/charged-back and audit-log it.
+1. **Freeze the voucher** — every still-`active` claim on the transaction flips to the `frozen` status (added to `claims_status_check`). Redemption is gated on `status='active'`, so a frozen voucher cannot be redeemed; the vendor scanner shows *"on hold pending a payment review."*
+2. **Halt the payout** — `transactions.status='disputed'` (+ `stripe_dispute_id`, `dispute_status`, `dispute_reason`, `disputed_at`). This is **wall #12**: `releaseTransferForClaim()` already refuses unless the transaction is `paid`, so no transfer can fire while disputed. (We also backfill `stripe_charge_id` here.)
+3. **Already-redeemed case** — if a claim on the order was already `redeemed`, we can't un-deliver it; the audit row uses `dispute.opened_redeemed` and sets `needsAdminReview` so god mode surfaces it.
 
-**Post-redemption dispute (the hard case).** Vendor was already paid via Transfer. This is the same shape as a post-redemption refund — needs the existing `reverseTransferForClaim()` clawback against the vendor's connected-account balance, which can go negative. Requires the vendor agreement language in ToS (marketplace facilitator / chargeback-liability clause). Treat as a manual admin action at launch, automate later.
+**On `charge.dispute.closed`:**
+
+- **Won** (`status='won`') → reverse the freeze: `frozen` claims go back to `active`, the transaction back to `paid` (so it can pay out). Audit: `dispute.won`.
+- **Lost** → Stripe already pulled the funds from the platform; the freeze stands and the transaction remains `disputed` (effectively refunded). Audit: `dispute.lost` with `needsAdminReview` if a transfer already went out.
+
+**Post-redemption / lost-dispute reconciliation.** If the vendor was already paid for a disputed-then-redeemed order, an owner runs `reconcileLostDispute` (`vendorOps.ts`, exposed as `admin.reconcileLostDispute`, surfaced as the **"Claw back vendor share"** button in the god-mode transaction drawer's dispute panel). It reverses the vendor's transfer (`transfers.createReversal`, which can drive their Connect balance negative) and writes `dispute.reconciled`. It deliberately does **not** call `refunds.create` — the chargeback already returned the customer's money, so a second refund would double-pay. (Vendor chargeback-liability language belongs in the ToS — see §10.)
 
 **Build order:** ship the pre-redemption path (webhook + freeze + wall #12) before first real customers; the post-redemption clawback can stay manual initially.
 
@@ -323,11 +326,12 @@ releaseTransferForClaim(claimId)
 ```
 transactions:    pending_payment → paid → released  →  refunded  or  partially_refunded
                                        ↘ (vendor never onboarded → stays paid, money held)
-                                       ↘ disputed   (PLANNED: charge.dispute.created)
+                                       ↘ disputed (charge.dispute.created) → paid (won) | stays disputed (lost)
 
 claims:          active → redeemed   →  (transfer fires)
                        ↘ expired   (cron, past expires_at)
-                       ↘ cancelled (refund pre-redemption, OR PLANNED: dispute freeze)
+                       ↘ cancelled (refund pre-redemption)
+                       ↘ frozen    (dispute opened) → active (dispute won)
 
 payouts:         pending → paid
                         ↘ failed
@@ -347,7 +351,7 @@ payouts:         pending → paid
 9. Vendor not suspended
 10. Stripe account `payouts_enabled=true`
 11. License on file (manual today)
-12. No open dispute on the transaction (**PLANNED** — ships with the dispute webhook above)
+12. No open dispute on the transaction — a `charge.dispute.created` sets the transaction to `disputed`, and wall #4 (`status='paid'`) refuses it. The dispute also freezes the voucher (wall #3 can never reach `redeemed`). See §4 Disputes.
 
 ---
 
@@ -371,8 +375,8 @@ All tables in Supabase Postgres. PostGIS extension on. RLS enabled (auth at DB l
 | `deal_variants` | Per-deal options | deal_id, label, unit_count, unit_label, original_price_cents, deal_price_cents, spots_total, spots_claimed |
 | `deal_photos` | Deal imagery | deal_id, url, display_order |
 | `deal_videos` | Deal video | deal_id, url, thumbnail_url, caption, duration_seconds |
-| `claims` | Vouchers | id, user_id, deal_id, variant_id, vendor_id, status (active/redeemed/expired/cancelled), qr_payload, human_code, expires_at, redeemed_at, snapshot (frozen metadata JSON) |
-| `transactions` | Money records | id, vendor_id, user_id, consumer_paid_cents, vendor_payout_cents, platform_fee_cents, status, stripe_payment_intent_id, stripe_transfer_id, platform_fee_snapshot (JSON) |
+| `claims` | Vouchers | id, user_id, deal_id, variant_id, vendor_id, status (active/redeemed/expired/cancelled/frozen), qr_payload, human_code, expires_at, redeemed_at, snapshot (frozen metadata JSON) |
+| `transactions` | Money records | id, vendor_id, user_id, consumer_paid_cents, vendor_payout_cents, platform_fee_cents, status, stripe_payment_intent_id, stripe_charge_id, stripe_transfer_id, platform_fee_snapshot (JSON), refunded_cents, stripe_dispute_id, dispute_status, dispute_reason, disputed_at, dispute_resolved_at |
 | `payouts` | Stripe payouts mirror | id, vendor_id, stripe_payout_id, amount_cents, status, arrival_estimate_at, arrived_at, failure_message |
 | `platform_fees` | Fee tiers (admin-editable) | label, min_cents, max_cents, percent_bps, flat_cents, min_fee_cents, vendor_id (null=global, set=override), active |
 | `device_tokens` | iOS push targets | user_id, platform, token, last_seen_at |
@@ -812,7 +816,7 @@ Ranked. These are what stand between "today" and "your wife's friend can install
 | # | Blocker | Why it blocks launch | Effort | Status |
 |---|---|---|---|---|
 | 1 | **Sign in with Apple** | Hard App Store **rejection** (Guideline 4.8). We offer Google/Facebook/TikTok social login but NOT Apple — Apple requires an equivalent Apple option whenever third-party social login exists. `SocialAuthButtons.tsx` has no `apple` provider. | ~2h (Clerk supports it; add provider + button + entitlement) | ❌ Not built |
-| 2 | **Dispute / chargeback webhook** | Money-loss + integrity. `charge.dispute.created` is unhandled, so a pre-redemption dispute won't freeze the claim or block the transfer — a customer can dispute AND redeem. This is wall #12. | ~half day | ❌ Not built |
+| 2 | **Dispute / chargeback webhook** | Money-loss + integrity. ✅ **Shipped (GLO-34):** `charge.dispute.*` freezes unredeemed vouchers, halts the payout (wall #12), flags already-redeemed orders, and reconciles a lost dispute. **Remaining config:** enable `charge.dispute.created/.updated/.closed` on the live Stripe webhook endpoint. | done | ✅ Built (enable events in Stripe) |
 | 3 | **Transactional receipts (Resend)** | Receipts are the #1 chargeback-preventer; a charge with no email receipt invites disputes. Nothing emails today. | ~half day (Resend + receipt on `payment_intent.succeeded`) | ❌ Not wired |
 | 4 | **Apple Pay finish** | Code-complete (`merchantIdentifier` set), but needs Stripe Apple Pay cert + live-domain registration + a native device rebuild to actually charge. | ~1h once certs in hand | 🟡 Code-done, config pending |
 | 5 | **ATT prompt** | Apple **rejection** (5.1.2) IF any cross-app analytics ship. `expo-tracking-transparency` not installed. If we launch with zero analytics SDKs we can defer; the moment Mixpanel/Sentry land, this is mandatory. | ~1h | ❌ Not installed (conditionally required) |
@@ -843,7 +847,7 @@ The **infra switches** (Stripe live keys, live webhook, Railway env, EAS build, 
 - **Coupon / manual credit issuance in admin** — UI stub.
 - **OSRM self-hosted routing** — current drive-time is straight-line × tiered mph (±20%, $0). Deferred until margin demands it.
 - **Reconciliation cron** — query exists, schedule not wired.
-- **Dispute / chargeback webhook** — `charge.dispute.created` is NOT handled. A pre-redemption dispute won't freeze the claim or block the transfer today. Pre-launch blocker; plan in §4 "Disputes & chargebacks." Includes wall #12 (no open dispute).
+- **Dispute / chargeback webhook** — ✅ shipped (GLO-34): `charge.dispute.*` freezes the voucher, halts the payout (wall #12), and reconciles a lost dispute. See §4 "Disputes & chargebacks." The only remaining step is **enabling the three `charge.dispute.*` events on the live Stripe webhook endpoint**.
 - **Nightly DB backups** — Supabase free tier has daily; verify and document recovery.
 
 ---

@@ -360,6 +360,11 @@ export async function getAdminTransactionDetail(sql: Sql, transactionId: string)
     refunded_at: string | null;
     created_at: string;
     platform_fee_snapshot: Record<string, unknown> | null;
+    stripe_dispute_id: string | null;
+    dispute_status: string | null;
+    dispute_reason: string | null;
+    disputed_at: string | null;
+    dispute_resolved_at: string | null;
     vendor_id: string;
     business_name: string;
     customer_id: string | null;
@@ -370,6 +375,7 @@ export async function getAdminTransactionDetail(sql: Sql, transactionId: string)
       t.id, t.status, t.consumer_paid_cents, t.platform_fee_cents, t.vendor_payout_cents, t.stripe_fee_cents,
       t.stripe_payment_intent_id, t.stripe_charge_id, t.stripe_transfer_id,
       t.paid_at, t.released_at, t.refunded_at, t.created_at, t.platform_fee_snapshot,
+      t.stripe_dispute_id, t.dispute_status, t.dispute_reason, t.disputed_at, t.dispute_resolved_at,
       v.id AS vendor_id, v.business_name,
       u.id AS customer_id,
       COALESCE(NULLIF(TRIM(CONCAT(u.first_name, ' ', u.last_name)), ''), u.email) AS customer_name,
@@ -428,6 +434,11 @@ export async function getAdminTransactionDetail(sql: Sql, transactionId: string)
       refundedAt: t.refunded_at,
       createdAt: t.created_at,
       platformFeeSnapshot: t.platform_fee_snapshot,
+      stripeDisputeId: t.stripe_dispute_id,
+      disputeStatus: t.dispute_status,
+      disputeReason: t.dispute_reason,
+      disputedAt: t.disputed_at,
+      disputeResolvedAt: t.dispute_resolved_at,
     },
     vendor: { id: t.vendor_id, name: t.business_name },
     customer: t.customer_id

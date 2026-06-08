@@ -8,6 +8,7 @@ import type { RouterOutputs } from '@gloe/api-client';
 import { trpc } from '../../../lib/trpc';
 import { stripeDashboardUrl } from '../../../lib/stripeDashboard';
 import { RefundControl } from '../components/RefundControl';
+import { DisputePanel } from '../components/DisputePanel';
 
 type Row = RouterOutputs['admin']['listTransactions'][number];
 
@@ -19,6 +20,7 @@ const STATUS_COLOR: Record<string, string> = {
   partially_refunded: 'var(--accent-500)',
   failed: 'var(--error)',
   disputed: 'var(--error)',
+  frozen: 'var(--error)',
 };
 
 const STATUS_FILTERS: { key: string; label: string }[] = [
@@ -27,6 +29,7 @@ const STATUS_FILTERS: { key: string; label: string }[] = [
   { key: 'released',           label: 'Released' },
   { key: 'pending_payment',    label: 'Pending' },
   { key: 'refunded',           label: 'Refunded' },
+  { key: 'disputed',           label: 'Disputed' },
   { key: 'failed',             label: 'Failed' },
 ];
 
@@ -368,6 +371,20 @@ function TransactionDrawer({
               <Row label="Stripe processing">{money(d.transaction.stripeFeeCents)}</Row>
               <Row label="Status"><span style={{ color: STATUS_COLOR[d.transaction.status], fontWeight: 700, textTransform: 'uppercase', fontSize: 12 }}>{d.transaction.status.replace('_', ' ')}</span></Row>
             </Section>
+
+            {d.transaction.stripeDisputeId ? (
+              <DisputePanel
+                disputeStatus={d.transaction.disputeStatus}
+                disputeReason={d.transaction.disputeReason}
+                disputedAt={d.transaction.disputedAt}
+                disputeResolvedAt={d.transaction.disputeResolvedAt}
+                stripeDisputeId={d.transaction.stripeDisputeId}
+                txStatus={d.transaction.status}
+                hasTransfer={!!d.transaction.stripeTransferId}
+                transactionId={d.transaction.id}
+                onDone={() => { onRefunded?.(); void detail.refetch(); }}
+              />
+            ) : null}
 
             <FeeMathPanel
               snapshot={d.transaction.platformFeeSnapshot}

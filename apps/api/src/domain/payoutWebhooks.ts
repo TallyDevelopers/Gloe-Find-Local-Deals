@@ -3,6 +3,209 @@ import { type AuditAction, writeAudit } from './audit';
 import type { StripeWebhookEvent } from './stripe';
 
 /**
+ * Shape of the Stripe Dispute object we care about (charge.dispute.* events).
+ * `charge` and `payment_intent` are the two ways back to our transaction; we
+ * match on payment_intent since that's what fulfillPurchase persists.
+ */
+interface StripeDispute {
+  id: string;
+  charge?: string | null;
+  payment_intent?: string | null;
+  status?: string | null;     // needs_response | warning_needs_response | under_review | won | lost | charge_refunded ...
+  reason?: string | null;     // fraudulent | product_not_received | duplicate | ...
+  amount?: number | null;
+}
+
+/**
+ * Handles `charge.dispute.created`, `.updated`, and `.closed` — the
+ * money-integrity wall (GLO-34). When a customer disputes/chargebacks a charge:
+ *
+ *   created → freeze every UNREDEEMED voucher on that transaction so it can no
+ *             longer be redeemed (a disputer must not also walk away with the
+ *             service), and mark the transaction `disputed` which halts the
+ *             vendor payout (releaseTransferForClaim refuses unless txn status
+ *             is `paid`). If a voucher was ALREADY redeemed, we leave it alone
+ *             but flag the transaction for admin review (the service was
+ *             delivered — admin decides comp vs. claw-back via forceRefundRedeemed).
+ *
+ *   updated → record the new dispute status (e.g. under_review) for visibility.
+ *
+ *   closed  → won: the dispute resolved in our favor → un-freeze the claims
+ *                  back to `active` and restore the transaction to `paid` so the
+ *                  voucher works again and the payout can release.
+ *             lost: Stripe has pulled the funds; the freeze stands. Transaction
+ *                  stays `disputed` (effectively a forced refund) and is flagged
+ *                  for admin so any already-sent vendor transfer can be reversed.
+ *
+ * Disputes on platform (destination) charges fire on the PLATFORM account, so
+ * there is no `event.account` to resolve — we go straight from the dispute's
+ * payment_intent to our transaction. Idempotent: re-delivery of the same event
+ * is a no-op on the freeze (claims are only flipped active→frozen) and the
+ * status fields just re-set to the same values.
+ */
+export async function handleStripeDisputeWebhook(
+  sql: Sql,
+  event: StripeWebhookEvent,
+): Promise<void> {
+  const dispute = event.data.object as unknown as StripeDispute;
+  const piId = typeof dispute.payment_intent === 'string' ? dispute.payment_intent : null;
+  const chargeId = typeof dispute.charge === 'string' ? dispute.charge : null;
+
+  if (!piId && !chargeId) {
+    console.warn(`[dispute webhook] ${event.type} has no payment_intent or charge; ignoring`);
+    return;
+  }
+
+  // Find the transaction. Prefer payment_intent (always persisted by
+  // fulfillPurchase); fall back to charge id if we ever backfilled it.
+  const txnRows = await sql<{
+    id: string;
+    vendor_id: string;
+    status: string;
+    stripe_transfer_id: string | null;
+  }[]>`
+    SELECT id, vendor_id, status, stripe_transfer_id
+    FROM public.transactions
+    WHERE (${piId}::text IS NOT NULL AND stripe_payment_intent_id = ${piId})
+       OR (${chargeId}::text IS NOT NULL AND stripe_charge_id = ${chargeId})
+    LIMIT 1
+  `;
+  const txn = txnRows[0];
+  if (!txn) {
+    console.warn(`[dispute webhook] no transaction for PI ${piId ?? '—'} / charge ${chargeId ?? '—'}`);
+    return;
+  }
+
+  const status = dispute.status ?? null;
+  const reason = dispute.reason ?? null;
+  const isClosed = event.type === 'charge.dispute.closed';
+  const isWon = isClosed && status === 'won';
+
+  await sql.begin(async (tx) => {
+    if (event.type === 'charge.dispute.created') {
+      // Freeze every still-redeemable voucher on this transaction. Only flips
+      // active→frozen, so re-delivery and partially-redeemed orders are safe.
+      const frozen = await tx<{ id: string }[]>`
+        UPDATE public.claims
+        SET status = 'frozen'
+        WHERE transaction_id = ${txn.id} AND status = 'active'
+        RETURNING id
+      `;
+      // Any already-redeemed voucher on this txn → can't un-deliver; flag it.
+      const redeemedRows = await tx<{ id: string }[]>`
+        SELECT id FROM public.claims
+        WHERE transaction_id = ${txn.id} AND status = 'redeemed'
+      `;
+
+      // Mark the transaction disputed. This is the payout wall:
+      // releaseTransferForClaim refuses unless status='paid', so no new transfer
+      // can fire while disputed. Backfill the charge id while we have it.
+      await tx`
+        UPDATE public.transactions
+        SET status              = 'disputed',
+            stripe_dispute_id   = ${dispute.id},
+            dispute_status      = ${status},
+            dispute_reason      = ${reason},
+            disputed_at         = COALESCE(disputed_at, now()),
+            stripe_charge_id    = COALESCE(stripe_charge_id, ${chargeId}),
+            updated_at          = now()
+        WHERE id = ${txn.id}
+      `;
+
+      void writeAudit(sql, {
+        action: redeemedRows.length > 0 ? 'dispute.opened_redeemed' : 'dispute.opened',
+        vendorId: txn.vendor_id,
+        transactionId: txn.id,
+        meta: {
+          stripeDisputeId: dispute.id,
+          stripeChargeId: chargeId,
+          paymentIntentId: piId,
+          disputeStatus: status,
+          disputeReason: reason,
+          amountCents: dispute.amount ?? null,
+          frozenClaimCount: frozen.length,
+          redeemedClaimCount: redeemedRows.length,
+          // The disputed txn may already have paid out the vendor on redemption.
+          // Surface it so admin knows a transfer reversal may be owed.
+          existingTransferId: txn.stripe_transfer_id,
+          needsAdminReview: redeemedRows.length > 0 || !!txn.stripe_transfer_id,
+        },
+      });
+      return;
+    }
+
+    if (isClosed && isWon) {
+      // We won: undo the freeze. Restore claims that WE froze for this dispute
+      // (frozen→active) and put the transaction back to paid so it can pay out.
+      // Only restore claims that are still 'frozen' (don't resurrect ones an
+      // admin separately cancelled/refunded).
+      await tx`
+        UPDATE public.claims
+        SET status = 'active'
+        WHERE transaction_id = ${txn.id} AND status = 'frozen'
+      `;
+      await tx`
+        UPDATE public.transactions
+        SET status              = 'paid',
+            dispute_status      = ${status},
+            dispute_resolved_at = now(),
+            updated_at          = now()
+        WHERE id = ${txn.id} AND status = 'disputed'
+      `;
+      void writeAudit(sql, {
+        action: 'dispute.won',
+        vendorId: txn.vendor_id,
+        transactionId: txn.id,
+        meta: { stripeDisputeId: dispute.id, disputeStatus: status, disputeReason: reason },
+      });
+      return;
+    }
+
+    if (isClosed && !isWon) {
+      // Lost (or otherwise closed against us): Stripe has already pulled the
+      // funds. The freeze stands; the transaction remains effectively refunded.
+      // Flag for admin so any vendor transfer that already went out can be
+      // reversed via forceRefundRedeemed.
+      await tx`
+        UPDATE public.transactions
+        SET dispute_status      = ${status},
+            dispute_resolved_at = now(),
+            updated_at          = now()
+        WHERE id = ${txn.id}
+      `;
+      void writeAudit(sql, {
+        action: 'dispute.lost',
+        vendorId: txn.vendor_id,
+        transactionId: txn.id,
+        meta: {
+          stripeDisputeId: dispute.id,
+          disputeStatus: status,
+          disputeReason: reason,
+          existingTransferId: txn.stripe_transfer_id,
+          needsAdminReview: !!txn.stripe_transfer_id,
+        },
+      });
+      return;
+    }
+
+    // charge.dispute.updated — just record the lifecycle status change.
+    await tx`
+      UPDATE public.transactions
+      SET dispute_status = ${status},
+          dispute_reason = COALESCE(${reason}, dispute_reason),
+          updated_at     = now()
+      WHERE id = ${txn.id}
+    `;
+    void writeAudit(sql, {
+      action: 'dispute.updated',
+      vendorId: txn.vendor_id,
+      transactionId: txn.id,
+      meta: { stripeDisputeId: dispute.id, disputeStatus: status, disputeReason: reason },
+    });
+  });
+}
+
+/**
  * Mirrors connected-account payout lifecycle events into our `payouts` table.
  * Stripe sends:
  *   - payout.created   → first event, when Stripe (or we, via instant payout) initiates a transfer to the bank/card

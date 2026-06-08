@@ -55,7 +55,7 @@ import {
 } from '../domain/payouts';
 import { getConnectedAccountRequirements, getPlatformBalance } from '../domain/stripe';
 import { getStripeMoneyForVendor } from '../domain/vendorHub';
-import { refundTransaction, forceRefundRedeemed, windDownVendor } from '../domain/vendorOps';
+import { refundTransaction, forceRefundRedeemed, reconcileLostDispute, windDownVendor } from '../domain/vendorOps';
 import { dealInput, dealFields } from './vendor.router';
 import { createVendor } from '../domain/vendorSignup';
 import { startVendorOnboarding } from '../domain/vendorStripe';
@@ -564,6 +564,23 @@ export const adminRouter = router({
       );
       if (!result.refunded) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: result.error ?? 'Refund failed.' });
+      }
+      return result;
+    }),
+
+  /**
+   * Reconcile a LOST dispute (GLO-34): claw back the vendor's transfer when a
+   * disputed-then-redeemed voucher's payout already went out and Stripe pulled
+   * the charge back from the platform. Does NOT refund the customer (Stripe
+   * already did, via the chargeback). Owner-gated.
+   */
+  reconcileLostDispute: adminProcedure
+    .input(z.object({ transactionId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      await assertOwner(ctx);
+      const result = await reconcileLostDispute(ctx.sql, input.transactionId, ctx.auth.userId);
+      if (!result.reversed) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: result.error ?? 'Reconcile failed.' });
       }
       return result;
     }),

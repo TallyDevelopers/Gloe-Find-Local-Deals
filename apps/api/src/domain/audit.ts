@@ -53,6 +53,14 @@ export type AuditAction =
   | 'refund.issued'    // full refund of a transaction
   | 'refund.partial'   // partial refund (voucher stays alive)
   | 'refund.refused'   // request blocked by eligibility / Stripe error
+  // Disputes / chargebacks (charge.dispute.* webhooks; system-driven)
+  | 'dispute.opened'           // charge.dispute.created — froze unredeemed claims, halted payout
+  | 'dispute.opened_redeemed'  // dispute hit an already-redeemed voucher — flagged for admin review
+  | 'dispute.updated'          // charge.dispute.updated — lifecycle/status change
+  | 'dispute.won'              // charge.dispute.closed, status=won — claims un-frozen
+  | 'dispute.lost'             // charge.dispute.closed, status=lost — Stripe pulled the funds back
+  | 'dispute.reconciled'       // admin clawed back the vendor's transfer after a lost dispute
+  | 'dispute.reconcile_refused'// the claw-back was blocked (no transfer, etc.)
   // Deal admin
   | 'deal.admin_edited'  // god mode edited deal content (skips re-review)
   // Support tickets
