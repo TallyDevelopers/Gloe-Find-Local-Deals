@@ -3,6 +3,7 @@ import StripeNode from 'stripe';
 import type { Sql } from '../db/client';
 import { writeAudit } from './audit';
 import { setVendorSuspended } from './admin';
+import { sendRefundEmail } from './transactionalEmails';
 
 const SECRET = process.env.STRIPE_SECRET_KEY;
 type StripeClient = InstanceType<typeof StripeNode>;
@@ -236,6 +237,7 @@ export async function refundTransaction(
     },
   });
 
+  void sendRefundEmail(sql, r.tx_id, amountCents, isFullRefund);
   return { refunded: true, stripeRefundId: refundId, amountCents, isFullRefund, error: null };
 
   function audit(err: string, vendorId: string | null, claimId: string | null, txId: string | null) {
@@ -376,6 +378,7 @@ export async function forceRefundRedeemed(
     },
   });
 
+  void sendRefundEmail(sql, r.tx_id, amountCents, isFullRefund);
   return { refunded: true, stripeRefundId: refundId, reversedCents, amountCents, isFullRefund, error: null };
 
   function fail(err: string, vendorId: string | null, claimId: string | null, txId: string | null) {
