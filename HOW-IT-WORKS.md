@@ -464,6 +464,20 @@ And **that redemption is what releases the vendor's money** (next section).
 
 *Deeper: `GLOE.md` §4, §7. Code: `claims.ts` (`redeemClaimByVendor`, `lookupVoucher`).*
 
+### What lands in your inbox
+
+We send branded emails (via Resend) at the moments that matter — all on-brand, all with a "reply reaches a real person" footer:
+
+- **Receipt** — the instant a purchase is fulfilled. Deal photo, what you paid, your voucher code(s), and **how to pull up your QR** (Wallet tab on the app, or a button to `gloe.app/wallet` on a computer). A broken/missing deal photo is detected and simply omitted, never shown as a broken image.
+- **Refund confirmation** — whenever a refund is issued (full or partial): the amount, "back to your card in 5–10 business days," and whether the voucher was cancelled (full) or stays alive for the balance (partial). Fires from both the pre-redemption refund and the post-redemption/dispute clawback.
+- **Voucher expiring soon** — a once-only reminder ~7 days before an unredeemed voucher lapses, so you don't lose money you already paid. Sent by a daily background sweep (expiry is lazy, so this is what actually nudges you), de-duplicated so you're never spammed.
+
+These send to your account email (for a gift link, the payer's email is the fallback). Email delivery is best-effort and never blocks a purchase or refund. Auth emails (verify/reset) come from Clerk separately.
+
+> Still missing: vendor payout-notification and welcome emails. (See [§15](#15-whats-not-built-yet).)
+
+*Deeper: `GLOE.md` §4 "Transactional email". Code: `domain/email.ts` (`sendEmail`), `emails/` (React Email templates), `transactionalEmails.ts` (`sendRefundEmail`, `sendExpiryReminders`), `checkout.ts` (receipt), `vendorOps.ts` (refund), `index.ts` (expiry sweep).*
+
 ---
 
 ## 8. How the money moves
@@ -729,9 +743,9 @@ Gloē account row is created **just-in-time** the first time you hit our API wit
 a webhook). That's deliberately simple and self-healing: there's no webhook to miss, and your local row
 can never get orphaned from Clerk because it's only ever born from a verified token.
 
-> Email is now partly wired (§15): **purchase receipts go out** (Resend) the moment a payment is
-> fulfilled — branded, with the deal photo, your voucher code, and how to pull up the QR. Other emails
-> (refunds, payouts, gift confirmations) are still pending.
+> Email is now partly wired (§15): **receipts, refund confirmations, and voucher-expiring reminders go
+> out** (Resend) — branded, with deal photo, voucher code, and how to pull up the QR. Payout-notification,
+> gift-confirmation, and welcome emails are still pending.
 
 ### Deleting your account
 
@@ -824,7 +838,8 @@ built. Each is either tracked in Linear or worth a ticket.
 - ✅ **Purchase receipt ships.** Pay → voucher mints → a branded receipt (deal photo, voucher code,
   how-to-redeem with a Wallet link) hits your inbox, fired on fulfillment. → **GLO-11**.
   *(Resend is in testing mode until launch — delivers only to verified addresses for now.)*
-- **Still missing:** refund / payout / gift-confirmation emails, and welcome email. → **GLO-17 / GLO-28**.
+- ✅ **Refund confirmation** (GLO-38) and ✅ **voucher-expiring reminder** (GLO-39) now ship too.
+- **Still missing:** payout-notification, gift-confirmation, and welcome emails. → **GLO-17 / GLO-28**.
 - **No welcome / signup email.** → **GLO-28** (the gap this doc surfaced).
 - **The waitlist promises a notification it can't send.** The "we'll reach out when Gloē lands near you"
   copy has no delivery mechanism behind it.

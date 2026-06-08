@@ -282,3 +282,20 @@ setInterval(() => {
     }
   })();
 }, NOTIFICATION_TICK_MS).unref(); // unref so the interval never blocks shutdown
+
+// Voucher-expiring reminder sweep (GLO-39). Expiry is lazy, so this scans for
+// active vouchers nearing expiry and emails once (dedup'd via claims.
+// expiry_reminded_at). Daily cadence — reminders aren't time-sensitive to the
+// minute. In-process + idempotent like the notification tick.
+const EXPIRY_SWEEP_MS = 24 * 60 * 60 * 1000;
+setInterval(() => {
+  void (async () => {
+    try {
+      const { sendExpiryReminders } = await import('./domain/transactionalEmails');
+      const r = await sendExpiryReminders(sql);
+      if (r.sent || r.skipped) console.log(`[expiry reminders] sent=${r.sent} skipped=${r.skipped}`);
+    } catch (e) {
+      console.error('[expiry reminders] sweep failed:', (e as Error).message);
+    }
+  })();
+}, EXPIRY_SWEEP_MS).unref();
