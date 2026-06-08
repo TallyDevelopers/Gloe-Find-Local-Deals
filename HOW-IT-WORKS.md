@@ -729,8 +729,9 @@ Gloē account row is created **just-in-time** the first time you hit our API wit
 a webhook). That's deliberately simple and self-healing: there's no webhook to miss, and your local row
 can never get orphaned from Clerk because it's only ever born from a verified token.
 
-> The flip side is the **email gap** (§15): today you can pay money and get **zero email** — no receipt,
-> no confirmation. The plumbing's there at every trigger point; only the send call is missing.
+> Email is now partly wired (§15): **purchase receipts go out** (Resend) the moment a payment is
+> fulfilled — branded, with the deal photo, your voucher code, and how to pull up the QR. Other emails
+> (refunds, payouts, gift confirmations) are still pending.
 
 ### Deleting your account
 
@@ -817,11 +818,13 @@ machinery.
 An honest inventory of gaps the audit surfaced — things a user might reasonably expect that aren't
 built. Each is either tracked in Linear or worth a ticket.
 
-### Emails (the big one)
-- **No backend transactional emails exist at all.** No provider wired up, no templates. The only emails
-  anyone gets are Clerk's auth codes. → **GLO-17** (email system, the foundation).
-- **No purchase receipt / booking confirmation email.** You pay, a voucher mints, nothing hits your
-  inbox. → **GLO-11** (receipts).
+### Emails
+- ✅ **Backend transactional email is live (Resend).** A `sendEmail()` door + React Email templates;
+  sending domain `mail.gloe.app` verified. → **GLO-37** (foundation), continuing under **GLO-17**.
+- ✅ **Purchase receipt ships.** Pay → voucher mints → a branded receipt (deal photo, voucher code,
+  how-to-redeem with a Wallet link) hits your inbox, fired on fulfillment. → **GLO-11**.
+  *(Resend is in testing mode until launch — delivers only to verified addresses for now.)*
+- **Still missing:** refund / payout / gift-confirmation emails, and welcome email. → **GLO-17 / GLO-28**.
 - **No welcome / signup email.** → **GLO-28** (the gap this doc surfaced).
 - **The waitlist promises a notification it can't send.** The "we'll reach out when Gloē lands near you"
   copy has no delivery mechanism behind it.

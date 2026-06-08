@@ -408,6 +408,13 @@ export async function fulfillPurchase(
   paymentIntentId: string,
   meta: PaymentMeta,
 ): Promise<void> {
+  // Captured inside the txn, used to fire the receipt AFTER it commits (a
+  // failed email must never roll back a paid purchase).
+  const receiptCodes: string[] = [];
+  let receiptExpiresAt = '';
+  type ReceiptCore = { dealTitle: string; vendorName: string; variantLabel: string; amountPaidCents: number; photoUrl: string | null };
+  let receipt: ReceiptCore | null = null;
+
   await sql.begin(async (tx) => {
     const txns = meta.stripeCheckoutSessionId
       ? await tx<{ id: string; status: string }[]>`
@@ -421,8 +428,13 @@ export async function fulfillPurchase(
     const txn = txns[0];
     if (!txn || txn.status !== 'pending_payment') return; // unknown or already done
 
-    const dealRows = await tx<{ title: string; code_validity_days: number }[]>`
-      SELECT title, code_validity_days FROM public.deals WHERE id = ${meta.dealId} LIMIT 1
+    const dealRows = await tx<{ title: string; code_validity_days: number; photo_url: string | null }[]>`
+      SELECT title, code_validity_days,
+             (SELECT dp.url FROM public.deal_photos dp
+                WHERE dp.deal_id = d.id
+                ORDER BY CASE WHEN dp.photo_type = 'hero' THEN 0 ELSE 1 END, dp.display_order ASC
+                LIMIT 1) AS photo_url
+      FROM public.deals d WHERE d.id = ${meta.dealId} LIMIT 1
     `;
     const variantRows = await tx<{ label: string; deal_price_cents: number; original_price_cents: number }[]>`
       SELECT label, deal_price_cents, original_price_cents
@@ -447,10 +459,17 @@ export async function fulfillPurchase(
       originalPriceCents: variant.original_price_cents,
       dealPriceCents: variant.deal_price_cents,
     };
+    receipt = {
+      dealTitle: deal.title,
+      vendorName: vendor.business_name,
+      variantLabel: variant.label,
+      amountPaidCents: variant.deal_price_cents * meta.quantity,
+      photoUrl: deal.photo_url,
+    };
 
     // One voucher per quantity, each linked back to this transaction.
     for (let i = 0; i < meta.quantity; i++) {
-      await tx`
+      const codeRows = await tx<{ human_code: string; expires_at: string }[]>`
         INSERT INTO public.claims (
           deal_id, vendor_id, variant_id, user_id, status,
           human_code, qr_payload, snapshot, expires_at, transaction_id
@@ -459,7 +478,11 @@ export async function fulfillPurchase(
           ${humanCode()}, ${'qr_' + randomUUID()}, ${tx.json(snapshot)},
           now() + (${validityDays} || ' days')::interval, ${txn.id}
         )
+        RETURNING human_code, expires_at
       `;
+      const r = codeRows[0]!;
+      receiptCodes.push(r.human_code);
+      receiptExpiresAt = r.expires_at;
     }
 
     await tx`
@@ -479,6 +502,86 @@ export async function fulfillPurchase(
       WHERE id = ${txn.id}
     `;
   });
+
+  // Receipt — fire-and-forget, post-commit. `receipt` is only set when we
+  // actually fulfilled (it stays null if the txn was already done / not found),
+  // so this no-ops on a duplicate webhook. Never throws into the caller.
+  const r = receipt as ReceiptCore | null;
+  if (r && receiptCodes.length > 0) {
+    void sendReceiptEmail(sql, {
+      userId: meta.userId,
+      payerEmail: meta.payerEmail ?? null,
+      quantity: meta.quantity,
+      codes: receiptCodes,
+      expiresAt: receiptExpiresAt,
+      dealTitle: r.dealTitle,
+      vendorName: r.vendorName,
+      variantLabel: r.variantLabel,
+      amountPaidCents: r.amountPaidCents,
+      photoUrl: r.photoUrl,
+    }).catch((e) => console.error('[receipt] failed:', (e as Error).message));
+  }
+}
+
+/**
+ * Sends the purchase receipt. Recipient = the in-app user's email; for gift
+ * links where there may be no user email, falls back to the payer's email.
+ * Best-effort: resolves quietly if there's no address or email isn't configured.
+ */
+async function sendReceiptEmail(
+  sql: Sql,
+  d: {
+    userId: string; payerEmail: string | null; quantity: number;
+    codes: string[]; expiresAt: string;
+    dealTitle: string; vendorName: string; variantLabel: string; amountPaidCents: number; photoUrl: string | null;
+  },
+): Promise<void> {
+  const userRows = await sql<{ email: string | null; first_name: string | null }[]>`
+    SELECT email, first_name FROM public.users WHERE id = ${d.userId} LIMIT 1
+  `;
+  const to = userRows[0]?.email ?? d.payerEmail;
+  if (!to) return;
+
+  const { createElement } = await import('react');
+  const { render } = await import('@react-email/components');
+  const { ReceiptEmail } = await import('../emails/ReceiptEmail');
+  const { sendEmail } = await import('./email');
+
+  // Only include the banner if the photo URL actually resolves — a broken <img>
+  // makes the whole receipt look cheap. Cheap HEAD check, short timeout, best-effort.
+  const photoUrl = await resolvablePhoto(d.photoUrl);
+
+  const expiresAt = new Date(d.expiresAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  const html = await render(
+    createElement(ReceiptEmail, {
+      firstName: userRows[0]?.first_name ?? null,
+      dealTitle: d.dealTitle, vendorName: d.vendorName, variantLabel: d.variantLabel,
+      quantity: d.quantity, amountPaidCents: d.amountPaidCents, codes: d.codes, expiresAt,
+      photoUrl,
+      walletUrl: `${process.env.PUBLIC_WEB_ORIGIN ?? 'https://gloe.app'}/wallet`,
+    }),
+  );
+  await sendEmail({
+    to,
+    subject: `Your ${d.dealTitle} receipt`,
+    html,
+    idempotencyKey: `receipt:${d.codes.join(',')}`,
+  });
+}
+
+/** Returns the URL only if it 200s within 2s, else null — so we never embed a
+ *  broken <img> in a receipt. Best-effort; any failure → null (omit the banner). */
+async function resolvablePhoto(url: string | null): Promise<string | null> {
+  if (!url) return null;
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 2000);
+    const res = await fetch(url, { method: 'HEAD', signal: ctrl.signal });
+    clearTimeout(t);
+    return res.ok ? url : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Short human-readable redemption code, e.g. GLOE-7K2QX. */
