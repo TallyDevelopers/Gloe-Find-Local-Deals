@@ -199,6 +199,12 @@ interface ListParams {
    * when both are passed.
    */
   categories?: string[];
+  /**
+   * Restrict to this exact set of deal ids. Powers "Recently viewed" — the
+   * caller passes the ids it has and re-orders the result to its own order
+   * (view recency), since the SQL ranking here doesn't know about it.
+   */
+  dealIds?: string[];
   limit?: number;
   offset?: number;
   /** Inclusive bounds on the cheapest variant of each deal, in cents. */
@@ -247,9 +253,11 @@ export interface DealPage {
 
 export async function listDeals(sql: Sql, params: ListParams = {}): Promise<DealPage> {
   const {
-    userLat, userLng, maxDistanceMiles = 50, category, categories, limit = 50, offset = 0,
+    userLat, userLng, maxDistanceMiles = 50, category, categories, dealIds: dealIdFilterInput, limit = 50, offset = 0,
     minPriceCents, maxPriceCents, minDiscountPct, q, subtypeSlug, minRating, vibes, sort, viewerSeed,
   } = params;
+  const idFilter = (dealIdFilterInput ?? []).filter((s) => typeof s === 'string' && s.length > 0);
+  const hasIdFilter = idFilter.length > 0;
   // Multi-category pooling (GLO-27): a list of slugs takes precedence over a
   // single `category`. Empty/whitespace slugs are dropped so an empty array
   // doesn't accidentally filter to nothing.
@@ -381,6 +389,7 @@ export async function listDeals(sql: Sql, params: ListParams = {}): Promise<Deal
     WHERE d.status = 'active'
       AND v.status = 'active'
       AND d.expires_at > now()
+      ${hasIdFilter ? sql`AND d.id = ANY(${sql.array(idFilter)}::uuid[])` : sql``}
       ${hasCategoryList ? sql`AND (
         c.slug = ANY(${sql.array(categorySlugs)}::text[])
         OR EXISTS (

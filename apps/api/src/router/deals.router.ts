@@ -177,4 +177,38 @@ export const dealsRouter = router({
       }
       return deal;
     }),
+
+  /**
+   * Fetch card data for an exact set of deal ids, in card (DealSummary) shape.
+   * Powers the "Recently viewed" rail: the client passes the ids it stored and
+   * we return them in the SAME order (view recency), dropping any that are no
+   * longer active/visible (expired, pulled). Location is optional — passed so
+   * the cards can still show distance.
+   */
+  byIds: publicProcedure
+    .input(
+      z.object({
+        ids: z.array(z.string().uuid()).max(20),
+        userLat: z.number().optional(),
+        userLng: z.number().optional(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      if (input.ids.length === 0) return { deals: [] };
+      const page = await listDeals(ctx.sql, {
+        dealIds: input.ids,
+        // Don't drop a recently-viewed deal just because it's now outside the
+        // default radius — a huge maxDistance keeps them all; distance still
+        // shows on the card when a location is given.
+        ...(typeof input.userLat === 'number' && typeof input.userLng === 'number'
+          ? { userLat: input.userLat, userLng: input.userLng, maxDistanceMiles: 100_000 }
+          : {}),
+        limit: input.ids.length,
+      });
+      // Re-order to the caller's order (most-recently-viewed first); listDeals
+      // ranks by relevance, which isn't what "recently viewed" wants.
+      const byId = new Map(page.deals.map((d) => [d.id, d]));
+      const ordered = input.ids.map((id) => byId.get(id)).filter((d): d is NonNullable<typeof d> => !!d);
+      return { deals: ordered };
+    }),
 });

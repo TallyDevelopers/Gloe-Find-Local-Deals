@@ -3,7 +3,7 @@ import { useAuth } from '@gloe/auth';
 import { Stack, Text, radius, space, useTheme } from '@gloe/ui';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Dimensions, Pressable, Share, View } from 'react-native';
 import Animated, { useAnimatedScrollHandler, useSharedValue } from 'react-native-reanimated';
 
@@ -20,6 +20,7 @@ import { StickyTopBar } from '../../../features/deal-detail/StickyTopBar';
 import { VariantPicker } from '../../../features/deal-detail/VariantPicker';
 import { formatProximity, milesBetween } from '../../../features/discover/cardMeta';
 import { formatPrice } from '../../../features/discover/format';
+import { useRecordRecentlyViewed } from '../../../features/discover/useRecentlyViewed';
 import { useSelectedLocation } from '../../../features/discover-header/SelectedLocationProvider';
 import { useSavedDeals } from '../../../features/saved/SavedDealsProvider';
 
@@ -38,6 +39,15 @@ export default function DealDetailScreen() {
     { vendorId: dealQuery.data?.vendor.id ?? '', limit: 5 },
     { enabled: !!dealQuery.data?.vendor.id },
   );
+
+  // Record this deal as "recently viewed" once it has successfully loaded —
+  // only real, still-visible deals make the local rail on Discover. Keyed on
+  // the loaded deal's id so navigating between deals records each one.
+  const recordRecentlyViewed = useRecordRecentlyViewed();
+  const loadedDealId = dealQuery.data?.id;
+  useEffect(() => {
+    if (loadedDealId) recordRecentlyViewed(loadedDealId);
+  }, [loadedDealId, recordRecentlyViewed]);
 
   const [selectedVariantId, setSelectedVariantId] = useState<string | undefined>(undefined);
 

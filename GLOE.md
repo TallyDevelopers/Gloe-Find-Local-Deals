@@ -613,6 +613,10 @@ The Discover **All** view renders the rails fed by `deals.discoverFeed`. Present
 - **Inline "See all" tile** at the *end* of each rail (not a tired top-right "See all →" link — that's gone; the rail's heading stays tappable). Tapping it opens the scoped view.
 - **2-up grid** — the See-all view lays deals out two-up, small-phone-friendly, with the See-all entry tile centered.
 
+#### Recently viewed
+
+A small horizontal strip at the **top** of the All view showing the last ~8 deals the user opened (newest first). **Device-local** — stored in `SecureStore` (`gloe.recentlyViewed.v1`), so it works logged-out, needs no backend, and is private to the device (mirrors the recent-searches pattern). Recorded on the deal-detail screen once a deal successfully loads; the rail fetches card data via `deals.byIds` (which drops any deal no longer active, so the strip self-heals). Renders nothing until there's at least one. Code: `useRecentlyViewed.ts`, `RecentlyViewed.tsx`, `deals.byIds`.
+
 #### Editorial sections (GLO-27) — admin-authored taglines that pool categories
 
 The rail headings are **not** the dry category noun. They're **admin-authored editorial sections**: each is a warm tagline that *replaces* the category label, and a section can **pool deals from one OR several categories** under that one line. e.g. "Find fillers & Botox to boost your glow" (→ Injectables) or "Look snatched" (→ Injectables + Skin). The founder authors / reorders / toggles them in **Admin → Discover** (DB is the source of truth — no code release to change copy; mirrors `platform_fees` / trending config).

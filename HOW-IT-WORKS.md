@@ -180,6 +180,10 @@ might never open. We warm on a real signal, not speculatively.
   view: a **2-up vertical grid** (~6 listings per screen on a small phone instead of ~1.5), driven
   by a separate query that loads up to 50 deals.
 
+### Recently viewed
+
+Right at the top of Discover, a small strip quietly remembers the last handful of deals you opened — tap one to jump back in. It's stored **on your phone** (not our servers), so it works whether or not you're signed in, and it's nobody's business but yours. If a deal you looked at has since expired or been pulled, it just drops off the strip on its own. Empty until you've actually viewed something.
+
 ### You decide what the sections say (the editorial layer)
 
 Those rail headings aren't the boring category name anymore. **You** write them. In the admin

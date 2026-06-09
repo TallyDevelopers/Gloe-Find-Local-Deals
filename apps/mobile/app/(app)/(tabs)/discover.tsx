@@ -12,8 +12,9 @@ import { useRequireAuth } from '../../../features/auth-gate/useRequireAuth';
 import { StatusBarBackdrop } from '../../../features/layout/StatusBarBackdrop';
 import { usePrefetch } from '../../../features/prefetch/usePrefetch';
 import { useAnonSeed } from '../../../features/discover/anonSeed';
-import { CategoryRail } from '../../../features/discover/CategoryRail';
+import { CategoryRail, DISCOVER_HEADING_SIZE } from '../../../features/discover/CategoryRail';
 import { ComingSoon } from '../../../features/discover/ComingSoon';
+import { RecentlyViewed } from '../../../features/discover/RecentlyViewed';
 import { Icon } from '../../../features/icon/Icon';
 import { DealCard } from '../../../features/discover/DealCard';
 import { LocationGate } from '../../../features/discover/LocationGate';
@@ -240,7 +241,7 @@ export default function DiscoverScreen() {
                 <Icon name="chevronLeft" size={18} color={palette.text.secondary} strokeWidth={2.5} />
                 <Text variant="body-sm" tone="secondary" weight="semibold">All</Text>
               </Pressable>
-              <Text variant="display-sm" tone="primary" weight="medium">
+              <Text variant="display-sm" tone="primary" weight="medium" style={{ fontSize: DISCOVER_HEADING_SIZE, lineHeight: DISCOVER_HEADING_SIZE * 1.15 }}>
                 {sectionScope.title}
               </Text>
             </View>
@@ -309,6 +310,16 @@ export default function DiscoverScreen() {
                is intentionally omitted for now; it returns when sponsored is a
                paid placement. */
             <Stack gap={8} style={{ marginTop: space[2] }}>
+              {/* "Recently viewed" — a small strip of deals you recently opened
+                  (device-local; renders nothing until you've viewed one). Sits
+                  at the very top so you can pick up where you left off. */}
+              <RecentlyViewed
+                userLat={location.latitude}
+                userLng={location.longitude}
+                savedIds={savedIds}
+                onSave={toggleSave}
+              />
+
               {/* Browse tiles stay per raw category (a nav shortcut INTO a
                   category) even though the rails below are editorial sections. */}
               <BrowseByCategory
