@@ -100,7 +100,7 @@ Geolocation + manual city (`geocode.*`) saved to `localStorage` · maps/tel →
 - [x] `WEB.md` (this doc) created
 - [x] `/` flipped to consumer (`app/(consumer)/`); business landing → `/business`; middleware updated
 - [x] sign-in/sign-up honor `redirect_url` (consumer → `/`, business → `/vendor`)
-- [x] consumer shell: `AppShell` / `TopNav` / `MobileTabBar` / `Footer` / `LocationPill`
+- [x] consumer shell: `AppShell` / `TopNav` / `MobileTabBar` / `Footer` / `LocationPill` (GLO-7: the pill is now just a trigger — desktop opens the same `LocationSheet` as mobile, centered as a modal: share-location prompt, popular cities, address lookup)
 - [x] `lib/location.tsx` (geolocation + manual fallback + persistence)
 - [x] primitives: `DealCard` `CategoryPills` `SaveButton` `icons` `format` `Skeletons` + grid/responsive CSS
 - [x] consumer home (`/`) live: hero + search + category filter + deal grid · typecheck clean

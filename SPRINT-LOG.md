@@ -123,3 +123,38 @@ the env (same as the other emails).
 `transactionalEmails.ts` (`sendVendorPayoutEmail`, `sendSupportReplyEmail`) · `payouts.ts`
 (fires after `transfer.created`) · `admin.ts` (`createAgentReply` fires email beside the push) ·
 `scripts/renderEmailPreviews.ts` (new) · GLOE.md §4 email list · HOW-IT-WORKS.md §11/§15.
+
+---
+
+## GLO-27 — Editorial Discover sections — ALREADY DONE, closed ✅
+
+Audited every acceptance criterion against the code: the whole feature shipped earlier
+(tables + admin "Sections" tab editor + tagline rails + multi-category pooling + tagline-titled
+"See all" + fallback). Your hunch was right. **No code changes; marked Done in Linear.** Only
+known tail (pre-existing, noted in GLOE.md): web omits "View more" on multi-category sections.
+
+---
+
+## GLO-6 — "For Businesses" on-ramp — ALREADY DONE, closed ✅
+
+Also already shipped by the web rebuild: full `/business` marketing page (pricing, FAQ, CTAs →
+`/sign-up?redirect_url=/vendor`), linked from TopNav, the mobile drawer, the footer, and the
+account page. **No code changes; marked Done in Linear.** If you'd rather the nav says
+"List your spa" than "For Businesses", that's a one-liner — tell me.
+
+---
+
+## GLO-7 — Desktop location picker parity ✅
+
+Desktop's location pill in the top nav used to open a cramped little dropdown (GPS + search
+only). It now opens the **same rich picker mobile web has** — share-location prompt, popular
+cities, address lookup — centered as a modal on desktop. One component now serves both
+(`LocationPill` kept its pill look but just triggers the shared `LocationSheet`), so future
+picker improvements automatically land everywhere.
+
+**Verified live in the browser:** opened gloe home at 1440px, clicked the pill → centered modal
+with popular cities; picked "San Diego, CA" → modal closed, pill updated, feed re-ranked.
+Screenshot: `glo7-desktop-location-sheet.png` in the repo root (gitignored).
+
+**Files:** `apps/web/src/components/consumer/LocationPill.tsx` (rewritten as trigger + shared
+sheet; the old bespoke dropdown is gone) · `apps/web/WEB.md`.
