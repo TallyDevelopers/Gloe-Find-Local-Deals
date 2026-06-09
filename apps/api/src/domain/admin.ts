@@ -1416,22 +1416,38 @@ export async function getPendingDeals(sql: Sql) {
 
 /**
  * Suspend a vendor (the kill switch): mark them suspended and pull every live
- * or pending deal down to draft so nothing of theirs shows in the app. Returns
- * how many deals were taken down. Unsuspend just reactivates the account; deals
- * stay drafted until someone re-publishes them.
+ * or pending deal down to draft so nothing of theirs shows in the app. Each
+ * pulled deal remembers its prior status in `pre_suspend_status`, so
+ * reinstating puts every deal back exactly as it was (active stays active,
+ * paused stays paused, pending_review goes back in the review queue). A deal
+ * an admin manually republished mid-suspension is left alone — we only restore
+ * deals still sitting in draft.
  */
 export async function setVendorSuspended(sql: Sql, vendorId: string, suspended: boolean) {
   if (suspended) {
     const pulled = await sql<{ id: string }[]>`
-      UPDATE public.deals SET status = 'draft', updated_at = now()
+      UPDATE public.deals
+      SET pre_suspend_status = status, status = 'draft', updated_at = now()
       WHERE vendor_id = ${vendorId} AND status IN ('active', 'paused', 'pending_review')
       RETURNING id
     `;
     await sql`UPDATE public.vendors SET status = 'suspended' WHERE id = ${vendorId}`;
-    return { suspended: true, dealsTakenDown: pulled.length };
+    return { suspended: true, dealsTakenDown: pulled.length, dealsRestored: 0 };
   }
+  const restored = await sql<{ id: string }[]>`
+    UPDATE public.deals
+    SET status = pre_suspend_status, pre_suspend_status = NULL, updated_at = now()
+    WHERE vendor_id = ${vendorId} AND pre_suspend_status IS NOT NULL AND status = 'draft'
+    RETURNING id
+  `;
+  // Clear leftover markers on deals that were republished during suspension,
+  // so a future suspend/reinstate cycle can't resurrect a stale status.
+  await sql`
+    UPDATE public.deals SET pre_suspend_status = NULL
+    WHERE vendor_id = ${vendorId} AND pre_suspend_status IS NOT NULL
+  `;
   await sql`UPDATE public.vendors SET status = 'active' WHERE id = ${vendorId}`;
-  return { suspended: false, dealsTakenDown: 0 };
+  return { suspended: false, dealsTakenDown: 0, dealsRestored: restored.length };
 }
 
 /** Approve or reject a pending deal. */

@@ -758,7 +758,7 @@ The founder's cockpit — **one screen to run the entire business:** approve ven
 | Tab | What it does |
 |---|---|
 | Vendors | Sortable table. Columns: name, city, Stripe status, tier, actions. Filter by status/tier/suspended. |
-| Vendor detail | Full profile, Stripe account status, deal roster, audit trail. Suspend / unsuspend. |
+| Vendor detail | Full profile, Stripe account status, deal roster, audit trail. Suspend / unsuspend. Suspend pulls every live/paused/pending deal to draft, stamping `deals.pre_suspend_status`; reinstate restores each deal to exactly its prior status (manually-republished deals untouched, markers cleared). |
 | Deals | Pending review queue. Approve / reject / comment. |
 | Money / Payouts | Payout list (filter pending/in-transit/paid/failed). Release transfer button. Retry failed payout. Reconcile. |
 | **Refunds** | Dedicated refund ledger over the audit log: who issued it, when, amount of total, which order, **was the voucher already redeemed (⚠ flag)**, full/partial/blocked attempt, reason, Stripe refund id. Summary strip + outcome filter (All / Refunded / Blocked). |
