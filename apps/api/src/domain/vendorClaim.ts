@@ -78,34 +78,43 @@ export async function inviteVendorOwner(
   redirectUrl: string,
   email?: string | null,
 ): Promise<{ email: string; invitedAt: string }> {
-  if (email) {
-    await sql`UPDATE public.vendors SET email = ${email.toLowerCase()} WHERE id = ${vendorId}`;
-  }
+  // Validate BEFORE persisting anything — inviting an already-claimed (or
+  // nonexistent) vendor must not overwrite its stored owner email.
   const rows = await sql<{ email: string | null; owner_user_id: string | null; business_name: string }[]>`
     SELECT email, owner_user_id, business_name FROM public.vendors WHERE id = ${vendorId} LIMIT 1
   `;
   const v = rows[0];
   if (!v) throw new InviteError('Vendor not found.');
   if (v.owner_user_id) throw new InviteError('This vendor is already claimed.');
-  if (!v.email) throw new InviteError('No owner email on file — add one first.');
+
+  // Saving the email even if the Clerk send later fails is intentional:
+  // claim-by-email matches on vendors.email, so "they can just sign in"
+  // stays true.
+  const targetEmail = email?.toLowerCase() ?? v.email;
+  if (!targetEmail) throw new InviteError('No owner email on file — add one first.');
+  if (email) {
+    await sql`UPDATE public.vendors SET email = ${targetEmail} WHERE id = ${vendorId}`;
+  }
 
   try {
     await clerk.invitations.createInvitation({
-      emailAddress: v.email,
+      emailAddress: targetEmail,
       redirectUrl,
       notify: true,
       // If they ignored an earlier invite, let the admin re-send it.
       ignoreExisting: true,
     });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
     // Clerk refuses to invite an email that already has an account. That's
-    // fine for us — claiming only needs them to sign in at /vendor.
-    if (/already.*(exist|sign|taken)|identifier/i.test(msg)) {
+    // fine for us — claiming only needs them to sign in at /vendor. Detect it
+    // by Clerk's error codes, not message prose (messages change; codes don't).
+    const codes = (e as { errors?: { code?: string }[] }).errors?.map((err) => err.code ?? '') ?? [];
+    if (codes.some((c) => c === 'form_identifier_exists' || c === 'duplicate_record')) {
       throw new InviteError(
-        `${v.email} already has an account — tell them to sign in at gloe.app/vendor and the business links automatically.`,
+        `${targetEmail} already has an account — tell them to sign in at gloe.app/vendor and the business links automatically.`,
       );
     }
+    const msg = e instanceof Error ? e.message : String(e);
     throw new InviteError(`Clerk refused the invitation: ${msg}`);
   }
 
@@ -113,5 +122,5 @@ export async function inviteVendorOwner(
     UPDATE public.vendors SET owner_invited_at = now() WHERE id = ${vendorId}
     RETURNING owner_invited_at
   `;
-  return { email: v.email, invitedAt: stamped[0]!.owner_invited_at };
+  return { email: targetEmail, invitedAt: stamped[0]!.owner_invited_at };
 }

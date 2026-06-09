@@ -443,7 +443,7 @@ function LicenseReviewCard({
     number: string | null;
     state: string | null;
     type: string | null;
-    documentUrl: string | null;
+    hasDocument: boolean;
     submittedAt: string | null;
     reviewedAt: string | null;
     rejectionReason: string | null;
@@ -456,7 +456,25 @@ function LicenseReviewCard({
       void utils.admin.vendorDetail.invalidate({ vendorId });
       void utils.admin.vendorRoster.invalidate();
     },
+    onError: (e) => {
+      alert(e.message);
+      void utils.admin.vendorDetail.invalidate({ vendorId });
+    },
   });
+  // Signed fresh at click time — a URL baked into the cached query would
+  // expire while the admin cross-checks the state board.
+  const docUrl = trpc.admin.licenseDocumentUrl.useMutation();
+  const openDocument = async () => {
+    const w = window.open('', '_blank'); // open synchronously so popup blockers allow it
+    try {
+      const { url } = await docUrl.mutateAsync({ vendorId });
+      if (w) w.location.href = url;
+      else window.open(url, '_blank');
+    } catch (e) {
+      w?.close();
+      alert(e instanceof Error ? e.message : 'Could not open the document.');
+    }
+  };
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState('');
 
@@ -494,15 +512,17 @@ function LicenseReviewCard({
             ) : null}
           </div>
 
-          {license.documentUrl ? (
-            <a
-              href={license.documentUrl}
-              target="_blank"
-              rel="noreferrer"
-              style={{ fontSize: 14, fontWeight: 700, color: 'var(--brand-600)' }}
+          {license.hasDocument ? (
+            <button
+              onClick={openDocument}
+              disabled={docUrl.isPending}
+              style={{
+                fontSize: 14, fontWeight: 700, color: 'var(--brand-600)',
+                background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+              }}
             >
-              View license document ↗
-            </a>
+              {docUrl.isPending ? 'Opening…' : 'View license document ↗'}
+            </button>
           ) : (
             <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>No document attached.</span>
           )}

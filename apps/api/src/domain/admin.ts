@@ -1,5 +1,4 @@
 import type { Sql } from '../db/client';
-import { createSignedReadUrl } from '../db/storage';
 import {
   insertAttachments,
   attachmentsForMessages,
@@ -1123,7 +1122,6 @@ export async function getVendorRoster(sql: Sql) {
     status: r.status,
     city: r.city,
     hasOwner: r.has_owner,
-    hasLicense: !!r.license_number,
     licenseStatus: r.license_status,
     stripeStatus: r.stripe_account_status,
     hasGoogle: !!r.google_place_id,
@@ -1188,18 +1186,6 @@ export async function getVendorDetail(sql: Sql, vendorId: string) {
   `;
   const v = vRows[0];
   if (!v) return null;
-
-  // License doc lives in a private bucket; hand the admin a short-lived
-  // signed URL so they can eyeball it during review. Best-effort — a storage
-  // hiccup shouldn't take down the whole detail page.
-  let licenseDocumentUrl: string | null = null;
-  if (v.license_document_path) {
-    try {
-      licenseDocumentUrl = await createSignedReadUrl('license', v.license_document_path);
-    } catch {
-      /* doc link just won't render */
-    }
-  }
 
   // Payout health: totals by status + any recent failures with the reason.
   const payoutAgg = await sql<{
@@ -1379,13 +1365,15 @@ export async function getVendorDetail(sql: Sql, vendorId: string) {
       lastDisputedAt: da.last_disputed_at,
       isHighDisputeRisk,
       disputeRiskConfig: riskCfg, // { enabled, maxDisputes, windowDays }
-      // License verification (GLO-19)
+      // License verification (GLO-19). The doc lives in a private bucket —
+      // the UI fetches a fresh signed URL at click time (admin.licenseDocumentUrl)
+      // so an expired link can never sit inside this cached payload.
       license: {
         status: v.license_status,
         number: v.license_number,
         state: v.license_state,
         type: v.license_type,
-        documentUrl: licenseDocumentUrl, // signed, ~10 min — render-time only
+        hasDocument: !!v.license_document_path,
         submittedAt: v.license_submitted_at,
         reviewedAt: v.license_reviewed_at,
         rejectionReason: v.license_rejection_reason,
@@ -1721,8 +1709,11 @@ export async function createAgentReply(
 
   // Email twin of the push (GLO-40): the full reply lands in their inbox, so
   // the answer isn't trapped in-app for customers who miss the notification.
-  const { sendSupportReplyEmail } = await import('./transactionalEmails');
-  void sendSupportReplyEmail(sql, ticketId, insertedAgent[0]!.id, body);
+  // Fully fire-and-forget (incl. the module load) — a failed email must never
+  // error a reply whose message row and push already exist.
+  void import('./transactionalEmails')
+    .then(({ sendSupportReplyEmail }) => sendSupportReplyEmail(sql, ticketId, insertedAgent[0]!.id, body))
+    .catch((e) => console.error('[support reply email] failed:', (e as Error).message));
 
   return { ok: true as const };
 }

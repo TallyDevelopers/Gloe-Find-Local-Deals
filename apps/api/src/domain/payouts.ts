@@ -169,9 +169,13 @@ export async function releaseTransferForClaim(
 
   // "You got paid" notice to the vendor (GLO-40). Lazy import mirrors the
   // sendNotification pattern and keeps email out of the money path's deps.
-  void import('./transactionalEmails').then(({ sendVendorPayoutEmail }) =>
-    sendVendorPayoutEmail(sql, claimId, ctx!.vendor_payout_cents, transferId),
-  );
+  // .catch so a module-load failure can never become an unhandled rejection
+  // inside the money path.
+  void import('./transactionalEmails')
+    .then(({ sendVendorPayoutEmail }) =>
+      sendVendorPayoutEmail(sql, claimId, ctx!.vendor_payout_cents, transferId),
+    )
+    .catch((e) => console.error('[payout email] failed:', (e as Error).message));
 
   return {
     transferId,

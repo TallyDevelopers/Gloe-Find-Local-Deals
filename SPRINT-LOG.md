@@ -5,9 +5,26 @@ ticket: what it does, where it lives, how to try it, and what's easy to change. 
 pushed** — it's all local commits on `main`, waiting for your review. Push when happy:
 `git push origin main` (that deploys via Railway).
 
+## TL;DR
+
+| Ticket | Outcome |
+|---|---|
+| GLO-19 License verification (Urgent, blocker) | **Built** — vendor submits license + doc, you review in god-mode; approval = going live |
+| GLO-5 Vendor claim & invite (Urgent) | **Built** — "Invite owner" in admin; owner signs in and the spa links automatically |
+| GLO-40 Payout + support-reply emails | **Built** — "You got paid 🎉" to spas; full reply text to customers |
+| GLO-27 Editorial Discover sections | **Already shipped earlier** — audited every criterion, closed the stale ticket |
+| GLO-6 For-Businesses on-ramp | **Already shipped earlier** — /business page + nav/footer links; closed |
+| GLO-7 Desktop location picker | **Built + browser-verified** — desktop now opens the rich mobile picker |
+
+**When you're back, in order:** (1) read this file, (2) skim the diff (`git log origin/main..HEAD`),
+(3) run the GLO-19 DB test (`cd apps/api && npx tsx src/scripts/testLicenseFlow.ts`),
+(4) send yourself a vendor invite from a scratch vendor, (5) push.
+
 > One DB note: each ticket's schema changes were applied to Supabase as additive migrations
 > (new columns/tables only — the deployed app ignores them until you push the code, so prod
-> behavior is unchanged).
+> behavior is unchanged). Also ran a production `next build` (passed) and a multi-agent
+> self-review of the whole diff before signing off — anything it found and I fixed is in the
+> commits.
 
 ---
 
@@ -158,3 +175,42 @@ Screenshot: `glo7-desktop-location-sheet.png` in the repo root (gitignored).
 
 **Files:** `apps/web/src/components/consumer/LocationPill.tsx` (rewritten as trigger + shared
 sheet; the old bespoke dropdown is gone) · `apps/web/WEB.md`.
+
+---
+
+## Self-review pass (multi-agent) — found 8, fixed 8 ✅
+
+Before signing off I ran four independent review agents over the whole sprint diff, verified
+their findings, and fixed everything real (final commit):
+
+1. **Resubmit after rejection dead-ended** — the license form let you resubmit with the doc
+   already on file but then demanded a new upload. Now a resubmit without a new file keeps the
+   previous document (server-side), and the form says so.
+2. **A verified vendor could demote themselves** — calling submit again would have dropped them
+   to "pending review" and revoked posting *and* voucher scanning until you re-approved.
+   Submitting is now blocked once verified ("contact support to update it").
+3. **Approve/Reject had no guard** — a stale admin tab could approve a vendor with *nothing*
+   submitted (going live with zero license on file) or reject an already-verified one. Both now
+   require an actual pending submission.
+4. **"Open gates" off-switch delisted verified vendors** — toggling the bypass off always reset
+   status to pending-approval, which would have unlisted a spa you'd license-approved. Now it
+   leaves license-verified vendors active.
+5. **Invite-owner could overwrite the stored email even when the call failed** (already-claimed
+   vendor) — validation now happens before anything is written.
+6. **Clerk "already has an account" detection was a loose text match** that could misreport
+   unrelated errors — now matches Clerk's error codes.
+7. **Two email sends could crash on a module-load failure** in the money/support paths — both
+   are now fully fire-and-forget with error logging.
+8. **The admin "view license document" link could rot** (10-min signed URL baked into a cached
+   page) and a storage stall could hang the vendor page — the URL is now signed fresh at click
+   time, with a 5s timeout on the storage call.
+
+**Known limitations I did NOT change (flagging, not hiding):**
+- The whole data model is one-vendor-per-owner. If you ever pre-create TWO locations with the
+  same owner email, they can only claim the first — multi-location ownership is an
+  architecture decision for another day.
+- Claim-by-email means a typo'd owner email at add-spa could let the wrong (verified) inbox
+  claim that spa. The claim writes an audit row and shows "claimed" in admin, but double-check
+  emails you type.
+- Setting `license_number`/`verified_at` by hand in SQL no longer satisfies the license gate —
+  use the admin review UI (or "Open gates") instead.

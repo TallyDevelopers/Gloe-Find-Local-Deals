@@ -95,6 +95,8 @@ export async function createSignedReadUrl(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({ expiresIn: expiresInSeconds }),
+    // A storage stall must not hang whatever surface asked for the link.
+    signal: AbortSignal.timeout(5000),
   });
   if (!res.ok) {
     throw new Error(`Failed to sign read URL: ${res.status}`);

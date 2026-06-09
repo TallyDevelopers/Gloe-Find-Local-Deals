@@ -35,10 +35,10 @@ import {
   setVendorSuspended,
 } from '../domain/admin';
 import { writeAudit } from '../domain/audit';
-import { getLicenseReviewQueue, reviewVendorLicense } from '../domain/vendorLicense';
+import { getLicenseReviewQueue, LicenseReviewError, reviewVendorLicense } from '../domain/vendorLicense';
 import { InviteError, inviteVendorOwner } from '../domain/vendorClaim';
 import { getCustomerOrdersForTicket, getSupportTicketCustomer } from '../domain/supportTickets';
-import { createSignedUpload } from '../db/storage';
+import { createSignedReadUrl, createSignedUpload } from '../db/storage';
 import { addVendorVideo, deleteVendorVideo, listVendorVideos } from '../domain/vendorMedia';
 import { findPlaceId, isMapsConfigured } from '../domain/googleMaps';
 import { createDeal, getDealForReview, replaceDealPhotos, updateDeal } from '../domain/dealCreate';
@@ -878,7 +878,15 @@ export const adminRouter = router({
       reason: z.string().max(500).nullable().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const result = await reviewVendorLicense(ctx.sql, input.vendorId, input.decision, input.reason);
+      let result;
+      try {
+        result = await reviewVendorLicense(ctx.sql, input.vendorId, input.decision, input.reason);
+      } catch (e) {
+        if (e instanceof LicenseReviewError) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: e.message });
+        }
+        throw e;
+      }
       void writeAudit(ctx.sql, {
         action: 'vendor.license_reviewed',
         actorUserId: ctx.auth.userId,
@@ -886,6 +894,25 @@ export const adminRouter = router({
         meta: { decision: input.decision, reason: input.reason ?? null },
       });
       return result;
+    }),
+
+  /**
+   * Fresh short-lived signed URL for a vendor's license document, fetched at
+   * click time so the link can't expire inside a cached vendorDetail payload.
+   */
+  licenseDocumentUrl: adminProcedure
+    .input(z.object({ vendorId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const rows = await ctx.sql<{ license_document_path: string | null }[]>`
+        SELECT license_document_path FROM public.vendors WHERE id = ${input.vendorId} LIMIT 1
+      `;
+      const path = rows[0]?.license_document_path;
+      if (!path) throw new TRPCError({ code: 'NOT_FOUND', message: 'No license document on file.' });
+      try {
+        return { url: await createSignedReadUrl('license', path) };
+      } catch {
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Could not sign the document URL — try again.' });
+      }
     }),
 
   /** The kill switch: suspend a vendor + pull all their posts to draft. */
@@ -1068,13 +1095,23 @@ export const adminRouter = router({
   setVendorOverride: adminProcedure
     .input(z.object({ vendorId: z.string().uuid(), bypassRequirements: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
-      // Mark active + record the override so getSetupStatus can honor it.
-      await ctx.sql`
-        UPDATE public.vendors
-        SET status = ${input.bypassRequirements ? 'active' : 'pending_approval'},
-            admin_bypass = ${input.bypassRequirements}
-        WHERE id = ${input.vendorId}
-      `;
+      if (input.bypassRequirements) {
+        // Mark active + record the override so getSetupStatus can honor it.
+        await ctx.sql`
+          UPDATE public.vendors
+          SET status = 'active', admin_bypass = true
+          WHERE id = ${input.vendorId}
+        `;
+      } else {
+        // Closing the gates must not delist a vendor who is active on merit —
+        // a verified license (GLO-19) is its own path to 'active' now.
+        await ctx.sql`
+          UPDATE public.vendors
+          SET admin_bypass = false,
+              status = CASE WHEN license_status = 'verified' THEN status ELSE 'pending_approval' END
+          WHERE id = ${input.vendorId}
+        `;
+      }
       return { ok: true };
     }),
 

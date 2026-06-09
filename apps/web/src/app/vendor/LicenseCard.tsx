@@ -109,6 +109,8 @@ export function LicenseCard() {
   const doSubmit = async () => {
     setError(null);
     try {
+      // No new file on a resubmit → documentPath stays null and the server
+      // keeps the previously-uploaded document.
       let documentPath: string | null = null;
       if (file) {
         setUploading(true);
@@ -121,8 +123,9 @@ export function LicenseCard() {
         });
         if (!put.ok) throw new Error('Document upload failed. Try again.');
         documentPath = signed.path;
+      } else if (!info.hasDocument) {
+        throw new Error('Attach a photo or PDF of your license.');
       }
-      if (!documentPath) throw new Error('Attach a photo or PDF of your license.');
       await submit.mutateAsync({
         licenseNumber: number.trim(),
         licenseState: state,
@@ -192,7 +195,14 @@ export function LicenseCard() {
           </select>
         </Field>
 
-        <Field label="License document" hint="A clear photo or PDF of the license itself.">
+        <Field
+          label="License document"
+          hint={
+            info.hasDocument
+              ? 'Your previous document is on file — attach a new one only if it changed.'
+              : 'A clear photo or PDF of the license itself.'
+          }
+        >
           <input
             ref={fileInput}
             type="file"

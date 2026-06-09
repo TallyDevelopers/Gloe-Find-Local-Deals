@@ -66,41 +66,63 @@ export interface LicenseSubmission {
   licenseNumber: string;
   licenseState: string;
   licenseType: string;
-  /** Storage path inside the license-docs bucket, from vendor.signLicenseUpload. */
-  documentPath: string;
+  /**
+   * Storage path inside the license-docs bucket, from vendor.signLicenseUpload.
+   * Null = keep the previously-uploaded document (resubmit-after-rejection
+   * where only the typed fields changed).
+   */
+  documentPath: string | null;
 }
+
+export class LicenseSubmitError extends Error {}
 
 /**
  * Vendor submits (or resubmits after a rejection) their license for review.
  * Always lands in `pending_review` — verification is an admin decision.
+ * A vendor that is already VERIFIED cannot resubmit (it would revoke their
+ * own canPostDeals/canScan until re-review — a self-inflicted outage); a
+ * license change for a verified vendor is an admin conversation.
  */
 export async function submitLicense(sql: Sql, vendorId: string, input: LicenseSubmission): Promise<VendorLicenseInfo> {
-  const rows = await sql<{ license_status: LicenseStatus; license_submitted_at: string }[]>`
+  const rows = await sql<{ license_status: LicenseStatus; license_submitted_at: string; license_document_path: string | null }[]>`
     UPDATE public.vendors
     SET license_number = ${input.licenseNumber},
         license_state = ${input.licenseState.toUpperCase()},
         license_type = ${input.licenseType},
-        license_document_path = ${input.documentPath},
+        license_document_path = COALESCE(${input.documentPath}, license_document_path),
         license_status = 'pending_review',
         license_submitted_at = now(),
         license_reviewed_at = NULL,
         license_rejection_reason = NULL
     WHERE id = ${vendorId}
-    RETURNING license_status, license_submitted_at
+      AND license_status <> 'verified'
+      AND (${input.documentPath} IS NOT NULL OR license_document_path IS NOT NULL)
+    RETURNING license_status, license_submitted_at, license_document_path
   `;
   const v = rows[0];
-  if (!v) throw new Error('Vendor not found');
+  if (!v) {
+    const existing = await sql<{ license_status: LicenseStatus }[]>`
+      SELECT license_status FROM public.vendors WHERE id = ${vendorId} LIMIT 1
+    `;
+    if (!existing[0]) throw new LicenseSubmitError('Vendor not found.');
+    if (existing[0].license_status === 'verified') {
+      throw new LicenseSubmitError('Your license is already verified. Contact support to update it.');
+    }
+    throw new LicenseSubmitError('Attach a photo or PDF of your license.');
+  }
   return {
     status: v.license_status,
     licenseNumber: input.licenseNumber,
     licenseState: input.licenseState.toUpperCase(),
     licenseType: input.licenseType,
-    hasDocument: true,
+    hasDocument: !!v.license_document_path,
     submittedAt: v.license_submitted_at,
     reviewedAt: null,
     rejectionReason: null,
   };
 }
+
+export class LicenseReviewError extends Error {}
 
 /**
  * Admin decision. Approve → license verified, and a pending_approval vendor
@@ -108,6 +130,10 @@ export async function submitLicense(sql: Sql, vendorId: string, input: LicenseSu
  * reason on their dashboard and can resubmit; their account status is
  * untouched (a grandfathered live vendor is never knocked offline by a
  * rejected license — suspension stays a separate, deliberate act).
+ *
+ * Both branches require an actual PENDING submission: a stale admin tab or a
+ * double-fired mutation can neither verify a vendor with nothing on file nor
+ * reject (and thereby un-verify) an already-verified license.
  */
 export async function reviewVendorLicense(
   sql: Sql,
@@ -123,11 +149,11 @@ export async function reviewVendorLicense(
           license_rejection_reason = NULL,
           verified_at = COALESCE(verified_at, now()),
           status = CASE WHEN status = 'pending_approval' THEN 'active' ELSE status END
-      WHERE id = ${vendorId}
+      WHERE id = ${vendorId} AND license_status = 'pending_review'
       RETURNING status
     `;
     const v = rows[0];
-    if (!v) throw new Error('Vendor not found');
+    if (!v) throw new LicenseReviewError('No pending license submission to approve.');
     return { licenseStatus: 'verified', vendorStatus: v.status };
   }
   const rows = await sql<{ status: string }[]>`
@@ -135,11 +161,11 @@ export async function reviewVendorLicense(
     SET license_status = 'rejected',
         license_reviewed_at = now(),
         license_rejection_reason = ${reason ?? null}
-    WHERE id = ${vendorId}
+    WHERE id = ${vendorId} AND license_status = 'pending_review'
     RETURNING status
   `;
   const v = rows[0];
-  if (!v) throw new Error('Vendor not found');
+  if (!v) throw new LicenseReviewError('No pending license submission to reject.');
   return { licenseStatus: 'rejected', vendorStatus: v.status };
 }
 

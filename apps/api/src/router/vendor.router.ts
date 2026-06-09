@@ -22,7 +22,7 @@ import {
 } from '../domain/claims';
 import { getInstantPayoutStatus, InstantPayoutError, triggerInstantPayout } from '../domain/payouts';
 import { createVendor, getSetupStatus, getVendorForOwner, type VendorRecord } from '../domain/vendorSignup';
-import { getLicenseInfo, submitLicense } from '../domain/vendorLicense';
+import { getLicenseInfo, LicenseSubmitError, submitLicense } from '../domain/vendorLicense';
 import { claimVendorByEmail } from '../domain/vendorClaim';
 import { addVendorVideo, deleteVendorVideo, listVendorVideos } from '../domain/vendorMedia';
 import { getVendorDashboardLink, startVendorOnboarding } from '../domain/vendorStripe';
@@ -363,24 +363,36 @@ export const vendorRouter = router({
       return { uploadUrl: signed.uploadUrl, path: signed.path };
     }),
 
-  /** Submit (or resubmit after rejection) license info + document for admin review. */
+  /**
+   * Submit (or resubmit after rejection) license info + document for admin
+   * review. documentPath may be omitted on a resubmit to keep the
+   * previously-uploaded document.
+   */
   submitLicense: protectedProcedure
     .input(
       z.object({
         licenseNumber: z.string().min(3).max(60),
         licenseState: z.string().length(2),
         licenseType: z.string().min(2).max(80),
-        documentPath: z.string().min(3).max(300),
+        documentPath: z.string().min(3).max(300).nullable().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
       const vendor = await requireVendor(ctx);
       // The path must point inside this vendor's own folder — a vendor must
       // not be able to attach someone else's document to their submission.
-      if (!input.documentPath.startsWith(`${vendor.id}/`)) {
+      if (input.documentPath && !input.documentPath.startsWith(`${vendor.id}/`)) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid document path.' });
       }
-      const info = await submitLicense(ctx.sql, vendor.id, input);
+      let info;
+      try {
+        info = await submitLicense(ctx.sql, vendor.id, { ...input, documentPath: input.documentPath ?? null });
+      } catch (e) {
+        if (e instanceof LicenseSubmitError) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: e.message });
+        }
+        throw e;
+      }
       void writeAudit(ctx.sql, {
         action: 'vendor.license_submitted',
         actorUserId: ctx.auth.userId,
