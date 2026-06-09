@@ -64,3 +64,6 @@ Outfit-SemiBold.ttf
 # scratch screenshots / playwright artifacts
 /*.png
 .playwright-mcp/
+
+# Next dev dist dir (iCloud-excluded via .nosync suffix)
+.next.nosync/
