@@ -23,6 +23,7 @@ import {
 import { getInstantPayoutStatus, InstantPayoutError, triggerInstantPayout } from '../domain/payouts';
 import { createVendor, getSetupStatus, getVendorForOwner, type VendorRecord } from '../domain/vendorSignup';
 import { getLicenseInfo, submitLicense } from '../domain/vendorLicense';
+import { claimVendorByEmail } from '../domain/vendorClaim';
 import { addVendorVideo, deleteVendorVideo, listVendorVideos } from '../domain/vendorMedia';
 import { getVendorDashboardLink, startVendorOnboarding } from '../domain/vendorStripe';
 import {
@@ -184,6 +185,24 @@ export const vendorRouter = router({
     } catch (e) {
       throw new TRPCError({ code: 'BAD_REQUEST', message: (e as Error).message });
     }
+  }),
+
+  /**
+   * GLO-5: link an admin-pre-created (unclaimed) vendor to the signed-in
+   * user when its stored email matches one of their VERIFIED Clerk emails.
+   * /vendor calls this before ever showing the signup form, so an invited
+   * owner lands straight in their own dashboard instead of creating a dupe.
+   */
+  claimByEmail: protectedProcedure.mutation(async ({ ctx }) => {
+    const result = await claimVendorByEmail(ctx.sql, ctx.auth.userId, ctx.auth.clerkUserId);
+    if (result.claimed) {
+      void writeAudit(ctx.sql, {
+        action: 'vendor.claimed',
+        actorUserId: ctx.auth.userId,
+        vendorId: result.vendorId,
+      });
+    }
+    return result;
   }),
 
   signup: protectedProcedure

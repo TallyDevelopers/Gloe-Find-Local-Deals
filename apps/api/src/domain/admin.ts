@@ -1150,6 +1150,8 @@ export async function getVendorDetail(sql: Sql, vendorId: string) {
     phone: string;
     has_owner: boolean;
     admin_bypass: boolean;
+    email: string | null;
+    owner_invited_at: string | null;
     stripe_account_status: string | null;
     google_place_id: string | null;
     auto_release_on_redemption: boolean;
@@ -1171,6 +1173,7 @@ export async function getVendorDetail(sql: Sql, vendorId: string) {
   }[]>`
     SELECT v.id, v.display_id, v.business_name, v.status, v.city, v.region, v.address_line1, v.phone,
       (v.owner_user_id IS NOT NULL) AS has_owner, v.admin_bypass,
+      v.email, v.owner_invited_at,
       v.stripe_account_status, v.google_place_id, v.auto_release_on_redemption,
       v.auto_clawback_on_dispute_lost,
       v.gloe_take, v.gloe_perks,
@@ -1340,6 +1343,8 @@ export async function getVendorDetail(sql: Sql, vendorId: string) {
       phone: v.phone,
       hasOwner: v.has_owner,
       adminBypass: v.admin_bypass,
+      email: v.email,
+      ownerInvitedAt: v.owner_invited_at,
       stripeStatus: v.stripe_account_status,
       hasGoogle: !!v.google_place_id,
       purchases: v.purchases,

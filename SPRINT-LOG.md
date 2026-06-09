@@ -57,3 +57,40 @@ I didn't run it because it writes test rows to the shared DB and you were away).
 `vendor.router.ts` + `admin.router.ts` (new procedures) · `vendorSignup.ts` (gate now reads
 license_status) · `LicenseCard.tsx` (new) · `VendorDashboard.tsx` · `VendorsView.tsx` ·
 admin `vendor/[id]/page.tsx` · GLOE.md §5/§7/§8/§13 · HOW-IT-WORKS.md §9/§10.
+
+---
+
+## GLO-5 — Vendor claim & invite flow ✅ (urgent)
+
+**The problem it kills:** you pre-create a spa in admin, the real owner later signs up… and got a
+**duplicate** vendor. Now the handover is one email.
+
+**How it works now:**
+1. **Add-spa has an "Owner email (optional)" field** — captured at create (stored lowercase on
+   `vendors.email`).
+2. On an **unclaimed** vendor's detail page there's a **"✉ Invite owner"** chip next to the
+   "unclaimed" tag. Click → Clerk sends them a sign-up invitation that lands on `/vendor`. If no
+   email is on file it prompts you for one. After sending, the chip shows "invited <date> · resend".
+3. When the owner signs in at `/vendor`, the app **automatically claims** the listing: it matches
+   their **verified** Clerk email against unclaimed vendors and links ownership. They land straight
+   in their own dashboard — no signup form, no duplicate.
+4. Anyone who *does* see the signup form gets a banner on top: "Was your spa set up for you? …
+   claim your business" — the manual fallback for owners whose invite email got lost.
+
+**Safety rails:** only **verified** emails can claim (nobody hijacks a business with an unverified
+address); claiming is atomic (two racing sessions can't both win); invites to an email that already
+has an account get a clear message ("they can just sign in — it links automatically"); claims and
+invites both write audit rows.
+
+**Easy to tweak:** banner copy in `apps/web/src/app/vendor/page.tsx`; invite button copy in admin
+`vendor/[id]/page.tsx` (`InviteOwnerButton`).
+
+**Verification status:** api + web typecheck clean. The Clerk invitation send needs a real email
+to test end-to-end — try it on a scratch vendor with your own email when back. (The invitation
+email itself is Clerk-branded until GLO-18 styles the Clerk email templates.)
+
+**Files:** migration `20260609233000_vendor_claim_invite.sql` (adds `owner_invited_at`) ·
+`apps/api/src/domain/vendorClaim.ts` (new) · `vendor.router.ts` (`claimByEmail`) ·
+`admin.router.ts` (`inviteVendorOwner`, `createVendorOnBehalf` + ownerEmail) · admin add-spa page ·
+admin `vendor/[id]/page.tsx` (`InviteOwnerButton`) · `apps/web/src/app/vendor/page.tsx`
+(auto-claim + fallback) · GLOE.md §7/§8 · HOW-IT-WORKS.md §9.

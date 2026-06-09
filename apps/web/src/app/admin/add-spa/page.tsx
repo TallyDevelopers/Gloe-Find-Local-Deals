@@ -37,6 +37,7 @@ export default function AddSpaPage() {
   const utils = trpc.useUtils();
   const [businessName, setBusinessName] = useState('');
   const [phone, setPhone] = useState('');
+  const [ownerEmail, setOwnerEmail] = useState('');
   const [query, setQuery] = useState('');
   const [resolved, setResolved] = useState<Resolved | null>(null);
   const [categories, setCategories] = useState<Set<string>>(new Set());
@@ -98,6 +99,7 @@ export default function AddSpaPage() {
       longitude: resolved.longitude,
       googlePlaceId: resolved.placeId,
       categorySlugs: [...categories],
+      ownerEmail: ownerEmail.trim() || null,
     });
   };
 
@@ -119,6 +121,10 @@ export default function AddSpaPage() {
 
             <Field label="Business phone">
               <TextInput value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="(619) 555-0100" inputMode="tel" />
+            </Field>
+
+            <Field label="Owner email (optional)" hint="Lets you send the claim invite later — when they sign in with this email, the business links to them automatically.">
+              <TextInput value={ownerEmail} onChange={(e) => setOwnerEmail(e.target.value)} placeholder="owner@theirspa.com" inputMode="email" />
             </Field>
 
             <Field label="Business address" hint={resolved ? undefined : 'Start typing — pick from the list'}>

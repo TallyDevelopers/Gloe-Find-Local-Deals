@@ -688,6 +688,16 @@ boolean**, so the UI and the API can't disagree. And the money wall independentl
 active" at transfer time — so even if a UI gate were somehow bypassed, **a half-onboarded vendor
 physically cannot receive funds.**
 
+### When Gloē sets the spa up first (claim & invite)
+
+Plenty of spas get onboarded by the founder before they've ever logged in — the listing exists,
+deals may even be selling, but nobody owns it yet. The handover is one email: the admin hits
+**"Invite owner"**, the owner gets a sign-up invitation, and the moment they sign in at `/vendor`
+the system **matches their verified email to the unclaimed listing and links it to them** — they
+land in their own dashboard, never see a signup form, and can't accidentally create a duplicate
+spa. The match only trusts **verified** emails (an unverified address can never hijack a business),
+the link is atomic (two racing sessions can't both claim it), and every claim writes an audit row.
+
 ### Getting verified ("vetted & licensed", for real)
 
 We tell customers every spa is licensed & reviewed — so there's a real process behind it. In

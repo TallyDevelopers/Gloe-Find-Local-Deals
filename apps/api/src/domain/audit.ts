@@ -53,6 +53,9 @@ export type AuditAction =
   // License verification (GLO-19)
   | 'vendor.license_submitted'  // vendor sent license info + document for review
   | 'vendor.license_reviewed'   // admin approved or rejected the license
+  // Claim & invite (GLO-5)
+  | 'vendor.owner_invited'      // admin sent the Clerk invitation to the owner email
+  | 'vendor.claimed'            // a signed-in user claimed an unclaimed vendor by verified email
   // Refunds
   | 'refund.issued'    // full refund of a transaction
   | 'refund.partial'   // partial refund (voucher stays alive)

@@ -36,6 +36,7 @@ import {
 } from '../domain/admin';
 import { writeAudit } from '../domain/audit';
 import { getLicenseReviewQueue, reviewVendorLicense } from '../domain/vendorLicense';
+import { InviteError, inviteVendorOwner } from '../domain/vendorClaim';
 import { getCustomerOrdersForTicket, getSupportTicketCustomer } from '../domain/supportTickets';
 import { createSignedUpload } from '../db/storage';
 import { addVendorVideo, deleteVendorVideo, listVendorVideos } from '../domain/vendorMedia';
@@ -834,6 +835,34 @@ export const adminRouter = router({
       }
     }),
 
+  /**
+   * GLO-5: send (or resend) the Clerk invitation to an unclaimed vendor's
+   * owner. Optionally saves the email first (for vendors created without one).
+   */
+  inviteVendorOwner: adminProcedure
+    .input(z.object({
+      vendorId: z.string().uuid(),
+      email: z.string().email().nullable().optional(),
+      redirectUrl: z.string().url(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const result = await inviteVendorOwner(ctx.sql, input.vendorId, input.redirectUrl, input.email);
+        void writeAudit(ctx.sql, {
+          action: 'vendor.owner_invited',
+          actorUserId: ctx.auth.userId,
+          vendorId: input.vendorId,
+          meta: { email: result.email },
+        });
+        return result;
+      } catch (e) {
+        if (e instanceof InviteError) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: e.message });
+        }
+        throw e;
+      }
+    }),
+
   /** Vendors awaiting license review, oldest first (GLO-19). */
   licenseReviewQueue: adminProcedure.query(({ ctx }) => getLicenseReviewQueue(ctx.sql)),
 
@@ -1063,14 +1092,19 @@ export const adminRouter = router({
         longitude: z.number(),
         googlePlaceId: z.string().nullable().optional(),
         categorySlugs: z.array(z.string()).default([]),
+        // GLO-5: owner's email, so "Invite owner" + claim-by-email can work.
+        ownerEmail: z.string().email().nullable().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      const { ownerEmail, ...signup } = input;
       // ownerUserId null = unclaimed; the spa claims it later via Stripe.
-      const vendor = await createVendor(ctx.sql, { ownerUserId: null, ...input });
+      const vendor = await createVendor(ctx.sql, { ownerUserId: null, ...signup });
       // Founder-created vendors are live immediately and bypass gates.
       await ctx.sql`
-        UPDATE public.vendors SET status = 'active', admin_bypass = true WHERE id = ${vendor.id}
+        UPDATE public.vendors
+        SET status = 'active', admin_bypass = true, email = ${ownerEmail?.toLowerCase() ?? null}
+        WHERE id = ${vendor.id}
       `;
       return vendor;
     }),

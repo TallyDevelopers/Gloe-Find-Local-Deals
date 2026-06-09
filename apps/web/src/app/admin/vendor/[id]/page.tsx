@@ -84,6 +84,13 @@ export default function VendorDetailPage() {
                 <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
                   {suspended ? <Tag ok={false} label="SUSPENDED" /> : null}
                   <Tag ok={data.vendor.hasOwner ? true : null} label={data.vendor.hasOwner ? 'claimed' : 'unclaimed'} />
+                  {!data.vendor.hasOwner ? (
+                    <InviteOwnerButton
+                      vendorId={id}
+                      email={data.vendor.email}
+                      invitedAt={data.vendor.ownerInvitedAt}
+                    />
+                  ) : null}
                   <Tag ok={data.vendor.stripeConnected} label={data.vendor.stripeConnected ? 'Stripe connected' : 'Stripe NOT connected'} />
                   <Tag
                     ok={data.vendor.license.status === 'verified' ? true : data.vendor.license.status === 'pending_review' ? null : false}
@@ -364,6 +371,61 @@ type Release = {
  * Connect account. Surfaced so support can answer "where's my money?" by
  * citing a date and Stripe transfer id — every release is forensic-grade.
  */
+/**
+ * GLO-5: invite the owner of an unclaimed vendor. Prompts for the email if
+ * none is on file, fires the Clerk invitation, and shows when one went out.
+ * When the owner signs in at /vendor with that (verified) email, the
+ * business links to them automatically.
+ */
+function InviteOwnerButton({
+  vendorId,
+  email,
+  invitedAt,
+}: {
+  vendorId: string;
+  email: string | null;
+  invitedAt: string | null;
+}) {
+  const utils = trpc.useUtils();
+  const invite = trpc.admin.inviteVendorOwner.useMutation({
+    onSuccess: ({ email: sent }) => {
+      void utils.admin.vendorDetail.invalidate({ vendorId });
+      alert(`Invite sent to ${sent}. When they sign in at /vendor, the business links automatically.`);
+    },
+    onError: (e) => alert(e.message),
+  });
+
+  const send = () => {
+    let target = email;
+    if (!target) {
+      target = prompt("Owner's email — the invite goes here, and signing in with it claims the business:")?.trim() || null;
+      if (!target) return;
+    } else if (invitedAt && !confirm(`Re-send the invite to ${target}?`)) {
+      return;
+    }
+    invite.mutate({
+      vendorId,
+      email: target === email ? null : target,
+      redirectUrl: `${window.location.origin}/vendor`,
+    });
+  };
+
+  return (
+    <button
+      onClick={send}
+      disabled={invite.isPending}
+      title={invitedAt ? `Invited ${new Date(invitedAt).toLocaleDateString()}${email ? ` (${email})` : ''}` : email ?? 'No owner email on file yet'}
+      style={{
+        padding: '3px 10px', fontSize: 11, fontWeight: 700, borderRadius: 999,
+        border: '1px solid var(--brand-500)', background: 'var(--surface-elevated)', color: 'var(--brand-600)',
+        cursor: 'pointer',
+      }}
+    >
+      {invite.isPending ? '…' : invitedAt ? `invited ${new Date(invitedAt).toLocaleDateString()} · resend` : '✉ Invite owner'}
+    </button>
+  );
+}
+
 /**
  * GLO-19: the admin half of license verification. Shows what the vendor
  * submitted (incl. a signed link to the doc in the private bucket) and the
