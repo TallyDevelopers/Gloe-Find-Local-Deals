@@ -35,6 +35,7 @@ import {
   setVendorSuspended,
 } from '../domain/admin';
 import { writeAudit } from '../domain/audit';
+import { getLicenseReviewQueue, reviewVendorLicense } from '../domain/vendorLicense';
 import { getCustomerOrdersForTicket, getSupportTicketCustomer } from '../domain/supportTickets';
 import { createSignedUpload } from '../db/storage';
 import { addVendorVideo, deleteVendorVideo, listVendorVideos } from '../domain/vendorMedia';
@@ -831,6 +832,31 @@ export const adminRouter = router({
       } catch (e) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: e instanceof Error ? e.message : 'Update failed.' });
       }
+    }),
+
+  /** Vendors awaiting license review, oldest first (GLO-19). */
+  licenseReviewQueue: adminProcedure.query(({ ctx }) => getLicenseReviewQueue(ctx.sql)),
+
+  /**
+   * Approve or reject a vendor's license (GLO-19). Approving a
+   * pending_approval vendor also flips them active — this IS the
+   * "vetted & licensed" gate opening.
+   */
+  reviewVendorLicense: adminProcedure
+    .input(z.object({
+      vendorId: z.string().uuid(),
+      decision: z.enum(['approve', 'reject']),
+      reason: z.string().max(500).nullable().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await reviewVendorLicense(ctx.sql, input.vendorId, input.decision, input.reason);
+      void writeAudit(ctx.sql, {
+        action: 'vendor.license_reviewed',
+        actorUserId: ctx.auth.userId,
+        vendorId: input.vendorId,
+        meta: { decision: input.decision, reason: input.reason ?? null },
+      });
+      return result;
     }),
 
   /** The kill switch: suspend a vendor + pull all their posts to draft. */

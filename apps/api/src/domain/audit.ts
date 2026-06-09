@@ -50,6 +50,9 @@ export type AuditAction =
   | 'vendor.stripe_onboarding.started'
   | 'vendor.admin_bypass.set'
   | 'vendor.google_place_linked'
+  // License verification (GLO-19)
+  | 'vendor.license_submitted'  // vendor sent license info + document for review
+  | 'vendor.license_reviewed'   // admin approved or rejected the license
   // Refunds
   | 'refund.issued'    // full refund of a transaction
   | 'refund.partial'   // partial refund (voucher stays alive)

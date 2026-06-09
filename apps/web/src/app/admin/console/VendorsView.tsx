@@ -14,6 +14,19 @@ function money(cents: number): string {
   return '$' + (cents / 100).toLocaleString('en-US', { maximumFractionDigits: 0 });
 }
 
+const LICENSE_LABEL: Record<string, string> = {
+  unverified: '—',
+  pending_review: 'Review',
+  verified: 'Verified',
+  rejected: 'Rejected',
+};
+const LICENSE_COLOR: Record<string, string> = {
+  unverified: 'var(--text-tertiary)',
+  pending_review: 'var(--accent-500)',
+  verified: 'var(--success)',
+  rejected: 'var(--error)',
+};
+
 const STRIPE_COLOR: Record<string, string> = {
   active: 'var(--success)',
   pending: 'var(--text-tertiary)',
@@ -32,7 +45,7 @@ export function VendorsView() {
 
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('gross');
-  const [filter, setFilter] = useState<'all' | 'unclaimed' | 'no_stripe' | 'active' | 'flagged'>('all');
+  const [filter, setFilter] = useState<'all' | 'unclaimed' | 'no_stripe' | 'active' | 'flagged' | 'license_review'>('all');
 
   const rows = useMemo(() => {
     let r = q.data ?? [];
@@ -44,6 +57,7 @@ export function VendorsView() {
     if (filter === 'no_stripe') r = r.filter((v) => v.stripeStatus !== 'active');
     if (filter === 'active')    r = r.filter((v) => v.stripeStatus === 'active');
     if (filter === 'flagged')   r = r.filter((v) => v.isHighDisputeRisk);
+    if (filter === 'license_review') r = r.filter((v) => v.licenseStatus === 'pending_review');
     const sorted = [...r].sort((a, b) => {
       switch (sortKey) {
         case 'name':      return a.businessName.localeCompare(b.businessName);
@@ -75,9 +89,9 @@ export function VendorsView() {
           style={searchInput}
         />
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {(['all', 'active', 'no_stripe', 'unclaimed', 'flagged'] as const).map((k) => (
+          {(['all', 'active', 'no_stripe', 'unclaimed', 'flagged', 'license_review'] as const).map((k) => (
             <Chip key={k} on={filter === k} onClick={() => setFilter(k)}>
-              {k === 'all' ? 'All' : k === 'active' ? 'Stripe active' : k === 'no_stripe' ? 'No Stripe' : k === 'unclaimed' ? 'Unclaimed' : '⚠ Flagged'}
+              {k === 'all' ? 'All' : k === 'active' ? 'Stripe active' : k === 'no_stripe' ? 'No Stripe' : k === 'unclaimed' ? 'Unclaimed' : k === 'flagged' ? '⚠ Flagged' : 'License review'}
             </Chip>
           ))}
         </div>
@@ -132,7 +146,11 @@ export function VendorsView() {
                     {v.stripeStatus ?? '—'}
                   </span>
                 </Td>
-                <Td>{v.hasLicense ? <Dot ok /> : <Dot />}</Td>
+                <Td>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: LICENSE_COLOR[v.licenseStatus] ?? 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    {LICENSE_LABEL[v.licenseStatus] ?? v.licenseStatus}
+                  </span>
+                </Td>
                 <Td>{v.hasOwner ? <Dot ok /> : <Dot />}</Td>
                 <Td align="right">
                   <button

@@ -52,7 +52,7 @@ Last consolidated: 2026-05-29. Last updated: 2026-06-01 (search & discovery engi
 
 - **✅ Shipped & working:** the full buy→redeem→get-paid loop, search & discovery, refunds, support, Apple Wallet passes, push, Gloē + Google reviews on deals, the redesigned vendor storefront (profile + "Inside the spa" video reel), cached location maps.
 - **🟡 In progress / planned:** loyalty points (planned — earn + redeem, see Linear GLO-24), Apple Wallet live status updates, search/click logging.
-- **❌ Launch blockers (do before App Store):** Sign in with Apple, ATT prompt, counsel-reviewed Terms/Privacy, provider license verification. (The **dispute/chargeback webhook** is now ✅ built — GLO-34 — pending enabling the `charge.dispute.*` events on the live Stripe endpoint.) **The canonical, living backlog now lives in Linear → "Gloē" project** (filter the `launch-blocker` label); §10 is the in-doc snapshot.
+- **❌ Launch blockers (do before App Store):** Sign in with Apple, ATT prompt, counsel-reviewed Terms/Privacy. (The **dispute/chargeback webhook** is ✅ built — GLO-34 — pending enabling the `charge.dispute.*` events on the live Stripe endpoint. **Provider license verification** is ✅ built — GLO-19 — vendor submits license + doc, admin verifies; see §7/§8.) **The canonical, living backlog now lives in Linear → "Gloē" project** (filter the `launch-blocker` label); §10 is the in-doc snapshot.
 
 > **Where work is tracked:** **Linear** (Gloē project, `GLO-*`) is the roadmap — what's next & why. **This doc** is what *exists* today. When a Linear ticket ships, it gets reflected here.
 
@@ -363,7 +363,7 @@ payouts:         pending → paid
 8. Hold window — default 24h post-redemption (per-vendor tunable)
 9. Vendor not suspended
 10. Stripe account `payouts_enabled=true`
-11. License on file (manual today)
+11. License on file (GLO-19: admin-verified via the license review flow; enforced at posting time through `canPostDeals`)
 12. No open dispute on the transaction — a `charge.dispute.created` sets the transaction to `disputed`, and wall #4 (`status='paid'`) refuses it. The dispute also freezes the voucher (wall #3 can never reach `redeemed`). See §4 Disputes.
 
 ---
@@ -383,7 +383,7 @@ All tables in Supabase Postgres. PostGIS extension on. RLS enabled (auth at DB l
 | Table | Purpose | Key columns |
 |---|---|---|
 | `users` | Consumer accounts (Clerk-backed) | clerk_user_id, email, phone, name, deleted_at (soft-delete tombstone for account deletion) |
-| `vendors` | Practice accounts | id, owner_user_id, business_name, stripe_account_id, stripe_account_status, auto_release_on_redemption, suspended, percentage_fee_override |
+| `vendors` | Practice accounts | id, owner_user_id, business_name, stripe_account_id, stripe_account_status, auto_release_on_redemption, suspended, percentage_fee_override, license_number/state/type, license_status (unverified/pending_review/verified/rejected), license_document_path (private bucket), license_submitted/reviewed_at, license_rejection_reason |
 | `deals` | Listings | id, vendor_id, title, description, status (draft/pending_review/active/expired), category_id, secondary_category_id, redemption_address, redemption_lat/lng, fine_print, restrictions |
 | `deal_variants` | Per-deal options | deal_id, label, unit_count, unit_label, original_price_cents, deal_price_cents, spots_total, spots_claimed |
 | `deal_photos` | Deal imagery | deal_id, url, display_order |
@@ -408,9 +408,9 @@ All tables in Supabase Postgres. PostGIS extension on. RLS enabled (auth at DB l
 | `region_waitlist` | Out-of-area demand capture | email (unique), city_label, lat, lng |
 | `message_threads` / `messages` | **DEAD** — vendor↔consumer scaffolding, 0 rows, unused. Not the support tables. |
 
-### Storage buckets (Supabase Storage, public)
+### Storage buckets (Supabase Storage)
 
-`deal-photos`, `deal-videos`, `deal-maps`, `review-photos`, `support-attachments`, `org-assets`. Signed uploads via `createSignedUpload(ownerId, fileExt, kind)` in `db/storage.ts` — the `BUCKETS` map keys: photo/video/review/support. Public URLs stored on the row; paths are unguessable UUIDs.
+Public: `deal-photos`, `deal-videos`, `deal-maps`, `review-photos`, `support-attachments`, `org-assets`. **Private:** `license-docs` (GLO-19 — license documents are PII; no public URLs, admins read via short-lived signed URLs from `createSignedReadUrl`). Signed uploads via `createSignedUpload(ownerId, fileExt, kind)` in `db/storage.ts` — the `BUCKETS` map keys: photo/video/review/support/license. Public URLs stored on the row (private buckets store the `path` instead); paths are unguessable UUIDs.
 
 ### Migration tracking
 
@@ -730,6 +730,7 @@ Where a medspa runs its Gloē presence: sign up, get approved, **post deals** (a
 | Screen | What it does |
 |---|---|
 | Signup | Business name, phone, address (Places autocomplete), categories. Creates vendor + Stripe Express account. |
+| **License verification (GLO-19)** | Settings → "Medical license & verification" card. Vendor submits license number + state + type + a photo/PDF of the license (private `license-docs` bucket). Lands `pending_review`; admin approves (→ verified, and a `pending_approval` vendor flips `active`) or rejects with a reason the vendor sees verbatim and can resubmit against. The checklist's license step only turns green on admin approval — this is what backs "vetted & licensed." Code: `domain/vendorLicense.ts`, `LicenseCard.tsx`. |
 | Dashboard | Hub snapshot: sold today, redeemed today, active vouchers, held balance, 7d paid, in-transit, failed payout count. |
 | Stripe balance widget | Real-time Stripe `available` + `pending` balances. Separate query from hub snapshot. |
 | Post Deal | Full form — title, description, variants, photos, video upload, amenities, **vibe (1–3)**, 1–2 categories, restrictions, fine print. Draft or submit for review. |
@@ -757,8 +758,8 @@ The founder's cockpit — **one screen to run the entire business:** approve ven
 
 | Tab | What it does |
 |---|---|
-| Vendors | Sortable table. Columns: name, city, Stripe status, tier, actions. Filter by status/tier/suspended. |
-| Vendor detail | Full profile, Stripe account status, deal roster, audit trail. Suspend / unsuspend. Suspend pulls every live/paused/pending deal to draft, stamping `deals.pre_suspend_status`; reinstate restores each deal to exactly its prior status (manually-republished deals untouched, markers cleared). |
+| Vendors | Sortable table. Columns: name, city, Stripe status, **license status (—/Review/Verified/Rejected)**, tier, actions. Filter by status/tier/suspended + **"License review" chip** (the GLO-19 review queue). |
+| Vendor detail | Full profile, Stripe account status, deal roster, audit trail. **License & verification card (GLO-19):** submitted number/state/type, signed link to the doc (private bucket, ~10 min URL), Approve / Reject-with-reason; approving a `pending_approval` vendor takes them live. Header tag shows license state. Suspend / unsuspend. Suspend pulls every live/paused/pending deal to draft, stamping `deals.pre_suspend_status`; reinstate restores each deal to exactly its prior status (manually-republished deals untouched, markers cleared). |
 | Deals | Pending review queue. Approve / reject / comment. |
 | Money / Payouts | Payout list (filter pending/in-transit/paid/failed). Release transfer button. Retry failed payout. Reconcile. |
 | **Refunds** | Dedicated refund ledger over the audit log: who issued it, when, amount of total, which order, **was the voucher already redeemed (⚠ flag)**, full/partial/blocked attempt, reason, Stripe refund id. Summary strip + outcome filter (All / Refunded / Blocked). |
@@ -1209,7 +1210,7 @@ All 4 green = ready to sign first real spa.
 
 - **Marketplace facilitator language** in ToS. Gloē is not a service provider.
 - **Vendor indemnification** clause — they own clinical outcomes.
-- **License verification** — manual today. Eventually automate via state board API where available.
+- **License verification** — ✅ built (GLO-19): vendors submit license # + state + type + document; admin verifies against the state board lookup and approves/rejects in god-mode. The verification *decision* is still a human checking the board site — eventually automate via state board API where available.
 - **Medical disclaimers** — results not guaranteed; consultation required; vendor attestation that customer is a candidate.
 - **HIPAA** — Gloē is NOT a covered entity. Do not collect PHI. Keep claim metadata to vendor + product, never diagnosis or treatment specifics.
 - **FTC fake review rules** — only verified buyers can review. Flag vendor for review manipulation.

@@ -22,6 +22,7 @@ import {
 } from '../domain/claims';
 import { getInstantPayoutStatus, InstantPayoutError, triggerInstantPayout } from '../domain/payouts';
 import { createVendor, getSetupStatus, getVendorForOwner, type VendorRecord } from '../domain/vendorSignup';
+import { getLicenseInfo, submitLicense } from '../domain/vendorLicense';
 import { addVendorVideo, deleteVendorVideo, listVendorVideos } from '../domain/vendorMedia';
 import { getVendorDashboardLink, startVendorOnboarding } from '../domain/vendorStripe';
 import {
@@ -323,6 +324,51 @@ export const vendorRouter = router({
     .mutation(async ({ ctx, input }) => {
       const vendor = await requireVendor(ctx);
       return createSignedUpload(vendor.id, input.fileExt, input.kind);
+    }),
+
+  /* ---------- License verification (GLO-19) ---------- */
+
+  /** The vendor's own license submission state, for the Settings card. */
+  licenseInfo: protectedProcedure.query(({ ctx }) => getLicenseInfo(ctx.sql, ctx.auth.userId)),
+
+  /**
+   * Signed upload URL for the license document (photo or PDF). The bucket is
+   * private — the browser PUTs to uploadUrl, then passes the returned `path`
+   * to submitLicense. Admins view it later via a short-lived signed read URL.
+   */
+  signLicenseUpload: protectedProcedure
+    .input(z.object({ fileExt: z.string().max(8) }))
+    .mutation(async ({ ctx, input }) => {
+      const vendor = await requireVendor(ctx);
+      const signed = await createSignedUpload(vendor.id, input.fileExt, 'license');
+      return { uploadUrl: signed.uploadUrl, path: signed.path };
+    }),
+
+  /** Submit (or resubmit after rejection) license info + document for admin review. */
+  submitLicense: protectedProcedure
+    .input(
+      z.object({
+        licenseNumber: z.string().min(3).max(60),
+        licenseState: z.string().length(2),
+        licenseType: z.string().min(2).max(80),
+        documentPath: z.string().min(3).max(300),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const vendor = await requireVendor(ctx);
+      // The path must point inside this vendor's own folder — a vendor must
+      // not be able to attach someone else's document to their submission.
+      if (!input.documentPath.startsWith(`${vendor.id}/`)) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid document path.' });
+      }
+      const info = await submitLicense(ctx.sql, vendor.id, input);
+      void writeAudit(ctx.sql, {
+        action: 'vendor.license_submitted',
+        actorUserId: ctx.auth.userId,
+        vendorId: vendor.id,
+        meta: { licenseState: input.licenseState.toUpperCase(), licenseType: input.licenseType },
+      });
+      return info;
     }),
 
   /** Vendor-level profile videos (the storefront "Inside the spa" reel). */

@@ -10,6 +10,7 @@ import { Button, Card } from '../../components/ui';
 import { Wordmark } from '../../components/Wordmark';
 import { VendorVideosManager } from '../../components/vendor/VendorVideosManager';
 import { trpc } from '../../lib/trpc';
+import { LicenseCard } from './LicenseCard';
 import { ScanTab } from './ScanTab';
 
 interface VendorDashboardProps {
@@ -845,6 +846,7 @@ function SettingsTab({ setup }: { setup: SetupData }) {
     <>
       <h1 style={{ fontSize: 28 }}>Settings</h1>
       <SetupChecklist setup={setup} />
+      <LicenseCard />
       {setup?.canPostDeals ? <InstantPayoutCard /> : null}
       <StripeAccessCard />
     </>
@@ -1005,7 +1007,13 @@ function SetupChecklist({ setup }: { setup: SetupData }) {
             done={setup?.steps[step.key] ?? false}
             last={i === STEPS.length - 1}
             actionLabel={step.key === 'stripe' ? (onboard.isPending ? 'Opening…' : 'Connect bank') : 'Set up'}
-            onAction={step.key === 'stripe' ? startStripe : undefined}
+            onAction={
+              step.key === 'stripe'
+                ? startStripe
+                : step.key === 'license'
+                  ? () => document.getElementById('license-card')?.scrollIntoView({ behavior: 'smooth' })
+                  : undefined
+            }
           />
         ))}
       </div>

@@ -167,8 +167,7 @@ export async function getSetupStatus(
 ): Promise<VendorSetupStatus | null> {
   const rows = await sql<{
     status: string;
-    license_number: string | null;
-    verified_at: string | null;
+    license_status: string;
     stripe_account_status: string | null;
     logo_url: string | null;
     hero_image_url: string | null;
@@ -176,7 +175,7 @@ export async function getSetupStatus(
     provider_count: number;
   }[]>`
     SELECT
-      v.status, v.license_number, v.verified_at,
+      v.status, v.license_status,
       v.stripe_account_status, v.logo_url, v.hero_image_url, v.admin_bypass,
       (SELECT COUNT(*) FROM public.providers p WHERE p.vendor_id = v.id)::int AS provider_count
     FROM public.vendors v
@@ -186,7 +185,8 @@ export async function getSetupStatus(
   const v = rows[0];
   if (!v) return null;
 
-  const license = Boolean(v.license_number && v.verified_at);
+  // GLO-19: the license step is done only when an admin verified it.
+  const license = v.license_status === 'verified';
   const stripe = v.stripe_account_status === 'active';
   const provider = v.provider_count > 0;
   const photos = Boolean(v.logo_url || v.hero_image_url);

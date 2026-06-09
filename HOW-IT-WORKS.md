@@ -688,7 +688,20 @@ boolean**, so the UI and the API can't disagree. And the money wall independentl
 active" at transfer time — so even if a UI gate were somehow bypassed, **a half-onboarded vendor
 physically cannot receive funds.**
 
-*Deeper: `GLOE.md` §7. Code: `vendor.router.ts`, Stripe `account.updated` webhook, `vendorHub.ts`.*
+### Getting verified ("vetted & licensed", for real)
+
+We tell customers every spa is licensed & reviewed — so there's a real process behind it. In
+Settings the vendor submits the license their practice operates under: **number, state, type, and a
+photo/PDF of the license itself**. The document lands in a **private** storage bucket (it's PII — no
+public URLs exist; an admin views it through a link that expires in minutes). The submission sits in
+a review queue until a human checks it against the issuing state board and **approves or rejects it
+with a reason** — the vendor sees the reason word-for-word and can fix and resubmit. Approval is
+also the moment a brand-new vendor goes from "in review" to **live**: verifying the license IS
+approving the spa. Spas that were already live before this shipped keep selling and are flagged
+"unverified" in god-mode for follow-up — getting verified never knocks anyone offline, and
+rejecting a license doesn't either (suspension stays a separate, deliberate act).
+
+*Deeper: `GLOE.md` §7. Code: `vendor.router.ts`, `domain/vendorLicense.ts`, Stripe `account.updated` webhook, `vendorHub.ts`.*
 
 ### Posting a deal
 
@@ -765,6 +778,15 @@ day-to-day review and support but **can't** drain a vendor's balance or lock the
 owner-only force-refunds and "last owner" guards). Combined with the server-derived Stripe destinations
 and the 8 transfer walls from §8, god-mode convenience **never becomes a way to send money to the wrong
 account.**
+
+### The license review queue
+
+The Vendors tab carries a **"License review" filter chip** — every spa whose license submission is
+waiting on a decision, oldest first. The vendor's detail page shows what they submitted (number,
+state, type) plus a **view-the-document link** that's generated fresh and expires in minutes,
+because license docs live in a private bucket, never on public URLs. Two buttons: **Approve** (for a
+brand-new spa this is also the "take them live" moment) and **Reject…** with a required reason the
+vendor reads verbatim on their dashboard before resubmitting. Both decisions write audit rows.
 
 ### The support drawer
 

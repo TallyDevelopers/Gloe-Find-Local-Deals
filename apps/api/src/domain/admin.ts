@@ -1,4 +1,5 @@
 import type { Sql } from '../db/client';
+import { createSignedReadUrl } from '../db/storage';
 import {
   insertAttachments,
   attachmentsForMessages,
@@ -1092,6 +1093,7 @@ export async function getVendorRoster(sql: Sql) {
     city: string;
     has_owner: boolean;
     license_number: string | null;
+    license_status: string;
     stripe_account_status: string | null;
     google_place_id: string | null;
     deal_count: number;
@@ -1103,7 +1105,7 @@ export async function getVendorRoster(sql: Sql) {
   }[]>`
     SELECT v.id, v.business_name, v.status, v.city,
       (v.owner_user_id IS NOT NULL) AS has_owner,
-      v.license_number, v.stripe_account_status, v.google_place_id,
+      v.license_number, v.license_status, v.stripe_account_status, v.google_place_id,
       (SELECT COUNT(*)::int FROM public.deals d WHERE d.vendor_id = v.id) AS deal_count,
       COALESCE((SELECT COUNT(*)::int FROM public.transactions t WHERE t.vendor_id = v.id AND t.status IN ('paid','released','partially_refunded')),0) AS purchases,
       COALESCE((SELECT SUM(consumer_paid_cents) FROM public.transactions t WHERE t.vendor_id = v.id AND t.status IN ('paid','released','partially_refunded')),0)::int AS gross_cents,
@@ -1122,6 +1124,7 @@ export async function getVendorRoster(sql: Sql) {
     city: r.city,
     hasOwner: r.has_owner,
     hasLicense: !!r.license_number,
+    licenseStatus: r.license_status,
     stripeStatus: r.stripe_account_status,
     hasGoogle: !!r.google_place_id,
     dealCount: r.deal_count,
@@ -1153,6 +1156,14 @@ export async function getVendorDetail(sql: Sql, vendorId: string) {
     auto_clawback_on_dispute_lost: boolean;
     gloe_take: string | null;
     gloe_perks: string[] | null;
+    license_number: string | null;
+    license_state: string | null;
+    license_type: string | null;
+    license_status: string;
+    license_document_path: string | null;
+    license_submitted_at: string | null;
+    license_reviewed_at: string | null;
+    license_rejection_reason: string | null;
     purchases: number;
     gross_cents: number;
     income_cents: number;
@@ -1163,6 +1174,9 @@ export async function getVendorDetail(sql: Sql, vendorId: string) {
       v.stripe_account_status, v.google_place_id, v.auto_release_on_redemption,
       v.auto_clawback_on_dispute_lost,
       v.gloe_take, v.gloe_perks,
+      v.license_number, v.license_state, v.license_type, v.license_status,
+      v.license_document_path, v.license_submitted_at, v.license_reviewed_at,
+      v.license_rejection_reason,
       COALESCE((SELECT COUNT(*)::int FROM public.transactions t WHERE t.vendor_id=v.id AND t.status IN ('paid','released','partially_refunded')),0) AS purchases,
       COALESCE((SELECT SUM(consumer_paid_cents) FROM public.transactions t WHERE t.vendor_id=v.id AND t.status IN ('paid','released','partially_refunded')),0)::int AS gross_cents,
       COALESCE((SELECT SUM(platform_fee_cents) FROM public.transactions t WHERE t.vendor_id=v.id AND t.status IN ('paid','released','partially_refunded')),0)::int AS income_cents,
@@ -1171,6 +1185,18 @@ export async function getVendorDetail(sql: Sql, vendorId: string) {
   `;
   const v = vRows[0];
   if (!v) return null;
+
+  // License doc lives in a private bucket; hand the admin a short-lived
+  // signed URL so they can eyeball it during review. Best-effort — a storage
+  // hiccup shouldn't take down the whole detail page.
+  let licenseDocumentUrl: string | null = null;
+  if (v.license_document_path) {
+    try {
+      licenseDocumentUrl = await createSignedReadUrl('license', v.license_document_path);
+    } catch {
+      /* doc link just won't render */
+    }
+  }
 
   // Payout health: totals by status + any recent failures with the reason.
   const payoutAgg = await sql<{
@@ -1348,6 +1374,17 @@ export async function getVendorDetail(sql: Sql, vendorId: string) {
       lastDisputedAt: da.last_disputed_at,
       isHighDisputeRisk,
       disputeRiskConfig: riskCfg, // { enabled, maxDisputes, windowDays }
+      // License verification (GLO-19)
+      license: {
+        status: v.license_status,
+        number: v.license_number,
+        state: v.license_state,
+        type: v.license_type,
+        documentUrl: licenseDocumentUrl, // signed, ~10 min — render-time only
+        submittedAt: v.license_submitted_at,
+        reviewedAt: v.license_reviewed_at,
+        rejectionReason: v.license_rejection_reason,
+      },
     },
     heldPayouts: heldRows.map((r) => ({
       claimId: r.claim_id,

@@ -85,6 +85,15 @@ export default function VendorDetailPage() {
                   {suspended ? <Tag ok={false} label="SUSPENDED" /> : null}
                   <Tag ok={data.vendor.hasOwner ? true : null} label={data.vendor.hasOwner ? 'claimed' : 'unclaimed'} />
                   <Tag ok={data.vendor.stripeConnected} label={data.vendor.stripeConnected ? 'Stripe connected' : 'Stripe NOT connected'} />
+                  <Tag
+                    ok={data.vendor.license.status === 'verified' ? true : data.vendor.license.status === 'pending_review' ? null : false}
+                    label={
+                      data.vendor.license.status === 'verified' ? 'license verified'
+                        : data.vendor.license.status === 'pending_review' ? 'license in review'
+                        : data.vendor.license.status === 'rejected' ? 'license rejected'
+                        : 'no license'
+                    }
+                  />
                   {data.vendor.adminBypass ? <Tag ok={true} label="gates open" /> : null}
                   <Tag ok={data.vendor.hasGoogle} label={data.vendor.hasGoogle ? 'google linked' : 'no google'} />
                   <GoogleLinkButton vendorId={id} linked={data.vendor.hasGoogle} />
@@ -196,6 +205,8 @@ export default function VendorDetailPage() {
             </div>
             <div style={{ flex: '1 1 480px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
             <SectionLabel>Risk &amp; controls</SectionLabel>
+
+            <LicenseReviewCard vendorId={id} license={data.vendor.license} vendorStatus={data.vendor.status} />
 
             {/* Disputes / chargebacks — the "should I slash this vendor?" card. */}
             <Card>
@@ -353,6 +364,165 @@ type Release = {
  * Connect account. Surfaced so support can answer "where's my money?" by
  * citing a date and Stripe transfer id — every release is forensic-grade.
  */
+/**
+ * GLO-19: the admin half of license verification. Shows what the vendor
+ * submitted (incl. a signed link to the doc in the private bucket) and the
+ * Approve / Reject decision. Approving a pending_approval vendor also flips
+ * them active — approval IS the "vetted & licensed" gate.
+ */
+function LicenseReviewCard({
+  vendorId,
+  license,
+  vendorStatus,
+}: {
+  vendorId: string;
+  license: {
+    status: string;
+    number: string | null;
+    state: string | null;
+    type: string | null;
+    documentUrl: string | null;
+    submittedAt: string | null;
+    reviewedAt: string | null;
+    rejectionReason: string | null;
+  };
+  vendorStatus: string;
+}) {
+  const utils = trpc.useUtils();
+  const review = trpc.admin.reviewVendorLicense.useMutation({
+    onSuccess: () => {
+      void utils.admin.vendorDetail.invalidate({ vendorId });
+      void utils.admin.vendorRoster.invalidate();
+    },
+  });
+  const [rejecting, setRejecting] = useState(false);
+  const [reason, setReason] = useState('');
+
+  const statusChip = (() => {
+    switch (license.status) {
+      case 'verified':       return { label: 'VERIFIED', bg: 'var(--success)' };
+      case 'pending_review': return { label: 'NEEDS REVIEW', bg: 'var(--accent-500)' };
+      case 'rejected':       return { label: 'REJECTED', bg: 'var(--error)' };
+      default:               return { label: 'NOT SUBMITTED', bg: 'var(--text-tertiary)' };
+    }
+  })();
+
+  return (
+    <Card>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+        <h2 style={{ fontSize: 19 }}>License &amp; verification</h2>
+        <span style={{ fontSize: 12, fontWeight: 800, color: '#fff', background: statusChip.bg, padding: '3px 10px', borderRadius: 999 }}>
+          {statusChip.label}
+        </span>
+      </div>
+
+      {license.status === 'unverified' ? (
+        <p style={{ fontSize: 14, color: 'var(--text-tertiary)', margin: 0 }}>
+          Nothing submitted yet. The vendor adds their license under Settings → Medical license
+          {vendorStatus === 'pending_approval' ? ' — they stay in review until you approve it here.' : '.'}
+        </p>
+      ) : (
+        <>
+          <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 12 }}>
+            <PayoutStat label="License #" value={license.number ?? '—'} />
+            <PayoutStat label="State" value={license.state ?? '—'} />
+            <PayoutStat label="Type" value={license.type ?? '—'} />
+            {license.submittedAt ? (
+              <PayoutStat label="Submitted" value={new Date(license.submittedAt).toLocaleDateString()} />
+            ) : null}
+          </div>
+
+          {license.documentUrl ? (
+            <a
+              href={license.documentUrl}
+              target="_blank"
+              rel="noreferrer"
+              style={{ fontSize: 14, fontWeight: 700, color: 'var(--brand-600)' }}
+            >
+              View license document ↗
+            </a>
+          ) : (
+            <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>No document attached.</span>
+          )}
+
+          {license.status === 'rejected' && license.rejectionReason ? (
+            <div style={{ marginTop: 12, fontSize: 13, color: 'var(--text-secondary)' }}>
+              Rejected{license.reviewedAt ? ` ${new Date(license.reviewedAt).toLocaleDateString()}` : ''}: “{license.rejectionReason}”
+            </div>
+          ) : null}
+
+          {license.status === 'pending_review' ? (
+            <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border-subtle)' }}>
+              {!rejecting ? (
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <button
+                    onClick={() => review.mutate({ vendorId, decision: 'approve' })}
+                    disabled={review.isPending}
+                    style={{
+                      padding: '9px 16px', fontSize: 14, fontWeight: 700, borderRadius: 999,
+                      border: '1px solid var(--success)', background: 'var(--success)', color: '#fff',
+                    }}
+                  >
+                    {review.isPending ? '…' : vendorStatus === 'pending_approval' ? 'Approve — take them live' : 'Approve license'}
+                  </button>
+                  <button
+                    onClick={() => setRejecting(true)}
+                    disabled={review.isPending}
+                    style={{
+                      padding: '9px 16px', fontSize: 14, fontWeight: 700, borderRadius: 999,
+                      border: '1px solid var(--error)', background: 'var(--surface-elevated)', color: 'var(--error)',
+                    }}
+                  >
+                    Reject…
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <textarea
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    maxLength={500}
+                    rows={2}
+                    placeholder="Why it can't be verified — the vendor sees this verbatim. e.g. “Number doesn't match the TX board lookup — double-check and resubmit.”"
+                    style={{
+                      padding: '10px 12px', fontSize: 14, fontFamily: 'inherit',
+                      border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)',
+                      background: 'var(--surface-default)', color: 'var(--text-primary)', resize: 'vertical',
+                    }}
+                  />
+                  <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                    <button
+                      onClick={() => { setRejecting(false); setReason(''); }}
+                      disabled={review.isPending}
+                      style={{
+                        padding: '8px 14px', fontSize: 13, fontWeight: 600, borderRadius: 999,
+                        border: '1px solid var(--border-default)', background: 'var(--surface-elevated)', color: 'var(--text-primary)',
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => review.mutate({ vendorId, decision: 'reject', reason: reason.trim() || null })}
+                      disabled={review.isPending || reason.trim().length < 5}
+                      style={{
+                        padding: '8px 14px', fontSize: 13, fontWeight: 700, borderRadius: 999,
+                        border: '1px solid var(--error)', background: 'var(--error)', color: '#fff',
+                        opacity: review.isPending || reason.trim().length < 5 ? 0.5 : 1,
+                      }}
+                    >
+                      {review.isPending ? '…' : 'Reject license'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : null}
+        </>
+      )}
+    </Card>
+  );
+}
+
 function ReleaseHistory({ releases }: { releases: Release[] }) {
   return (
     <Card>

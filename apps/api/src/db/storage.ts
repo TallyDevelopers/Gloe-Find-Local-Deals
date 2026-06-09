@@ -15,7 +15,14 @@ const BUCKETS = {
   video: 'deal-videos',
   review: 'review-photos',
   support: 'support-attachments',
+  // Private bucket — license docs are PII. `publicUrl` from createSignedUpload
+  // will 403 for this kind; store the returned `path` and read via
+  // createSignedReadUrl instead.
+  license: 'license-docs',
 } as const;
+
+/** Buckets whose objects must never be publicly readable. */
+const PRIVATE_BUCKETS: ReadonlySet<string> = new Set(['license-docs']);
 
 export type UploadKind = keyof typeof BUCKETS;
 
@@ -59,9 +66,41 @@ export async function createSignedUpload(
 
   return {
     uploadUrl: `${SUPABASE_URL}/storage/v1${data.url}`,
-    publicUrl: `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${path}`,
+    // Private buckets have no public URL — callers store `path` and read via
+    // createSignedReadUrl. Empty string instead of a URL that would 403.
+    publicUrl: PRIVATE_BUCKETS.has(bucket)
+      ? ''
+      : `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${path}`,
     path,
   };
+}
+
+/**
+ * Short-lived signed READ URL for an object in a private bucket (e.g. a
+ * license document an admin needs to view). Default expiry 10 minutes.
+ */
+export async function createSignedReadUrl(
+  kind: UploadKind,
+  path: string,
+  expiresInSeconds = 600,
+): Promise<string> {
+  if (!SERVICE_KEY) {
+    throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY');
+  }
+  const bucket = BUCKETS[kind];
+  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${bucket}/${path}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${SERVICE_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ expiresIn: expiresInSeconds }),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to sign read URL: ${res.status}`);
+  }
+  const data = (await res.json()) as { signedURL: string };
+  return `${SUPABASE_URL}/storage/v1${data.signedURL}`;
 }
 
 /**
