@@ -35,7 +35,8 @@ export interface CreateDealInput {
   startsAt?: string | null; // ISO; defaults to now
   expiresAt: string; // ISO
   perCustomerLimit: number;
-  codeValidityDays: number;
+  /** Null = use the platform-wide voucher_validity_days setting (GLO-29). */
+  codeValidityDays: number | null;
   photoUrls: string[];
   videos?: DealVideoInput[];
   variants: CreateDealVariantInput[];
@@ -306,7 +307,7 @@ async function loadDealDetail(sql: Sql, dealId: string) {
     starts_at: string;
     expires_at: string;
     per_customer_limit: number;
-    code_validity_days: number;
+    code_validity_days: number | null;
   }[]>`
     SELECT d.id, d.category_id, d.secondary_category_id, d.subtype_id,
            c.display_name AS category_name,

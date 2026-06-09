@@ -450,14 +450,12 @@ function TransactionDrawer({
             {d.claims.length > 0 ? (
               <Section title={`Vouchers (${d.claims.length})`}>
                 {d.claims.map((c) => (
-                  <div key={c.id} style={{ padding: '6px 0', borderBottom: '1px solid var(--border-subtle)' }}>
-                    <div style={{ fontSize: 13, fontWeight: 600 }}>
-                      {c.humanCode} · <span style={{ color: STATUS_COLOR[c.status] ?? 'var(--text-tertiary)' }}>{c.status}</span>
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
-                      {c.redeemedAt ? `redeemed ${new Date(c.redeemedAt).toLocaleString()}` : `expires ${new Date(c.expiresAt).toLocaleDateString()}`}
-                    </div>
-                  </div>
+                  <VoucherRow
+                    key={c.id}
+                    claim={c}
+                    superseded={d.claims.some((other) => other.reissuedFromClaimId === c.id)}
+                    onReissued={() => void detail.refetch()}
+                  />
                 ))}
               </Section>
             ) : null}
@@ -475,6 +473,61 @@ function TransactionDrawer({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * One voucher line in the drawer. Expired-and-not-yet-replaced vouchers get a
+ * "Reissue" button (GLO-29): new active claim with fresh codes + expiry, same
+ * paid transaction — no new charge, audit-logged, customer gets a push.
+ */
+function VoucherRow({
+  claim: c, superseded, onReissued,
+}: {
+  claim: {
+    id: string;
+    status: string;
+    redeemedAt: string | null;
+    expiresAt: string;
+    humanCode: string;
+    reissuedFromClaimId: string | null;
+  };
+  superseded: boolean;
+  onReissued: () => void;
+}) {
+  const reissue = trpc.admin.reissueClaim.useMutation({ onSuccess: onReissued });
+  const isExpired = c.status === 'expired' || (c.status === 'active' && new Date(c.expiresAt) < new Date());
+  const canReissue = isExpired && !superseded;
+
+  return (
+    <div style={{ padding: '6px 0', borderBottom: '1px solid var(--border-subtle)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>
+            {c.humanCode} · <span style={{ color: STATUS_COLOR[c.status] ?? 'var(--text-tertiary)' }}>{c.status}</span>
+            {superseded ? <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-tertiary)' }}>reissued ↓</span> : null}
+            {c.reissuedFromClaimId ? <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--brand-600)' }}>replacement</span> : null}
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
+            {c.redeemedAt ? `redeemed ${new Date(c.redeemedAt).toLocaleString()}` : `expires ${new Date(c.expiresAt).toLocaleDateString()}`}
+          </div>
+        </div>
+        {canReissue ? (
+          <button
+            onClick={() => {
+              if (window.confirm('Reissue this voucher? The customer gets a fresh active voucher with new codes — no new charge.')) {
+                reissue.mutate({ claimId: c.id });
+              }
+            }}
+            disabled={reissue.isPending}
+            style={inlineLinkBtn}
+          >
+            {reissue.isPending ? 'Reissuing…' : 'Reissue voucher'}
+          </button>
+        ) : null}
+      </div>
+      {reissue.error ? <div style={{ fontSize: 12, color: 'var(--error)', marginTop: 4 }}>{reissue.error.message}</div> : null}
     </div>
   );
 }

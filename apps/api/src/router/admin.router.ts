@@ -60,7 +60,8 @@ import { refundTransaction, forceRefundRedeemed, reconcileLostDispute, windDownV
 import { dealInput, dealFields } from './vendor.router';
 import { createVendor } from '../domain/vendorSignup';
 import { startVendorOnboarding } from '../domain/vendorStripe';
-import { getTrendingConfig, setTrendingConfig, getDisputeRiskConfig, setDisputeRiskConfig } from '../domain/platformSettings';
+import { getTrendingConfig, setTrendingConfig, getDisputeRiskConfig, setDisputeRiskConfig, getVoucherValidityDays, setVoucherValidityDays } from '../domain/platformSettings';
+import { reissueClaim } from '../domain/claims';
 import {
   listNotificationTypes,
   updateNotificationType,
@@ -225,6 +226,28 @@ export const adminRouter = router({
       await assertOwner(ctx);
       return setDisputeRiskConfig(ctx.sql, input);
     }),
+
+  /** How many days a freshly issued voucher stays redeemable (platform default). */
+  getVoucherValidityDays: adminProcedure.query(async ({ ctx }) => ({
+    days: await getVoucherValidityDays(ctx.sql),
+  })),
+
+  /** Set the voucher validity window. Applies to NEW vouchers only (GLO-29). */
+  setVoucherValidityDays: adminProcedure
+    .input(z.object({ days: z.number().int().min(1).max(365) }))
+    .mutation(async ({ ctx, input }) => ({
+      days: await setVoucherValidityDays(ctx.sql, input.days),
+    })),
+
+  /**
+   * Replace an expired voucher with a fresh active one — no new charge, no
+   * spots bump, audit-logged, customer notified (GLO-29).
+   */
+  reissueClaim: adminProcedure
+    .input(z.object({ claimId: z.string().uuid() }))
+    .mutation(({ ctx, input }) =>
+      reissueClaim(ctx.sql, { claimId: input.claimId, actorUserId: ctx.auth.userId }),
+    ),
 
   /** Notification registry: every push type with its enabled/delay/copy. */
   listNotificationTypes: adminProcedure.query(({ ctx }) => listNotificationTypes(ctx.sql)),
@@ -1047,7 +1070,8 @@ export const adminRouter = router({
         redemptionLng: z.number().nullable().optional(),
         expiresAt: z.string(),
         perCustomerLimit: z.number().int().min(1).max(10).default(1),
-        codeValidityDays: z.number().int().min(1).max(90).default(7),
+        // Null/omitted = use the platform-wide voucher_validity_days setting (GLO-29).
+        codeValidityDays: z.number().int().min(1).max(365).nullable().optional(),
         photoUrls: z.array(z.string().url()).max(8).default([]),
         videos: z
           .array(
@@ -1097,7 +1121,7 @@ export const adminRouter = router({
         redemptionLng: input.redemptionLng ?? null,
         expiresAt: input.expiresAt,
         perCustomerLimit: input.perCustomerLimit,
-        codeValidityDays: input.codeValidityDays,
+        codeValidityDays: input.codeValidityDays ?? null,
         photoUrls: input.photoUrls,
         videos: input.videos,
         variants: input.variants,

@@ -340,7 +340,9 @@ transactions:    pending_payment → paid → released  →  refunded  or  parti
                                        ↘ disputed (charge.dispute.created) → paid (won) | stays disputed (lost)
 
 claims:          active → redeemed   →  (transfer fires)
-                       ↘ expired   (cron, past expires_at)
+                       ↘ expired   (cron, past expires_at) → admin reissue spawns a NEW
+                                     active claim (fresh codes + expiry, linked via
+                                     reissued_from_claim_id; no new charge, no spots bump)
                        ↘ cancelled (refund pre-redemption)
                        ↘ frozen    (dispute opened) → active (dispute won)
 
@@ -386,7 +388,7 @@ All tables in Supabase Postgres. PostGIS extension on. RLS enabled (auth at DB l
 | `deal_variants` | Per-deal options | deal_id, label, unit_count, unit_label, original_price_cents, deal_price_cents, spots_total, spots_claimed |
 | `deal_photos` | Deal imagery | deal_id, url, display_order |
 | `deal_videos` | Deal video | deal_id, url, thumbnail_url, caption, duration_seconds |
-| `claims` | Vouchers | id, user_id, deal_id, variant_id, vendor_id, status (active/redeemed/expired/cancelled/frozen), qr_payload, human_code, expires_at, redeemed_at, snapshot (frozen metadata JSON) |
+| `claims` | Vouchers | id, user_id, deal_id, variant_id, vendor_id, status (active/redeemed/expired/cancelled/frozen), qr_payload, human_code, expires_at, redeemed_at, snapshot (frozen metadata JSON), reissued_from_claim_id (set on admin-reissued replacements; unique partial index = one reissue per voucher) |
 | `transactions` | Money records | id, vendor_id, user_id, consumer_paid_cents, vendor_payout_cents, platform_fee_cents, status, stripe_payment_intent_id, stripe_charge_id, stripe_transfer_id, platform_fee_snapshot (JSON), refunded_cents, stripe_dispute_id, dispute_status, dispute_reason, disputed_at, dispute_resolved_at |
 | `payouts` | Stripe payouts mirror | id, vendor_id, stripe_payout_id, amount_cents, status, arrival_estimate_at, arrived_at, failure_message |
 | `platform_fees` | Fee tiers (admin-editable) | label, min_cents, max_cents, percent_bps, flat_cents, min_fee_cents, vendor_id (null=global, set=override), active |
@@ -1062,6 +1064,10 @@ Admin sets 8% override (vs. global 20%). Subsequent bookings use 8%. Historical 
 ### Scenario 6 — Voucher expiry
 
 Voucher unredeemed past `expires_at`. Cron flips to `expired`. No transfer fires. Money stays on Gloē balance.
+
+**How long a voucher lives (GLO-29):** the window is the admin-set `voucher_validity_days` in `platform_settings` (god mode → Settings → Voucher validity window; default 90). A deal *may* carry a per-deal `code_validity_days` override — the column is nullable, blank in the posting form = platform default. Changing the setting affects **new** vouchers only; already-issued vouchers keep their stored `expires_at`.
+
+**Reissue an expired voucher (GLO-29):** in god mode's transaction drawer, an expired-and-not-yet-replaced voucher shows **Reissue voucher** (`admin.reissueClaim` → `reissueClaim` in `claims.ts`). It inserts a NEW claim — same user/deal/variant/transaction + frozen snapshot, fresh `qr_payload` + `human_code`, fresh `expires_at` from the current window — linked to the dead one via `reissued_from_claim_id` (unique partial index = one reissue per voucher, even with racing admins). No new charge, no `spots_claimed` bump. Audit row `claim.reissued`; customer gets the `voucher_reissued` push via the notification registry.
 
 ### Scenarios 7a–7f — Refunds
 

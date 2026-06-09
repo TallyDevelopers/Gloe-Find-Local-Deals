@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import type postgres from 'postgres';
 
 import type { Sql } from '../db/client';
+import { getVoucherValidityDays } from './platformSettings';
 
 export type ClaimStatus = 'active' | 'redeemed' | 'expired' | 'cancelled' | 'frozen';
 
@@ -82,7 +83,7 @@ export async function createClaim(sql: Sql, input: CreateClaimInput): Promise<Cl
     deal_price_cents: number;
     spots_total: number | null;
     spots_claimed: number;
-    code_validity_days: number;
+    code_validity_days: number | null;
     deal_expires_at: string;
   }[]>`
     SELECT
@@ -125,6 +126,9 @@ export async function createClaim(sql: Sql, input: CreateClaimInput): Promise<Cl
   const qrPayload = `gloe:claim:${randomBytes(16).toString('hex')}`;
   const humanCode = generateHumanCode();
 
+  // Per-deal override wins; otherwise the admin-set platform window (GLO-29).
+  const validityDays = info.code_validity_days ?? (await getVoucherValidityDays(sql));
+
   const inserted = await sql<{ id: string; created_at: string; expires_at: string }[]>`
     INSERT INTO public.claims (
       user_id, deal_id, variant_id, vendor_id,
@@ -133,7 +137,7 @@ export async function createClaim(sql: Sql, input: CreateClaimInput): Promise<Cl
     ) VALUES (
       ${userId}, ${dealId}, ${variantId}, ${info.vendor_id},
       ${sql.json(snapshot as unknown as postgres.JSONValue)}, ${qrPayload}, ${humanCode},
-      now() + (${info.code_validity_days}::text || ' days')::interval
+      now() + (${validityDays}::text || ' days')::interval
     )
     RETURNING id, created_at, expires_at
   `;
@@ -506,6 +510,110 @@ export async function redeemClaimByVendor(
       releaseError: e instanceof Error ? e.message : 'unknown release error',
     };
   }
+}
+
+/**
+ * Admin-only: replace an expired voucher with a fresh, active one (GLO-29).
+ *
+ * The dead claim stays in place for the audit trail; the customer gets a NEW
+ * claim row (new qr_payload + human_code, fresh expires_at from the platform
+ * window / per-deal override) linked back via reissued_from_claim_id. The
+ * partial unique index on that column makes double-reissue impossible even if
+ * two admins race. No payment is taken and spots_claimed is NOT bumped — this
+ * replaces an already-paid voucher, it is not a new sale.
+ */
+export async function reissueClaim(
+  sql: Sql,
+  args: { claimId: string; actorUserId: string },
+): Promise<{ newClaimId: string; humanCode: string; expiresAt: string }> {
+  const { claimId, actorUserId } = args;
+
+  const result = await sql.begin(async (tx) => {
+    const rows = await tx<{
+      id: string;
+      user_id: string;
+      deal_id: string;
+      variant_id: string;
+      vendor_id: string;
+      transaction_id: string | null;
+      snapshot: ClaimSnapshot;
+      status: ClaimStatus;
+      expires_at: string;
+      code_validity_days: number | null;
+    }[]>`
+      SELECT c.id, c.user_id, c.deal_id, c.variant_id, c.vendor_id, c.transaction_id,
+             c.snapshot, c.status, c.expires_at, d.code_validity_days
+      FROM public.claims c
+      JOIN public.deals d ON d.id = c.deal_id
+      WHERE c.id = ${claimId}
+      FOR UPDATE OF c
+    `;
+    const old = rows[0];
+    if (!old) throw new Error('Voucher not found.');
+
+    const isExpired = old.status === 'expired'
+      || (old.status === 'active' && new Date(old.expires_at) < new Date());
+    if (!isExpired) {
+      throw new Error(`Only expired vouchers can be reissued (this one is ${old.status}).`);
+    }
+
+    // Lazy-stamp: an 'active' row past its expires_at is expired in every code
+    // path that matters; make the status say so before superseding it.
+    if (old.status === 'active') {
+      await tx`UPDATE public.claims SET status = 'expired' WHERE id = ${old.id}`;
+    }
+
+    const validityDays = old.code_validity_days ?? (await getVoucherValidityDays(tx));
+    const qrPayload = `gloe:claim:${randomBytes(16).toString('hex')}`;
+    const humanCode = generateHumanCode();
+
+    // The unique partial index on reissued_from_claim_id throws here if this
+    // voucher was already reissued — surfaced as a clean error below.
+    const inserted = await tx<{ id: string; expires_at: string }[]>`
+      INSERT INTO public.claims (
+        user_id, deal_id, variant_id, vendor_id, transaction_id,
+        snapshot, qr_payload, human_code, status, expires_at, reissued_from_claim_id
+      ) VALUES (
+        ${old.user_id}, ${old.deal_id}, ${old.variant_id}, ${old.vendor_id}, ${old.transaction_id},
+        ${tx.json(old.snapshot as unknown as postgres.JSONValue)}, ${qrPayload}, ${humanCode},
+        'active', now() + (${validityDays}::text || ' days')::interval, ${old.id}
+      )
+      RETURNING id, expires_at
+    `;
+    const fresh = inserted[0];
+    if (!fresh) throw new Error('Failed to reissue voucher');
+    return { old, newClaimId: fresh.id, humanCode, expiresAt: fresh.expires_at };
+  }).catch((e: unknown) => {
+    if (e instanceof Error && e.message.includes('claims_reissued_from_unique')) {
+      throw new Error('This voucher was already reissued.');
+    }
+    throw e;
+  });
+
+  const { writeAudit } = await import('./audit');
+  void writeAudit(sql, {
+    action: 'claim.reissued',
+    actorUserId,
+    vendorId: result.old.vendor_id,
+    claimId: result.newClaimId,
+    transactionId: result.old.transaction_id,
+    meta: { reissuedFromClaimId: result.old.id, expiresAt: result.expiresAt },
+  });
+
+  // Best-effort push through the registry; never blocks the admin action.
+  void (async () => {
+    const { sendNotification } = await import('./notifications');
+    await sendNotification(sql, 'voucher_reissued', result.old.user_id, {
+      vars: {
+        dealTitle: result.old.snapshot.dealTitle,
+        vendorName: result.old.snapshot.vendorName,
+      },
+      data: { type: 'voucher_reissued', claimId: result.newClaimId },
+      dedupKey: `voucher_reissued:${result.old.id}`,
+    });
+  })();
+
+  return { newClaimId: result.newClaimId, humanCode: result.humanCode, expiresAt: result.expiresAt };
 }
 
 // NOTE: a consumer-facing `devMarkRedeemed` used to live here and was wired to

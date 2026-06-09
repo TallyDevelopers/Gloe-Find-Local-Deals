@@ -397,8 +397,9 @@ export async function getAdminTransactionDetail(sql: Sql, transactionId: string)
     expires_at: string;
     human_code: string;
     snapshot: Record<string, unknown>;
+    reissued_from_claim_id: string | null;
   }[]>`
-    SELECT id, status, redeemed_at, expires_at, human_code, snapshot
+    SELECT id, status, redeemed_at, expires_at, human_code, snapshot, reissued_from_claim_id
     FROM public.claims
     WHERE transaction_id = ${transactionId}
     ORDER BY created_at ASC
@@ -452,6 +453,7 @@ export async function getAdminTransactionDetail(sql: Sql, transactionId: string)
       expiresAt: c.expires_at,
       humanCode: c.human_code,
       snapshot: c.snapshot,
+      reissuedFromClaimId: c.reissued_from_claim_id,
     })),
     audit: audit.map((a) => ({
       id: a.id,

@@ -53,7 +53,8 @@ export function PostDealForm({ mode }: { mode: PostDealMode }) {
   const [startsAt, setStartsAt] = useState(''); // datetime-local; empty = start now
   const [expiresAt, setExpiresAt] = useState(''); // datetime-local; required
   const [perCustomerLimit, setPerCustomerLimit] = useState(1);
-  const [codeValidityDays, setCodeValidityDays] = useState(7);
+  // Blank = platform default (admin-set voucher window); a number overrides it.
+  const [codeValidityDays, setCodeValidityDays] = useState('');
   const [variants, setVariants] = useState<VariantDraft[]>([
     { label: '', unitCount: '', originalPrice: '', dealPrice: '', spotsTotal: '' },
   ]);
@@ -93,7 +94,7 @@ export function PostDealForm({ mode }: { mode: PostDealMode }) {
     setStartsAt(toLocalInput(new Date(d.startsAt)));
     setExpiresAt(toLocalInput(new Date(d.expiresAt)));
     setPerCustomerLimit(d.perCustomerLimit);
-    setCodeValidityDays(d.codeValidityDays);
+    setCodeValidityDays(d.codeValidityDays != null ? String(d.codeValidityDays) : '');
     setEditStatus(d.status);
     setVariants(
       d.variants.map((v) => ({
@@ -243,7 +244,7 @@ export function PostDealForm({ mode }: { mode: PostDealMode }) {
       startsAt: startsAt ? new Date(startsAt).toISOString() : null,
       expiresAt: new Date(expiresAt).toISOString(),
       perCustomerLimit,
-      codeValidityDays,
+      codeValidityDays: codeValidityDays.trim() ? Number(codeValidityDays) : null,
       photoUrls,
       videos: videos.map((v) => ({
         videoUrl: v.videoUrl,
@@ -537,8 +538,8 @@ export function PostDealForm({ mode }: { mode: PostDealMode }) {
               <Field label="Per-customer limit">
                 <TextInput type="number" value={perCustomerLimit} onChange={(e) => setPerCustomerLimit(Number(e.target.value))} />
               </Field>
-              <Field label="Code valid (days)">
-                <TextInput type="number" value={codeValidityDays} onChange={(e) => setCodeValidityDays(Number(e.target.value))} />
+              <Field label="Code valid (days)" hint="Leave blank for the platform default">
+                <TextInput type="number" value={codeValidityDays} onChange={(e) => setCodeValidityDays(e.target.value)} placeholder="Default" />
               </Field>
             </div>
           </div>

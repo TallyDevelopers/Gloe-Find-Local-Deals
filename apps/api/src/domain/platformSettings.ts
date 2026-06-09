@@ -1,4 +1,4 @@
-import type { Sql } from '../db/client';
+import type { Sql, TxSql } from '../db/client';
 
 /**
  * Generic key/value platform settings. Currently powers the auto-"Trending"
@@ -34,6 +34,31 @@ export async function setTrendingConfig(sql: Sql, cfg: TrendingConfig): Promise<
     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
   `;
   return { minPurchases, windowDays };
+}
+
+/**
+ * How long a freshly issued voucher stays redeemable (GLO-29). This is the
+ * platform-wide default; a deal can still carry its own `code_validity_days`
+ * override (NULL on the deal = use this). Changing it affects NEW vouchers
+ * only — already-issued vouchers keep their stored expires_at.
+ */
+const VOUCHER_VALIDITY_DEFAULT_DAYS = 90;
+
+export async function getVoucherValidityDays(sql: Sql | TxSql): Promise<number> {
+  const rows = await sql<{ value: string }[]>`
+    SELECT value FROM public.platform_settings WHERE key = 'voucher_validity_days' LIMIT 1
+  `;
+  return Number(rows[0]?.value) || VOUCHER_VALIDITY_DEFAULT_DAYS;
+}
+
+export async function setVoucherValidityDays(sql: Sql, days: number): Promise<number> {
+  const clamped = Math.min(365, Math.max(1, Math.floor(days)));
+  await sql`
+    INSERT INTO public.platform_settings (key, value, updated_at)
+    VALUES ('voucher_validity_days', ${String(clamped)}, now())
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()
+  `;
+  return clamped;
 }
 
 /**

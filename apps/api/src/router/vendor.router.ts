@@ -100,7 +100,9 @@ export const dealInput = z.object({
   startsAt: z.string().nullable().optional(),
   expiresAt: z.string(),
   perCustomerLimit: z.number().int().min(1).max(10).default(1),
-  codeValidityDays: z.number().int().min(1).max(90).default(7),
+  // Per-deal voucher validity override. Null/omitted = use the platform-wide
+  // voucher_validity_days setting (admin-controlled, GLO-29).
+  codeValidityDays: z.number().int().min(1).max(365).nullable().optional(),
   photoUrls: z.array(z.string().url()).max(8).default([]),
   videos: z.array(videoInput).max(6).default([]),
   variants: z.array(variantInput).min(1, 'Add at least one option'),
@@ -128,7 +130,7 @@ export function dealFields(input: DealInput) {
     startsAt: input.startsAt ?? null,
     expiresAt: input.expiresAt,
     perCustomerLimit: input.perCustomerLimit,
-    codeValidityDays: input.codeValidityDays,
+    codeValidityDays: input.codeValidityDays ?? null,
     photoUrls: input.photoUrls,
     videos: input.videos,
     variants: input.variants,

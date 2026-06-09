@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 
 import type { Sql } from '../db/client';
 import { computeFee } from './fees';
+import { getVoucherValidityDays } from './platformSettings';
 import { createGiftCheckoutSession, createPaymentIntent } from './stripe';
 
 export interface CreatePurchaseResult {
@@ -428,7 +429,7 @@ export async function fulfillPurchase(
     const txn = txns[0];
     if (!txn || txn.status !== 'pending_payment') return; // unknown or already done
 
-    const dealRows = await tx<{ title: string; code_validity_days: number; photo_url: string | null }[]>`
+    const dealRows = await tx<{ title: string; code_validity_days: number | null; photo_url: string | null }[]>`
       SELECT title, code_validity_days,
              (SELECT dp.url FROM public.deal_photos dp
                 WHERE dp.deal_id = d.id
@@ -448,7 +449,8 @@ export async function fulfillPurchase(
     const vendor = vendorRows[0];
     if (!deal || !variant || !vendor) return;
 
-    const validityDays = deal.code_validity_days || 60;
+    // Per-deal override wins; otherwise the admin-set platform window (GLO-29).
+    const validityDays = deal.code_validity_days ?? (await getVoucherValidityDays(tx));
     // Snapshot shape must match @gloe/mobile features/claimed/types.ts. Adding
     // fields here without updating the mobile type will silently render NaN/undefined.
     const snapshot = {

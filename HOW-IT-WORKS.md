@@ -494,7 +494,22 @@ Expiry is enforced **lazily, at read time** — every query that lists deals/vou
 as* expired the moment you look at it; there's no scheduled task that has to run. (One function does
 hard-flip deals to "expired" status, but it's only reachable on demand, not on a timer.)
 
-*Deeper: `GLOE.md` §6 "Voucher screen". Code: `my-deal/[id].tsx`, `claims.ts`, `vendor.router.ts` (`redeemVoucher`).*
+**How long is a voucher good for?** That's a dial you control, not code: god mode → Settings →
+**Voucher validity window** (default 90 days). Every voucher sold from that moment on expires that
+many days after purchase — no deploy needed. A specific deal can still set its own override in the
+posting form ("Code valid (days)" — leave blank for the platform default). Already-sold vouchers
+keep the expiry they were sold with; changing the dial never moves a live voucher's date.
+
+**And if one does expire on a customer?** You can **reissue it**: open the transaction in god mode
+(Transactions → the order) and hit **Reissue voucher** on the dead one. The customer instantly gets a
+fresh, active voucher — new QR + code, fresh expiry from the current window — for the **same already-paid
+purchase** (no new charge, no spot re-counted), and a push tells them it's in their wallet. The dead
+voucher stays in place, marked as replaced, so the paper trail is intact; each voucher can only be
+reissued once, even if two admins click at the same time.
+
+*Deeper: `GLOE.md` §6 "Voucher screen" + §"Scenario 6". Code: `my-deal/[id].tsx`, `claims.ts`
+(`reissueClaim`), `platformSettings.ts` (`getVoucherValidityDays`), `vendor.router.ts` (`redeemVoucher`),
+`SettingsView.tsx`, `TransactionsView.tsx`.*
 
 ### Redeeming — what happens when staff scan it
 

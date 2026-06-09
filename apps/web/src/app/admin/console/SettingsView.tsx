@@ -19,6 +19,7 @@ export function SettingsView() {
         </p>
       </div>
       <DealReviewQueue />
+      <VoucherValiditySettings />
       <TrendingSettings />
       <DisputeRiskSettings />
       <NotificationsSettings />
@@ -189,7 +190,7 @@ function DealReviewDrawer({
 
             <Block label="Terms">
               <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-                Expires {new Date(d.expiresAt).toLocaleDateString()} · {d.perCustomerLimit} per customer · code valid {d.codeValidityDays} days
+                Expires {new Date(d.expiresAt).toLocaleDateString()} · {d.perCustomerLimit} per customer · code valid {d.codeValidityDays != null ? `${d.codeValidityDays} days (deal override)` : 'platform default'}
                 {d.redemptionAddress ? <> · redeem at {d.redemptionAddress}</> : null}
               </div>
             </Block>
@@ -232,6 +233,54 @@ function Block({ label, children }: { label: string; children: React.ReactNode }
       <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-tertiary)', marginBottom: 6 }}>{label}</div>
       {children}
     </div>
+  );
+}
+
+/**
+ * Platform-wide voucher validity window (GLO-29). Every voucher issued from
+ * now on expires this many days after purchase — no deploy needed to change
+ * it. A deal can still carry its own override; already-issued vouchers keep
+ * the expiry they were sold with.
+ */
+function VoucherValiditySettings() {
+  const utils = trpc.useUtils();
+  const q = trpc.admin.getVoucherValidityDays.useQuery();
+  const save = trpc.admin.setVoucherValidityDays.useMutation({
+    onSuccess: () => { void utils.admin.getVoucherValidityDays.invalidate(); },
+  });
+  const [days, setDays] = useState('');
+  const [saved, setSaved] = useState(false);
+
+  // Prefill once the config lands (only if the user hasn't typed yet).
+  if (q.data && days === '') {
+    setDays(String(q.data.days));
+  }
+
+  const submit = async () => {
+    await save.mutateAsync({ days: Math.min(365, Math.max(1, parseInt(days, 10) || 90)) });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1800);
+  };
+
+  return (
+    <Card>
+      <h2 style={{ fontSize: 18, marginBottom: 4 }}>Voucher validity window</h2>
+      <p style={{ color: 'var(--text-tertiary)', fontSize: 13, marginBottom: 14, maxWidth: 560 }}>
+        How long a voucher stays redeemable after purchase. Applies to <strong>new</strong> vouchers
+        the moment you save — already-issued vouchers keep the expiry they were sold with. A deal
+        can still set its own override in the posting form.
+      </p>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, flexWrap: 'wrap' }}>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-tertiary)' }}>Valid for (days)</span>
+          <input type="number" min={1} max={365} value={days} onChange={(e) => setDays(e.target.value)} style={settingInput} />
+        </label>
+        <button type="button" onClick={submit} disabled={save.isPending} style={linkBtn}>
+          {save.isPending ? 'Saving…' : 'Save'}
+        </button>
+        {saved ? <span style={{ fontSize: 13, color: 'var(--success)', fontWeight: 600, paddingBottom: 9 }}>Saved ✓</span> : null}
+      </div>
+    </Card>
   );
 }
 
