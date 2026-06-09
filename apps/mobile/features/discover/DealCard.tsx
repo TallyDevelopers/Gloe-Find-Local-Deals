@@ -96,6 +96,10 @@ export function DealCard({ deal, onSave, isSaved = false, width, imageAspectRati
             strokeWidth={2.25}
           />
         </Pressable>
+        {/* One top-left badge, not two callouts. Sponsored deals show
+            "Sponsored" here (the strikethrough price still shows the discount);
+            everyone else shows the "% off" — so the card never stacks a
+            discount badge AND a separate Sponsored pill. */}
         <View
           style={{
             position: 'absolute',
@@ -108,7 +112,7 @@ export function DealCard({ deal, onSave, isSaved = false, width, imageAspectRati
           }}
         >
           <Text variant="caption" tone="inverse" weight="semibold">
-            {discountPct}% off
+            {deal.isSponsored ? 'Sponsored' : `${discountPct}% off`}
           </Text>
         </View>
         {deal.isTrending ? <TrendingRibbon bottom={8} /> : null}
@@ -122,23 +126,10 @@ export function DealCard({ deal, onSave, isSaved = false, width, imageAspectRati
           <Text variant="body-md" tone="primary" weight="semibold" numberOfLines={1}>
             {deal.title}
           </Text>
-          {deal.isSponsored ? (
-            <View
-              style={{
-                alignSelf: 'flex-start',
-                paddingHorizontal: space[2],
-                paddingVertical: 2,
-                borderRadius: radius.sm,
-                backgroundColor: palette.brand[100],
-                marginTop: 2,
-                marginBottom: 2,
-              }}
-            >
-              <Text variant="caption" weight="medium" style={{ color: palette.brand[700] }}>
-                Sponsored
-              </Text>
-            </View>
-          ) : null}
+          {/* Sponsored is shown by the top-left image badge now — no separate
+              in-text pill, which freed a whole row and removed the double
+              callout (the card was showing the discount + Sponsored + price
+              strikethrough all at once). */}
           <Stack direction="row" gap={1} align="baseline">
             <Text variant="body-md" tone="primary" weight="semibold">
               {formatPrice(variant.dealPriceCents)}

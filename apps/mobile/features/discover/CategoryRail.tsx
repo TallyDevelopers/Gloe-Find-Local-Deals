@@ -6,6 +6,11 @@ import { Icon } from '../icon/Icon';
 import { DealCard } from './DealCard';
 
 const CARD_WIDTH = Math.round(Dimensions.get('window').width * 0.56);
+// Discover row headings — Browse + editorial section rails. The display token
+// (24px) read as oversized/"deformed" on phones; ResortPass (our north star)
+// uses 18px/500 for its feed-row headings, so we match that. Shared with
+// BrowseByCategory so both rows' headings stay identical.
+export const DISCOVER_HEADING_SIZE = 18;
 // Rail cards use a 4:3 image (not a full square) so they're shorter — a browse
 // rail should show more at a glance, not one billboard per item.
 const RAIL_IMAGE_RATIO = 4 / 3;
@@ -39,7 +44,7 @@ export function CategoryRail({ label, deals, savedIds, onSave, onSeeAll }: Categ
           via the end-of-row "See all" tile (Netflix/ResortPass pattern), so the
           tired top-right "See all →" link is gone. The label stays tappable. */}
       <Pressable onPress={onSeeAll} style={{ paddingHorizontal: space[5] }} hitSlop={6}>
-        <Text variant="display-sm" tone="primary" weight="medium">
+        <Text variant="display-sm" tone="primary" weight="medium" style={{ fontSize: DISCOVER_HEADING_SIZE, lineHeight: DISCOVER_HEADING_SIZE * 1.15 }}>
           {label}
         </Text>
       </Pressable>

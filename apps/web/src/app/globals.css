@@ -540,6 +540,15 @@ textarea {
   font-size: 17px;
   color: var(--text-primary);
 }
+/* Crossfade the cycling placeholder (see useCyclingPlaceholder). The word swaps
+   at the trough of the fade, so it reads as one fade-out → swap → fade-in. */
+input.placeholder-fading::placeholder {
+  opacity: 0;
+}
+input::placeholder {
+  opacity: 1;
+  transition: opacity 280ms ease;
+}
 .hero-search-btn {
   flex-shrink: 0;
   background: var(--brand-500);
@@ -615,12 +624,19 @@ textarea {
     padding: 10px 16px;
     font-size: 14px;
   }
-  /* Tighter section rhythm so more content shows per scroll. */
-  .section-head {
+  /* Tighter section rhythm so more content shows per scroll. ResortPass (our
+     north star) uses 18px feed-row headings on mobile; match it — and it reads
+     well for the sentence-length editorial taglines (GLO-27) too.
+     NOTE: must be scoped with `.consumer-shell` to beat the desktop
+     `.consumer-shell .section-head h2 { 32px }` rule (line ~145) on
+     specificity — a bare `.section-head h2` here loses to it and the heading
+     stays 32px on mobile. */
+  .consumer-shell .section-head {
     margin: 22px 0 10px;
   }
-  .section-head h2 {
-    font-size: 21px;
+  .consumer-shell .section-head h2 {
+    font-size: 18px;
+    line-height: 1.25;
   }
   .cat-card {
     aspect-ratio: 3 / 2;
@@ -1446,7 +1462,10 @@ textarea {
 .cat-card-label .name {
   font-family: var(--font-display);
   font-size: 21px;
-  font-weight: 500;
+  /* Match the section headings' weight (display 400) so titles and headings
+     read at the same emphasis — ResortPass keeps heading + card title the same
+     weight; the display font already carries the visual presence. */
+  font-weight: 400;
   line-height: 1.1;
 }
 .cat-card-label .count {
@@ -1589,7 +1608,7 @@ textarea {
 
 @media (max-width: 760px) {
   .cat-card-label .name {
-    font-size: 18px;
+    font-size: 16px;
   }
   /* Mobile = app vibes: drop the desktop marketing flourishes so the home
      reads like the native discover feed. These are desktop-only. */

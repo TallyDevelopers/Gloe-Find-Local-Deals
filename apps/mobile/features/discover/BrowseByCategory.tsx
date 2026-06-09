@@ -3,10 +3,14 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Dimensions, FlatList, Pressable, View } from 'react-native';
 
 import { CachedImage } from '../image/CachedImage';
+import { DISCOVER_HEADING_SIZE } from './CategoryRail';
 
 // Match the web `.cat-card--carousel`: 62vw, capped at 240px, 5:4 aspect ratio.
 const TILE_WIDTH = Math.min(Math.round(Dimensions.get('window').width * 0.62), 240);
 const TILE_HEIGHT = Math.round((TILE_WIDTH * 4) / 5);
+// Tile name overlay. ResortPass card titles are 16px/500 — the old 21px ran
+// oversized on the small 5:4 tile. Match the north star.
+const TILE_LABEL_SIZE = 16;
 
 export interface BrowseCategory {
   slug: string;
@@ -36,7 +40,7 @@ export function BrowseByCategory({ categories, onSelect }: Props) {
   return (
     <Stack gap={3}>
       <View style={{ paddingHorizontal: space[5] }}>
-        <Text variant="display-sm" tone="primary" weight="medium">
+        <Text variant="display-sm" tone="primary" weight="medium" style={{ fontSize: DISCOVER_HEADING_SIZE, lineHeight: DISCOVER_HEADING_SIZE * 1.15 }}>
           Browse by category
         </Text>
       </View>
@@ -80,7 +84,8 @@ export function BrowseByCategory({ categories, onSelect }: Props) {
                   <Text
                     variant="display-sm"
                     weight="medium"
-                    style={{ color: '#fff', fontSize: 21, lineHeight: 21 * 1.1 }}
+                    numberOfLines={2}
+                    style={{ color: '#fff', fontSize: TILE_LABEL_SIZE, lineHeight: TILE_LABEL_SIZE * 1.15 }}
                   >
                     {item.displayName}
                   </Text>
