@@ -120,17 +120,19 @@ export default function VendorDetailPage() {
               </div>
             </div>
 
-            {/* Money */}
-            <div className="admin-stat-grid">
-              <MoneyCard label="They've earned" value={money(data.vendor.vendorEarnedCents)} hero />
-              <MoneyCard label="Gross sales" value={money(data.vendor.grossCents)} />
-              <MoneyCard label="My income (net)" value={money(data.vendor.netIncomeCents)} />
+            {/* Money — reading order: what came in → what left → what we kept → what's at risk. */}
+            <div className="admin-stat-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+              <MoneyCard label="Gross sales" value={money(data.vendor.grossCents)} hero />
+              <MoneyCard label="Sent to vendor" value={money(data.vendor.vendorEarnedCents)} />
+              <MoneyCard label="Gloē net (approx)" value={money(data.vendor.netIncomeCents)} />
+              <MoneyCard label="Open disputes" value={String(data.vendor.disputeOpen)} />
             </div>
 
             {/* Two side-by-side card columns (flex, not grid, so card heights
                 don't couple across columns). Wraps to one column when narrow. */}
             <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
             <div style={{ flex: '1 1 480px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <SectionLabel>Financials</SectionLabel>
 
             <Card>
               <h2 style={{ fontSize: 19, marginBottom: 4 }}>P&amp;L breakdown</h2>
@@ -144,7 +146,7 @@ export default function VendorDetailPage() {
                 <PnlRow label="Stripe card fee (per-transaction)" value={`−${money(data.vendor.stripeFeeCents)}`} subtle />
                 <PnlRow label="Net to Gloe (approx)" value={money(data.vendor.netIncomeCents)} bold />
               </div>
-              <p style={{ color: 'var(--text-tertiary)', fontSize: 11, marginTop: 14, lineHeight: 1.5 }}>
+              <p style={{ color: 'var(--text-tertiary)', fontSize: 12, marginTop: 14, lineHeight: 1.5 }}>
                 ⚠ Excludes monthly Express account fees ($2 / active vendor), 0.25% payout fees,
                 instant-payout fees, refund flat fees, and chargebacks. For full accounting see
                 Stripe Dashboard → Billing. We&apos;ll reconcile end-to-end before launch.
@@ -184,6 +186,16 @@ export default function VendorDetailPage() {
                 </div>
               ) : null}
             </Card>
+
+            <ReleaseHistory releases={data.releases} />
+
+            <ReconciliationPanel vendorId={id} />
+
+            <FeeTiersEditor vendorId={id} />
+
+            </div>
+            <div style={{ flex: '1 1 480px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <SectionLabel>Risk &amp; controls</SectionLabel>
 
             {/* Disputes / chargebacks — the "should I slash this vendor?" card. */}
             <Card>
@@ -248,16 +260,9 @@ export default function VendorDetailPage() {
               heldPayouts={data.heldPayouts}
             />
 
-            <ReleaseHistory releases={data.releases} />
-
-            </div>
-            <div style={{ flex: '1 1 480px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
-
-            <FeeTiersEditor vendorId={id} />
-
-            <ReconciliationPanel vendorId={id} />
-
             <WindDownPanel vendorId={id} vendorName={data.vendor.businessName} />
+
+            <SectionLabel style={{ marginTop: 14 }}>Vendor content</SectionLabel>
 
             <GloeTakeEditor
               vendorId={id}
@@ -376,7 +381,7 @@ function ReleaseHistory({ releases }: { releases: Release[] }) {
                   <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{r.transactionDisplayId}</span>
                   {r.customerEmail ? <><span>·</span><span>{r.customerEmail}</span></> : null}
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
                   Stripe transfer:{' '}
                   <a
                     href={`https://dashboard.stripe.com/test/connect/transfers/${r.stripeTransferId}`}
@@ -534,7 +539,7 @@ function Tile({ label, value, hero }: { label: string; value: string; hero?: boo
   return (
     <div style={{ background: hero ? 'var(--brand-50)' : 'var(--surface-default)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: 12 }}>
       <div style={{ fontSize: hero ? 22 : 18, fontWeight: 700, fontFamily: 'var(--font-display)', color: hero ? 'var(--brand-600)' : 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
-      <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginTop: 2 }}>{label}</div>
+      <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>{label}</div>
     </div>
   );
 }
@@ -760,6 +765,15 @@ function PnlRow({ label, value, subtle, bold }: { label: string; value: string; 
   );
 }
 
+/** Uppercase group header that turns the card stack into named sections. */
+function SectionLabel({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
+  return (
+    <div style={{ fontSize: 13, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-tertiary)', margin: '2px 0 -8px', ...style }}>
+      {children}
+    </div>
+  );
+}
+
 function MoneyCard({ label, value, hero }: { label: string; value: string; hero?: boolean }) {
   return (
     <Card style={hero ? { background: 'var(--brand-50)', border: '1px solid var(--brand-100)' } : undefined}>
@@ -952,7 +966,7 @@ function Field({
   asLabel?: boolean;
 }) {
   const heading = (
-    <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-tertiary)' }}>{label}</span>
+    <span style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-tertiary)' }}>{label}</span>
   );
   const style = { display: 'flex', flexDirection: 'column', gap: 4 } as const;
   if (!asLabel) {
@@ -1021,7 +1035,7 @@ function GloeTakeEditor({
         style={{ ...modalInput, width: '100%', fontFamily: 'inherit', resize: 'vertical' }}
       />
       <div style={{ marginTop: 12 }}>
-        <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-tertiary)', marginBottom: 6 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-tertiary)', marginBottom: 6 }}>
           Perks ({perks.length}/6)
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
