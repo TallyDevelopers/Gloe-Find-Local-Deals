@@ -67,7 +67,7 @@ export default function VendorDetailPage() {
 
   return (
     <AdminChrome active="vendors">
-      <div style={{ maxWidth: 920, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <div style={{ maxWidth: 1360, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
         {!data ? (
           <p style={{ color: 'var(--text-tertiary)' }}>Loading…</p>
         ) : (
@@ -126,6 +126,11 @@ export default function VendorDetailPage() {
               <MoneyCard label="Gross sales" value={money(data.vendor.grossCents)} />
               <MoneyCard label="My income (net)" value={money(data.vendor.netIncomeCents)} />
             </div>
+
+            {/* Two side-by-side card columns (flex, not grid, so card heights
+                don't couple across columns). Wraps to one column when narrow. */}
+            <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+            <div style={{ flex: '1 1 480px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
 
             <Card>
               <h2 style={{ fontSize: 19, marginBottom: 4 }}>P&amp;L breakdown</h2>
@@ -245,6 +250,9 @@ export default function VendorDetailPage() {
 
             <ReleaseHistory releases={data.releases} />
 
+            </div>
+            <div style={{ flex: '1 1 480px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
+
             <FeeTiersEditor vendorId={id} />
 
             <ReconciliationPanel vendorId={id} />
@@ -302,6 +310,9 @@ export default function VendorDetailPage() {
                 </div>
               )}
             </Card>
+
+            </div>
+            </div>
 
             {editingDealId ? (
               <DealQuickEditModal
