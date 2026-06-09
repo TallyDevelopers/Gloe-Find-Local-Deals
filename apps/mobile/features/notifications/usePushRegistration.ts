@@ -2,8 +2,8 @@ import { trpc } from '@gloe/api-client';
 import { useAuth } from '@gloe/auth';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
-import { useRouter } from 'expo-router';
-import { useEffect, useRef } from 'react';
+import { useRootNavigationState, useRouter } from 'expo-router';
+import { useCallback, useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
 
 /**
@@ -25,34 +25,75 @@ import { Platform } from 'react-native';
 export function usePushRegistration() {
   const { status } = useAuth();
   const router = useRouter();
+  // `undefined` until the root navigator has mounted. On a COLD start (app
+  // launched by tapping a push), our handler used to fire before the navigator
+  // existed AND before app/index.tsx's `<Redirect href="/discover">` ran — so
+  // the deep-link nav was swallowed/overwritten by the redirect and the user
+  // landed on Discover, not the chat. We hold any pending deep link until nav
+  // is ready, then flush it (so it stacks on top of Discover with a back
+  // button). Warm taps already have nav mounted, but route through the same
+  // gate for consistency.
+  const navState = useRootNavigationState();
+  const navReady = !!navState?.key;
   const register = trpc.devices.register.useMutation();
   const lastRegisteredToken = useRef<string | null>(null);
+  // A deep-link target captured before nav was ready, awaiting flush.
+  const pendingDeepLink = useRef<string | null>(null);
+  // Guard so a given cold-start response is only ever consumed once.
+  const handledColdStart = useRef(false);
 
-  // Notification-tap deep links. APNs payload `data` is spread FLAT alongside
-  // `aps`, so we read data.type / data.ticketId at the top level. Mounted once;
-  // handles both a tap while running and the cold-start tap (getLastResponse).
-  useEffect(() => {
-    function handle(data: Record<string, unknown> | undefined) {
-      if (!data) return;
-      if (data.type === 'support_reply' && typeof data.ticketId === 'string') {
-        router.push(`/(app)/support/${data.ticketId}`);
-      }
-      // Post-redemption review nudge (only sent when admin enables the push).
-      // Land on the voucher and auto-open the review sheet via ?review=1.
-      if (data.type === 'review_prompt' && typeof data.claimId === 'string') {
-        router.push(`/(app)/my-deal/${data.claimId}?review=1`);
-      }
+  // Map a tapped notification's data payload → an in-app route. APNs payload
+  // `data` is spread FLAT alongside `aps`, so we read data.type/ticketId at the
+  // top level. Returns null when the push isn't a deep-linkable type.
+  const routeFor = useCallback((data: Record<string, unknown> | undefined): string | null => {
+    if (!data) return null;
+    if (data.type === 'support_reply' && typeof data.ticketId === 'string') {
+      return `/(app)/support/${data.ticketId}`;
     }
-    // Cold start: app launched by tapping a notification.
-    Notifications.getLastNotificationResponseAsync().then((response) => {
-      handle(response?.notification.request.content.data as Record<string, unknown> | undefined);
-    });
-    // Warm: tapped while the app was backgrounded/foregrounded.
+    // Post-redemption review nudge (only sent when admin enables the push).
+    // Land on the voucher and auto-open the review sheet via ?review=1.
+    if (data.type === 'review_prompt' && typeof data.claimId === 'string') {
+      return `/(app)/my-deal/${data.claimId}?review=1`;
+    }
+    // "Your friend booked the gift you paid for" — open the deal they booked.
+    if (data.type === 'gift_booked' && typeof data.dealId === 'string') {
+      return `/(app)/deal/${data.dealId}`;
+    }
+    return null;
+  }, []);
+
+  // Either navigate now (nav ready) or stash for the flush effect below.
+  const goOrQueue = useCallback(
+    (route: string | null) => {
+      if (!route) return;
+      if (navReady) router.push(route as never);
+      else pendingDeepLink.current = route;
+    },
+    [navReady, router],
+  );
+
+  // Subscribe to taps + read the cold-start response ONCE. Re-runs when nav
+  // becomes ready so a deep link captured pre-ready gets flushed.
+  useEffect(() => {
+    // Cold start: app launched by tapping a notification. Consume it once.
+    if (!handledColdStart.current) {
+      handledColdStart.current = true;
+      Notifications.getLastNotificationResponseAsync().then((response) => {
+        goOrQueue(routeFor(response?.notification.request.content.data as Record<string, unknown> | undefined));
+      });
+    }
+    // Flush a deep link captured before nav was ready.
+    if (navReady && pendingDeepLink.current) {
+      const route = pendingDeepLink.current;
+      pendingDeepLink.current = null;
+      router.push(route as never);
+    }
+    // Warm: tapped while the app was backgrounded/foregrounded (nav is mounted).
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-      handle(response.notification.request.content.data as Record<string, unknown> | undefined);
+      goOrQueue(routeFor(response.notification.request.content.data as Record<string, unknown> | undefined));
     });
     return () => sub.remove();
-  }, [router]);
+  }, [navReady, router, routeFor, goOrQueue]);
 
   useEffect(() => {
     if (status !== 'signed-in') return;
