@@ -260,8 +260,6 @@ export default function VendorDetailPage() {
               heldPayouts={data.heldPayouts}
             />
 
-            <WindDownPanel vendorId={id} vendorName={data.vendor.businessName} />
-
             <SectionLabel style={{ marginTop: 14 }}>Vendor content</SectionLabel>
 
             <GloeTakeEditor
@@ -315,6 +313,10 @@ export default function VendorDetailPage() {
                 </div>
               )}
             </Card>
+
+            {/* Danger zone — the irreversible action lives at the very bottom, never mid-page. */}
+            <SectionLabel style={{ marginTop: 14 }}>Danger zone</SectionLabel>
+            <WindDownPanel vendorId={id} vendorName={data.vendor.businessName} />
 
             </div>
             </div>
