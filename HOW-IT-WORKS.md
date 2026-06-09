@@ -879,22 +879,21 @@ machinery.
 An honest inventory of gaps the audit surfaced — things a user might reasonably expect that aren't
 built. Each is either tracked in Linear or worth a ticket.
 
-### Emails
-- ✅ **Backend transactional email is live (Resend).** A `sendEmail()` door + React Email templates;
-  sending domain `mail.gloe.app` verified. → **GLO-37** (foundation), continuing under **GLO-17**.
-- ✅ **Purchase receipt ships.** Pay → voucher mints → a branded receipt (deal photo, voucher code,
-  how-to-redeem with a Wallet link) hits your inbox, fired on fulfillment. → **GLO-11**.
+### Recently graduated off this list ✅
+Gaps this doc surfaced that have since shipped (kept for the record, details in their sections):
+- **Transactional email** — Resend foundation + receipt (GLO-37/GLO-11), refund confirmation (GLO-38),
+  voucher-expiring reminder (GLO-39), and the welcome email (GLO-28). See §7 "What lands in your inbox."
   *(Resend is in testing mode until launch — delivers only to verified addresses for now.)*
-- ✅ **Refund confirmation** (GLO-38) and ✅ **voucher-expiring reminder** (GLO-39) now ship too.
-- ✅ **Welcome email ships** (GLO-28, the gap this doc surfaced) — once on first signup, static by
-  design, single CTA to the location-aware discover page.
-- **Still missing:** payout-notification and gift-confirmation emails. → **GLO-17**.
+- **Stripe dispute/chargeback handling** (GLO-34) — `charge.dispute.*` freezes unredeemed vouchers, halts
+  the payout, flags already-redeemed orders, reconciles a lost dispute. See §8.
+- **Post-redemption review prompt** (GLO-8) — verified-booking Gloē reviews now collect. See §6.
+
+### Emails
+- **Payout-notification and gift-confirmation emails.** → **GLO-17**.
 - **The waitlist promises a notification it can't send.** The "we'll reach out when Gloē lands near you"
   copy has no delivery mechanism behind it.
 
 ### Money safety
-- ✅ **Stripe dispute/chargeback handling** — `charge.dispute.*` now freezes unredeemed vouchers, halts the
-  payout, flags already-redeemed orders, and reconciles a lost dispute. Shipped (GLO-34); see §8.
 - **No cleanup of abandoned "pending payment" rows** — canceled checkouts leave harmless orphan records.
 - **A brief oversell window** — two buyers can both pass the "spots left" check before either pays
   (inventory only decrements at payment).
