@@ -650,6 +650,10 @@ The hard part (proportional transfer reversal) was reused from the refund work; 
 webhook listener, the freeze, the `disputed` payout wall, and the reconcile action. Every step writes an
 audit row (`dispute.opened` / `dispute.won` / `dispute.lost` / `dispute.reconciled`).
 
+Repeat offenders surface themselves: vendors over your admin-set dispute threshold get a red ⚠ on the
+god-mode Vendors list, and a **"⚠ Flagged" filter chip** shows only those vendors — your one-tap
+watch-list (GLO-36).
+
 > Ops note: this only works if `charge.dispute.created`, `.updated`, and `.closed` are enabled on the
 > Stripe webhook endpoint. Confirm them in the Stripe dashboard before launch.
 

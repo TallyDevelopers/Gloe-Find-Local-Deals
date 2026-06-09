@@ -32,7 +32,7 @@ export function VendorsView() {
 
   const [search, setSearch] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('gross');
-  const [filter, setFilter] = useState<'all' | 'unclaimed' | 'no_stripe' | 'active'>('all');
+  const [filter, setFilter] = useState<'all' | 'unclaimed' | 'no_stripe' | 'active' | 'flagged'>('all');
 
   const rows = useMemo(() => {
     let r = q.data ?? [];
@@ -43,6 +43,7 @@ export function VendorsView() {
     if (filter === 'unclaimed') r = r.filter((v) => !v.hasOwner);
     if (filter === 'no_stripe') r = r.filter((v) => v.stripeStatus !== 'active');
     if (filter === 'active')    r = r.filter((v) => v.stripeStatus === 'active');
+    if (filter === 'flagged')   r = r.filter((v) => v.isHighDisputeRisk);
     const sorted = [...r].sort((a, b) => {
       switch (sortKey) {
         case 'name':      return a.businessName.localeCompare(b.businessName);
@@ -74,9 +75,9 @@ export function VendorsView() {
           style={searchInput}
         />
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {(['all', 'active', 'no_stripe', 'unclaimed'] as const).map((k) => (
+          {(['all', 'active', 'no_stripe', 'unclaimed', 'flagged'] as const).map((k) => (
             <Chip key={k} on={filter === k} onClick={() => setFilter(k)}>
-              {k === 'all' ? 'All' : k === 'active' ? 'Stripe active' : k === 'no_stripe' ? 'No Stripe' : 'Unclaimed'}
+              {k === 'all' ? 'All' : k === 'active' ? 'Stripe active' : k === 'no_stripe' ? 'No Stripe' : k === 'unclaimed' ? 'Unclaimed' : '⚠ Flagged'}
             </Chip>
           ))}
         </div>
