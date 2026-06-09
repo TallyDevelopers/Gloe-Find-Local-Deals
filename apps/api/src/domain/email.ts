@@ -34,6 +34,8 @@ export function isEmailConfigured(): boolean {
 export interface SendEmailArgs {
   to: string;
   subject: string;
+  /** Override sender, e.g. a personal founder address. Must be on the verified mail.gloe.app domain. */
+  from?: string;
   /** Rendered HTML (from a React Email template via render()). */
   html: string;
   /** Plain-text fallback — improves deliverability; auto-derived if omitted. */
@@ -55,7 +57,7 @@ export async function sendEmail(args: SendEmailArgs): Promise<{ sent: boolean; i
   try {
     const { data, error } = await resend.emails.send(
       {
-        from: FROM,
+        from: args.from ?? FROM,
         to: args.to,
         replyTo: REPLY_TO,
         subject: args.subject,

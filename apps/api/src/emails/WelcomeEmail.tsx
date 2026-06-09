@@ -1,7 +1,5 @@
-import { Button, Hr, Section, Text } from '@react-email/components';
+import { Body, Head, Html, Link, Preview, Text } from '@react-email/components';
 import * as React from 'react';
-
-import { BaseLayout } from './BaseLayout';
 
 export interface WelcomeData {
   firstName: string | null;
@@ -10,42 +8,48 @@ export interface WelcomeData {
 }
 
 /**
- * One-time welcome email on first signup (GLO-28). Fully static by design —
- * no listings, no prices; all freshness lives behind the CTA, which the
- * discover page self-adjusts by location. Premium/curated tone (locked spec):
- * the word "deals" never appears in headline or CTA.
+ * One-time welcome email on first signup (GLO-28). Deliberately a plain
+ * personal founder note — NO branded shell, button, or card layout. Those are
+ * exactly the signals Gmail's classifier uses to file mail under Promotions;
+ * a plain-text-shaped note from a person lands in Primary. Don't "improve"
+ * this with BaseLayout or a styled CTA — that's the whole point.
+ *
+ * Still static (no listings/prices) and premium-toned per the locked spec;
+ * the word "deals" never appears.
  */
 export function WelcomeEmail(d: WelcomeData) {
-  const h1Text = d.firstName ? `Welcome to Gloē, ${d.firstName}.` : 'Welcome to Gloē.';
+  const hi = d.firstName ? `Hi ${d.firstName},` : 'Hi,';
   return (
-    <BaseLayout preview="Your city's best aesthetic treatments, all in one place.">
-      <Text style={h1}>{h1Text}</Text>
-      <Text style={p}>
-        Your city&apos;s best aesthetic treatments, all in one place. We bring the spas worth
-        visiting to you — so the only thing left to do is book.
-      </Text>
-      <Text style={early}>
-        You&apos;re early — we&apos;re just getting started, and we&apos;re glad you&apos;re here.
-      </Text>
-
-      <Button href={d.discoverUrl} style={btn}>Explore treatments near you →</Button>
-
-      <Hr style={divider} />
-      <Text style={howTitle}>How it works</Text>
-      <Section>
-        <Text style={step}><span style={stepNum}>1</span> Find a treatment near you</Text>
-        <Text style={step}><span style={stepNum}>2</span> Book &amp; pay in seconds</Text>
-        <Text style={step}><span style={stepNum}>3</span> Show your voucher, glow</Text>
-      </Section>
-    </BaseLayout>
+    <Html>
+      <Head />
+      <Preview>Your city&apos;s best aesthetic treatments, all in one place.</Preview>
+      <Body style={body}>
+        <Text style={p}>{hi}</Text>
+        <Text style={p}>
+          Welcome to Gloē — and thanks for signing up.
+        </Text>
+        <Text style={p}>
+          The short version of what we do: your city&apos;s best aesthetic treatments, all in one
+          place. We bring the spas worth visiting to you, so the only thing left to do is book —
+          find a treatment near you, book and pay in seconds, then show your voucher and glow.
+        </Text>
+        <Text style={p}>
+          You&apos;re early — we&apos;re just getting started, and we&apos;re glad you&apos;re here.
+          Take a look at what&apos;s near you:{' '}
+          <Link href={d.discoverUrl} style={link}>{d.discoverUrl.replace(/^https?:\/\//, '')}</Link>
+        </Text>
+        <Text style={p}>
+          And if anything&apos;s confusing or broken, just reply to this email — it comes straight
+          to me.
+        </Text>
+        <Text style={p}>
+          — Ryan, founder of Gloē
+        </Text>
+      </Body>
+    </Html>
   );
 }
 
-const h1: React.CSSProperties = { fontSize: 22, fontWeight: 700, color: '#1a1410', margin: '8px 0 4px' };
-const p: React.CSSProperties = { fontSize: 15, color: '#4a4339', lineHeight: 1.5, margin: '0 0 12px' };
-const early: React.CSSProperties = { fontSize: 14, fontStyle: 'italic', color: '#6b6358', lineHeight: 1.5, margin: '0 0 4px' };
-const btn: React.CSSProperties = { backgroundColor: '#b8806f', color: '#ffffff', fontSize: 14, fontWeight: 700, textDecoration: 'none', padding: '12px 22px', borderRadius: 999, display: 'inline-block', margin: '16px 0 4px' };
-const divider: React.CSSProperties = { borderColor: '#ece6db', margin: '20px 0 12px' };
-const howTitle: React.CSSProperties = { fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#a89e8f', margin: '0 0 8px' };
-const step: React.CSSProperties = { fontSize: 14, color: '#4a4339', lineHeight: 1.6, margin: '0 0 6px' };
-const stepNum: React.CSSProperties = { display: 'inline-block', width: 20, fontWeight: 700, color: '#b8806f' };
+const body: React.CSSProperties = { backgroundColor: '#ffffff', fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif", margin: 0, padding: '24px', maxWidth: 560 };
+const p: React.CSSProperties = { fontSize: 15, color: '#1a1410', lineHeight: 1.6, margin: '0 0 16px' };
+const link: React.CSSProperties = { color: '#b8806f', textDecoration: 'underline' };

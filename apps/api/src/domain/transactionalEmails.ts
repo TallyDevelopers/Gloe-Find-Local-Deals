@@ -41,7 +41,10 @@ export async function sendWelcomeEmail(
     );
     await sendEmail({
       to: email,
-      subject: firstName ? `Welcome to Gloē, ${firstName}` : 'Welcome to Gloē',
+      // Personal founder note (see WelcomeEmail.tsx) — personal sender +
+      // sentence-case subject are part of staying out of Gmail's Promotions tab.
+      from: 'Ryan at Gloē <ryan@mail.gloe.app>',
+      subject: 'Welcome to Gloē',
       html,
       // Keyed by Clerk id (not internal id) so a concurrent first-request
       // double-insert still resolves to one send.
