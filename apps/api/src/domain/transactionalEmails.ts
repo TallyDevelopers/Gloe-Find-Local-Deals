@@ -5,10 +5,51 @@ import { render } from '@react-email/components';
 import type { Sql } from '../db/client';
 import { RefundEmail } from '../emails/RefundEmail';
 import { ExpiringEmail } from '../emails/ExpiringEmail';
+import { WelcomeEmail } from '../emails/WelcomeEmail';
 import { sendEmail } from './email';
 
+function webOrigin(): string {
+  return process.env.PUBLIC_WEB_ORIGIN ?? 'https://gloe.app';
+}
+
 function walletUrl(): string {
-  return `${process.env.PUBLIC_WEB_ORIGIN ?? 'https://gloe.app'}/wallet`;
+  return `${webOrigin()}/wallet`;
+}
+
+/**
+ * One-time welcome email (GLO-28), fired when the user row is first inserted
+ * (just-in-time sync in auth.ts) — the insert happens exactly once per Clerk
+ * user, so this naturally sends once per signup, never on login. The
+ * idempotency key guards the rare double-insert race. Fire-and-forget; a
+ * failed welcome must never fail the user's first authenticated request.
+ *
+ * CTA points at the location-aware discover page (web root). Swap to the
+ * GLO-14 Universal Link once that ships.
+ */
+export async function sendWelcomeEmail(
+  clerkUserId: string,
+  email: string | null,
+  firstName: string | null,
+): Promise<void> {
+  if (!email) return;
+  try {
+    const html = await render(
+      createElement(WelcomeEmail, {
+        firstName,
+        discoverUrl: webOrigin(),
+      }),
+    );
+    await sendEmail({
+      to: email,
+      subject: firstName ? `Welcome to Gloē, ${firstName}` : 'Welcome to Gloē',
+      html,
+      // Keyed by Clerk id (not internal id) so a concurrent first-request
+      // double-insert still resolves to one send.
+      idempotencyKey: `welcome:${clerkUserId}`,
+    });
+  } catch (e) {
+    console.error('[welcome email] failed:', (e as Error).message);
+  }
 }
 
 /**

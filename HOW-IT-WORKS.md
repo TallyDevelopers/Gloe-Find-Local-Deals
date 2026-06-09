@@ -49,7 +49,7 @@ The pieces, and why each is there:
 - **The database is Postgres (via Supabase)** — the permanent record of every deal, voucher, and dollar. It also knows geography (for "near me") natively.
 - **Login is Clerk** — a hosted service that handles passwords, social sign-in, and security so we never store a raw password. (Apple sign-in is the one piece still pending.)
 - **Money is Stripe** — specifically Stripe Connect, which handles paying the spas, tax forms, and the whole dispute/chargeback machinery. **Stripe is the source of truth for money; our database just mirrors what Stripe confirms.**
-- **Emails are Resend** — receipts, refund confirmations, and expiry reminders, all branded. (Login codes come from Clerk separately.)
+- **Emails are Resend** — welcome, receipts, refund confirmations, and expiry reminders, all branded. (Login codes come from Clerk separately.)
 - **Push notifications go straight to Apple** (no middleman), driven by an admin-controlled registry so you decide what fires and when.
 - **It all runs on Railway**, and pictures/videos live in Supabase Storage.
 
@@ -515,12 +515,13 @@ We send branded emails (via Resend) at the moments that matter — all on-brand,
 - **Receipt** — the instant a purchase is fulfilled. Deal photo, what you paid, your voucher code(s), and **how to pull up your QR** (Wallet tab on the app, or a button to `gloe.app/wallet` on a computer). A broken/missing deal photo is detected and simply omitted, never shown as a broken image.
 - **Refund confirmation** — whenever a refund is issued (full or partial): the amount, "back to your card in 5–10 business days," and whether the voucher was cancelled (full) or stays alive for the balance (partial). Fires from both the pre-redemption refund and the post-redemption/dispute clawback.
 - **Voucher expiring soon** — a once-only reminder ~7 days before an unredeemed voucher lapses, so you don't lose money you already paid. Sent by a daily background sweep (expiry is lazy, so this is what actually nudges you), de-duplicated so you're never spammed.
+- **Welcome** — once, the moment your account is first created (never on later logins). Deliberately **static**: no listings, no prices, nothing that goes stale — just the premium pitch ("your city's best aesthetic treatments, all in one place"), a warm you're-early line, one CTA ("Explore treatments near you →" → the location-aware discover page), and the three-step how-it-works. All freshness lives in the app behind that button.
 
 These send to your account email (for a gift link, the payer's email is the fallback). Email delivery is best-effort and never blocks a purchase or refund. Auth emails (verify/reset) come from Clerk separately.
 
-> Still missing: vendor payout-notification and welcome emails. (See [§15](#15-whats-not-built-yet).)
+> Still missing: vendor payout-notification and gift-confirmation emails. (See [§15](#15-whats-not-built-yet).)
 
-*Deeper: `GLOE.md` §4 "Transactional email". Code: `domain/email.ts` (`sendEmail`), `emails/` (React Email templates), `transactionalEmails.ts` (`sendRefundEmail`, `sendExpiryReminders`), `checkout.ts` (receipt), `vendorOps.ts` (refund), `index.ts` (expiry sweep).*
+*Deeper: `GLOE.md` §4 "Transactional email". Code: `domain/email.ts` (`sendEmail`), `emails/` (React Email templates), `transactionalEmails.ts` (`sendRefundEmail`, `sendExpiryReminders`, `sendWelcomeEmail`), `checkout.ts` (receipt), `vendorOps.ts` (refund), `index.ts` (expiry sweep), `context/auth.ts` (welcome, on first user insert).*
 
 ---
 
@@ -785,11 +786,13 @@ changing.
 Signup is **100% Clerk-driven** — the 6-digit verification code email is sent by *Clerk*, not us. Your
 Gloē account row is created **just-in-time** the first time you hit our API with a valid token (not via
 a webhook). That's deliberately simple and self-healing: there's no webhook to miss, and your local row
-can never get orphaned from Clerk because it's only ever born from a verified token.
+can never get orphaned from Clerk because it's only ever born from a verified token. That first-ever
+insert is also what fires the one-time **welcome email** — since the row is born exactly once, the
+welcome can't re-send on later logins.
 
-> Email is now partly wired (§15): **receipts, refund confirmations, and voucher-expiring reminders go
-> out** (Resend) — branded, with deal photo, voucher code, and how to pull up the QR. Payout-notification,
-> gift-confirmation, and welcome emails are still pending.
+> Email is now partly wired (§15): **receipts, refund confirmations, voucher-expiring reminders, and
+> the welcome email go out** (Resend) — branded. Payout-notification and gift-confirmation emails are
+> still pending.
 
 ### Deleting your account
 
@@ -883,8 +886,9 @@ built. Each is either tracked in Linear or worth a ticket.
   how-to-redeem with a Wallet link) hits your inbox, fired on fulfillment. → **GLO-11**.
   *(Resend is in testing mode until launch — delivers only to verified addresses for now.)*
 - ✅ **Refund confirmation** (GLO-38) and ✅ **voucher-expiring reminder** (GLO-39) now ship too.
-- **Still missing:** payout-notification, gift-confirmation, and welcome emails. → **GLO-17 / GLO-28**.
-- **No welcome / signup email.** → **GLO-28** (the gap this doc surfaced).
+- ✅ **Welcome email ships** (GLO-28, the gap this doc surfaced) — once on first signup, static by
+  design, single CTA to the location-aware discover page.
+- **Still missing:** payout-notification and gift-confirmation emails. → **GLO-17**.
 - **The waitlist promises a notification it can't send.** The "we'll reach out when Gloē lands near you"
   copy has no delivery mechanism behind it.
 

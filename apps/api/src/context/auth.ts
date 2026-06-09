@@ -1,6 +1,7 @@
 import { createClerkClient, verifyToken } from '@clerk/backend';
 
 import { sql } from '../db/client';
+import { sendWelcomeEmail } from '../domain/transactionalEmails';
 
 const clerkSecretKey = process.env.CLERK_SECRET_KEY;
 const clerkPublishableKey = process.env.CLERK_PUBLISHABLE_KEY;
@@ -60,5 +61,12 @@ export async function verifyAndResolveUser(token: string | undefined): Promise<A
   if (!row) {
     throw new Error('Failed to insert user');
   }
+  // First signup just happened — send the one-time welcome email (GLO-28).
+  // Not awaited: the user's first authenticated request must not wait on Resend.
+  void sendWelcomeEmail(
+    clerkUserId,
+    profile.primaryEmailAddress?.emailAddress ?? null,
+    profile.firstName,
+  );
   return { clerkUserId, userId: row.id };
 }
