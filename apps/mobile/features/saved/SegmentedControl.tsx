@@ -54,12 +54,12 @@ export function SegmentedControl<T extends string>({
                   height: 18,
                   borderRadius: 9,
                   paddingHorizontal: 4,
-                  backgroundColor: isActive ? palette.brand[500] : palette.neutral[400],
+                  backgroundColor: palette.brand[500],
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
               >
-                <Text variant="caption" tone={isActive ? 'inverse' : 'primary'} weight="bold">
+                <Text variant="caption" tone="inverse" weight="bold">
                   {option.badge}
                 </Text>
               </View>

@@ -60,3 +60,7 @@ Outfit-SemiBold.ttf
 # macOS / iCloud sync duplicates
 * 2.*
 *\ 2.*
+
+# scratch screenshots / playwright artifacts
+/*.png
+.playwright-mcp/
