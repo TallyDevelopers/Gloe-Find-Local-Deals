@@ -313,7 +313,7 @@ function AnonymousBody({ onSignIn, onSignUp }: { onSignIn: () => void; onSignUp:
               Get the most out of Gloe
             </Text>
             <Text variant="body-md" tone="secondary">
-              Sign up free to claim deals, save your favorites, and chat with vendors.
+              Sign up free to claim deals and save your favorites.
             </Text>
           </Stack>
           <Stack gap={3}>
