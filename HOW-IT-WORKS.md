@@ -531,12 +531,18 @@ We send branded emails (via Resend) at the moments that matter — all on-brand,
 - **Refund confirmation** — whenever a refund is issued (full or partial): the amount, "back to your card in 5–10 business days," and whether the voucher was cancelled (full) or stays alive for the balance (partial). Fires from both the pre-redemption refund and the post-redemption/dispute clawback.
 - **Voucher expiring soon** — a once-only reminder ~7 days before an unredeemed voucher lapses, so you don't lose money you already paid. Sent by a daily background sweep (expiry is lazy, so this is what actually nudges you), de-duplicated so you're never spammed.
 - **Welcome** — once, the moment your account is first created (never on later logins). Deliberately **static**: no listings, no prices, nothing that goes stale — just the premium pitch ("your city's best aesthetic treatments, all in one place"), a warm you're-early line, one CTA ("Explore treatments near you →" → the location-aware discover page), and the three-step how-it-works. All freshness lives in the app behind that button.
+- **You got paid** (to the spa) — the instant a redemption fires their Stripe transfer: the amount,
+  which deal, and a "View in Stripe" button. One per transfer, keyed to the transfer itself, so
+  retries can't double-send. Goes to the owner's account email (business email as fallback).
+- **Support reply** — when a Gloē agent answers your support ticket, the **full reply text lands in
+  your inbox** (not just "you have a message"), with a pointer back to Profile → Support in the app.
+  The push notification and the email are twins of the same moment.
 
 These send to your account email (for a gift link, the payer's email is the fallback). Email delivery is best-effort and never blocks a purchase or refund. Auth emails (verify/reset) come from Clerk separately.
 
-> Still missing: vendor payout-notification and gift-confirmation emails. (See [§15](#15-whats-not-built-yet).)
+> Still missing: the gift-confirmation email. (See [§15](#15-whats-not-built-yet).)
 
-*Deeper: `GLOE.md` §4 "Transactional email". Code: `domain/email.ts` (`sendEmail`), `emails/` (React Email templates), `transactionalEmails.ts` (`sendRefundEmail`, `sendExpiryReminders`, `sendWelcomeEmail`), `checkout.ts` (receipt), `vendorOps.ts` (refund), `index.ts` (expiry sweep), `context/auth.ts` (welcome, on first user insert).*
+*Deeper: `GLOE.md` §4 "Transactional email". Code: `domain/email.ts` (`sendEmail`), `emails/` (React Email templates), `transactionalEmails.ts` (`sendRefundEmail`, `sendExpiryReminders`, `sendWelcomeEmail`, `sendVendorPayoutEmail`, `sendSupportReplyEmail`), `checkout.ts` (receipt), `vendorOps.ts` (refund), `payouts.ts` (payout notice), `admin.ts` (support reply), `index.ts` (expiry sweep), `context/auth.ts` (welcome, on first user insert).*
 
 ---
 
@@ -842,8 +848,8 @@ insert is also what fires the one-time **welcome email** — since the row is bo
 welcome can't re-send on later logins.
 
 > Email is now partly wired (§15): **receipts, refund confirmations, voucher-expiring reminders, and
-> the welcome email go out** (Resend) — branded. Payout-notification and gift-confirmation emails are
-> still pending.
+> the welcome email go out** (Resend) — branded, plus vendor payout notices and support-reply
+> emails (GLO-40). The gift-confirmation email is still pending.
 
 ### Deleting your account
 
@@ -940,7 +946,7 @@ Gaps this doc surfaced that have since shipped (kept for the record, details in 
 - **Post-redemption review prompt** (GLO-8) — verified-booking Gloē reviews now collect. See §6.
 
 ### Emails
-- **Payout-notification and gift-confirmation emails.** → **GLO-17**.
+- **Gift-confirmation email.** → **GLO-17**. (Vendor payout-notification + support-reply emails shipped — GLO-40.)
 - **The waitlist promises a notification it can't send.** The "we'll reach out when Gloē lands near you"
   copy has no delivery mechanism behind it.
 

@@ -94,3 +94,32 @@ email itself is Clerk-branded until GLO-18 styles the Clerk email templates.)
 `admin.router.ts` (`inviteVendorOwner`, `createVendorOnBehalf` + ownerEmail) · admin add-spa page ·
 admin `vendor/[id]/page.tsx` (`InviteOwnerButton`) · `apps/web/src/app/vendor/page.tsx`
 (auto-claim + fallback) · GLOE.md §7/§8 · HOW-IT-WORKS.md §9.
+
+---
+
+## GLO-40 — Vendor payout + support-reply emails ✅
+
+Two more branded emails on the existing Resend/React Email foundation:
+
+1. **"You got paid 🎉" (to the spa).** Fires the instant a redemption triggers their Stripe
+   transfer. Big centered amount, the deal title, and a "View in Stripe" button. Goes to the
+   owner's account email (business email on file as fallback). Keyed to the transfer ID, so a
+   retried transfer can never email twice. Nice side effect: it teaches vendors that
+   *redemptions* are what pay them.
+2. **Support reply (to the customer).** When you reply to a support ticket, the customer now
+   gets the **full reply text in their inbox** (your call from before you left) with a pointer
+   back to Profile → Support. It rides alongside the existing push, keyed per message. Since
+   replying to any Gloē email reaches support@gloe.app, they can answer the email directly too.
+
+**Easy to tweak:** wording/layout in `apps/api/src/emails/PayoutEmail.tsx` and
+`SupportReplyEmail.tsx`. Preview both anytime without sending:
+`cd apps/api && npx tsx src/scripts/renderEmailPreviews.ts` → writes HTML files to /tmp.
+
+**Verification status:** typecheck clean; both templates render-tested with sample data
+(assertions on amount/copy passed). Real sends will no-op locally until `RESEND_API_KEY` is in
+the env (same as the other emails).
+
+**Files:** `emails/PayoutEmail.tsx` + `emails/SupportReplyEmail.tsx` (new) ·
+`transactionalEmails.ts` (`sendVendorPayoutEmail`, `sendSupportReplyEmail`) · `payouts.ts`
+(fires after `transfer.created`) · `admin.ts` (`createAgentReply` fires email beside the push) ·
+`scripts/renderEmailPreviews.ts` (new) · GLOE.md §4 email list · HOW-IT-WORKS.md §11/§15.

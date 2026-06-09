@@ -1719,6 +1719,11 @@ export async function createAgentReply(
     data: { type: 'support_reply', ticketId },
   });
 
+  // Email twin of the push (GLO-40): the full reply lands in their inbox, so
+  // the answer isn't trapped in-app for customers who miss the notification.
+  const { sendSupportReplyEmail } = await import('./transactionalEmails');
+  void sendSupportReplyEmail(sql, ticketId, insertedAgent[0]!.id, body);
+
   return { ok: true as const };
 }
 

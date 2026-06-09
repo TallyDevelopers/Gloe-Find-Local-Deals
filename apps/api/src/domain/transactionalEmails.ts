@@ -5,6 +5,8 @@ import { render } from '@react-email/components';
 import type { Sql } from '../db/client';
 import { RefundEmail } from '../emails/RefundEmail';
 import { ExpiringEmail } from '../emails/ExpiringEmail';
+import { PayoutEmail } from '../emails/PayoutEmail';
+import { SupportReplyEmail } from '../emails/SupportReplyEmail';
 import { WelcomeEmail } from '../emails/WelcomeEmail';
 import { sendEmail } from './email';
 
@@ -108,6 +110,104 @@ export async function sendRefundEmail(
     });
   } catch (e) {
     console.error('[refund email] failed:', (e as Error).message);
+  }
+}
+
+/**
+ * Vendor payout notice (GLO-40) — fired right after the Stripe transfer for a
+ * redeemed claim succeeds. Keyed off the claim: looks up the vendor's email
+ * (the owner account's email, falling back to the business email on file) and
+ * the deal title from the claim snapshot. Fire-and-forget; never throws —
+ * a failed email must never unwind a successful money movement.
+ */
+export async function sendVendorPayoutEmail(
+  sql: Sql,
+  claimId: string,
+  amountCents: number,
+  stripeTransferId: string,
+): Promise<void> {
+  try {
+    const rows = await sql<{
+      business_name: string;
+      vendor_email: string | null;
+      owner_email: string | null;
+      deal_title: string | null;
+    }[]>`
+      SELECT v.business_name,
+             v.email AS vendor_email,
+             u.email AS owner_email,
+             (c.snapshot ->> 'dealTitle') AS deal_title
+      FROM public.claims c
+      JOIN public.vendors v ON v.id = c.vendor_id
+      LEFT JOIN public.users u ON u.id = v.owner_user_id
+      WHERE c.id = ${claimId}
+      LIMIT 1
+    `;
+    const r = rows[0];
+    const to = r?.owner_email ?? r?.vendor_email ?? null;
+    if (!r || !to) return;
+
+    const html = await render(
+      createElement(PayoutEmail, {
+        businessName: r.business_name,
+        dealTitle: r.deal_title ?? 'a redeemed voucher',
+        amountCents,
+        stripeDashboardUrl: 'https://connect.stripe.com/express_login',
+      }),
+    );
+    await sendEmail({
+      to,
+      subject: `You got paid ${'$' + (amountCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })} — ${r.deal_title ?? 'Gloē'}`,
+      html,
+      // One email per transfer, however many times the caller retries.
+      idempotencyKey: `payout:${stripeTransferId}`,
+    });
+  } catch (e) {
+    console.error('[payout email] failed:', (e as Error).message);
+  }
+}
+
+/**
+ * Support reply notice (GLO-40) — fired when an agent replies to a ticket.
+ * Includes the agent's reply text in full (the customer can read the answer
+ * without opening the app). Fire-and-forget; never throws.
+ */
+export async function sendSupportReplyEmail(
+  sql: Sql,
+  ticketId: string,
+  messageId: string,
+  replyBody: string,
+): Promise<void> {
+  try {
+    const rows = await sql<{
+      email: string | null;
+      first_name: string | null;
+      subject: string;
+    }[]>`
+      SELECT u.email, u.first_name, t.subject
+      FROM public.support_tickets t
+      JOIN public.users u ON u.id = t.user_id
+      WHERE t.id = ${ticketId}
+      LIMIT 1
+    `;
+    const r = rows[0];
+    if (!r?.email) return;
+
+    const html = await render(
+      createElement(SupportReplyEmail, {
+        firstName: r.first_name,
+        subject: r.subject,
+        replyBody,
+      }),
+    );
+    await sendEmail({
+      to: r.email,
+      subject: `Re: ${r.subject}`,
+      html,
+      idempotencyKey: `support-reply:${messageId}`,
+    });
+  } catch (e) {
+    console.error('[support reply email] failed:', (e as Error).message);
   }
 }
 
