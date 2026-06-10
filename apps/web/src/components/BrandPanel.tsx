@@ -51,7 +51,7 @@ export function BrandPanel() {
       </div>
 
       <div className="biz-phone-wrap">
-        <PhoneMock />
+        <PhoneMock discounts={false} />
       </div>
     </div>
   );

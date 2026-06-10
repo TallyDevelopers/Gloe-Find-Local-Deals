@@ -78,7 +78,7 @@ export default function ForBusinessPage() {
             </div>
           </div>
           <div className="bl-hero-phone" aria-hidden>
-            <PhoneMock />
+            <PhoneMock discounts={false} />
           </div>
         </div>
       </section>

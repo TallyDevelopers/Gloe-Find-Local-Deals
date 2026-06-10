@@ -28,9 +28,9 @@ export function VoucherShot() {
         <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 999, background: 'rgba(122,139,92,0.14)', color: 'var(--success)' }}>Active</span>
       </div>
       <div style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 600, color: 'var(--text-primary)', marginTop: 12, lineHeight: 1.2 }}>
-        Botox — first-timer special
+        Botox — 40 units
       </div>
-      <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 3 }}>Glow Aesthetics La Jolla · 40 units</div>
+      <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 3 }}>Glow Aesthetics La Jolla</div>
       <div style={{ display: 'inline-block', padding: 10, background: '#fff', borderRadius: 12, border: '1px solid var(--border-subtle)', marginTop: 14 }}>
         <QRCodeSVG value="gloe:demo:voucher" size={132} fgColor="#2b2019" bgColor="#ffffff" level="M" />
       </div>
@@ -91,7 +91,7 @@ export function AutoTagShot() {
     <div style={{ ...CARD, width: 250, padding: '16px 18px' }}>
       <div style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '0.08em', color: 'var(--text-tertiary)' }}>NEW DEAL</div>
       <div style={{ marginTop: 9, padding: '11px 13px', borderRadius: 11, border: '1px solid var(--brand-500)', boxShadow: '0 0 0 3px var(--brand-100)', fontSize: 13.5, color: 'var(--text-primary)', background: 'var(--surface-elevated)' }}>
-        Botox — first-timer special<span style={{ opacity: 0.5 }}>|</span>
+        Botox — 40 units<span style={{ opacity: 0.5 }}>|</span>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 10 }}>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, padding: '5px 11px', borderRadius: 999, background: 'var(--brand-600)', color: '#fff' }}>

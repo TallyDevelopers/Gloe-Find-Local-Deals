@@ -56,8 +56,14 @@ export function GetTheApp() {
 
 /* ------------------------------- iPhone mock ------------------------------ */
 
-/** Exported for reuse on the business signup brand panel. */
-export function PhoneMock() {
+/**
+ * Exported for reuse on the business signup brand panel + /business hero.
+ * `discounts={false}` hides the %-off badges and strikethrough prices — the
+ * vendor-facing pages pitch "fill quiet hours without slashing prices", so
+ * the demo data there shouldn't scream discounts. Layout stays identical to
+ * the real app either way.
+ */
+export function PhoneMock({ discounts = true }: { discounts?: boolean }) {
   return (
     <div
       className="phone-mock"
@@ -130,29 +136,29 @@ export function PhoneMock() {
             treatment="HORMONES & PEPTIDES"
             title="Sermorelin Peptide Therapy — recovery & anti‑aging"
             price="$249"
-            was="$399"
+            was={discounts ? '$399' : undefined}
             unit="1 month"
             vendor="Glow House Wellness"
             rating="4.9"
             reviews="188"
             time="12 min"
             miles="4.9 mi"
-            off="38%"
+            off={discounts ? '38%' : undefined}
           />
           <LargeDeal
-            photo="https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?auto=format&fit=crop&w=600&q=70"
+            photo="https://xmjwrjvyiblinlnoszeh.supabase.co/storage/v1/object/public/deal-photos/d6253710-a06b-4a3f-85b4-762af02b25f9/0ea48d51-11c8-484b-a24e-0699983b428f.jpg"
             fallback="linear-gradient(135deg,#f6e4de,#e8b4ab)"
             treatment="INJECTABLES"
             title="Botox — 20, 40 or 60 units"
             price="$169"
-            was="$260"
+            was={discounts ? '$260' : undefined}
             unit="20 units"
             vendor="Encinitas Glow Co"
             rating="4.9"
             reviews="142"
             time="12 min"
             miles="2.3 mi"
-            off="35%"
+            off={discounts ? '35%' : undefined}
           />
         </div>
 
@@ -171,13 +177,16 @@ export function PhoneMock() {
 }
 
 /** Faithful mini of the app's full-width DealCardLarge: big image, discount
- *  badge + heart, then category / title / price / vendor / rating row. */
-function LargeDeal({ photo, fallback, treatment, title, price, was, unit, vendor, rating, reviews, time, miles, off }: { photo: string; fallback: string; treatment: string; title: string; price: string; was: string; unit: string; vendor: string; rating: string; reviews: string; time: string; miles: string; off: string }) {
+ *  badge + heart, then category / title / price / vendor / rating row.
+ *  `was`/`off` optional — omitted on vendor-facing surfaces. */
+function LargeDeal({ photo, fallback, treatment, title, price, was, unit, vendor, rating, reviews, time, miles, off }: { photo: string; fallback: string; treatment: string; title: string; price: string; was?: string; unit: string; vendor: string; rating: string; reviews: string; time: string; miles: string; off?: string }) {
   return (
     <div style={{ flexShrink: 0, background: 'var(--surface-elevated)', borderRadius: 18, overflow: 'hidden', border: '1px solid var(--border-subtle)', boxShadow: '0 2px 10px rgba(43,32,25,0.08)' }}>
       {/* Real photo with a brand gradient underneath as a graceful fallback */}
       <div style={{ position: 'relative', height: 168, backgroundImage: `url(${photo}), ${fallback}`, backgroundSize: 'cover', backgroundPosition: 'center' }}>
-        <span style={{ position: 'absolute', top: 10, left: 10, background: 'var(--brand-500)', color: 'var(--text-inverse)', fontSize: 10.5, fontWeight: 600, padding: '3px 9px', borderRadius: 999 }}>{off} off</span>
+        {off ? (
+          <span style={{ position: 'absolute', top: 10, left: 10, background: 'var(--brand-500)', color: 'var(--text-inverse)', fontSize: 10.5, fontWeight: 600, padding: '3px 9px', borderRadius: 999 }}>{off} off</span>
+        ) : null}
         <span style={{ position: 'absolute', top: 9, right: 9, width: 30, height: 30, borderRadius: '50%', background: 'var(--surface-elevated)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 1px 5px rgba(43,32,25,0.2)' }}>
           <Heart size={15} color="var(--text-primary)" />
         </span>
@@ -187,7 +196,7 @@ function LargeDeal({ photo, fallback, treatment, title, price, was, unit, vendor
         <div style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 500, lineHeight: 1.15, color: 'var(--text-primary)', marginTop: 3, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{title}</div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 5, marginTop: 6 }}>
           <span style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 700, color: 'var(--text-primary)' }}>{price}</span>
-          <span style={{ fontSize: 12, color: 'var(--text-tertiary)', textDecoration: 'line-through' }}>{was}</span>
+          {was ? <span style={{ fontSize: 12, color: 'var(--text-tertiary)', textDecoration: 'line-through' }}>{was}</span> : null}
           <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>· {unit}</span>
         </div>
         <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-primary)', marginTop: 6 }}>{vendor}</div>
