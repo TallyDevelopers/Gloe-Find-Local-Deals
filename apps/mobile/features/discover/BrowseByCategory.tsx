@@ -5,12 +5,14 @@ import { Dimensions, FlatList, Pressable, View } from 'react-native';
 import { CachedImage } from '../image/CachedImage';
 import { DISCOVER_HEADING_SIZE } from './CategoryRail';
 
-// Match the web `.cat-card--carousel`: 62vw, capped at 240px, 5:4 aspect ratio.
-const TILE_WIDTH = Math.min(Math.round(Dimensions.get('window').width * 0.62), 240);
+// Match the web `.cat-card--carousel` mobile size: 42vw capped at 168px, 5:4.
+// Deliberately SMALLER than the deal rail cards (CategoryRail) — deals are the
+// hero, categories are wayfinding (approved Discover comp).
+const TILE_WIDTH = Math.min(Math.round(Dimensions.get('window').width * 0.42), 168);
 const TILE_HEIGHT = Math.round((TILE_WIDTH * 4) / 5);
-// Tile name overlay. ResortPass card titles are 16px/500 — the old 21px ran
-// oversized on the small 5:4 tile. Match the north star.
-const TILE_LABEL_SIZE = 16;
+// Tile name overlay — web's .cat-card-label .name is 18px on carousel tiles,
+// but at the smaller 42vw tile 15px keeps two-word names on one line.
+const TILE_LABEL_SIZE = 15;
 
 export interface BrowseCategory {
   slug: string;
@@ -40,8 +42,8 @@ export function BrowseByCategory({ categories, onSelect }: Props) {
   return (
     <Stack gap={3}>
       <View style={{ paddingHorizontal: space[5] }}>
-        <Text variant="display-sm" tone="primary" weight="medium" style={{ fontSize: DISCOVER_HEADING_SIZE, lineHeight: DISCOVER_HEADING_SIZE * 1.15 }}>
-          Browse by category
+        <Text variant="display-sm" tone="primary" weight="semibold" style={{ fontSize: DISCOVER_HEADING_SIZE, lineHeight: DISCOVER_HEADING_SIZE * 1.25, letterSpacing: -0.2 }}>
+          Browse by treatment
         </Text>
       </View>
 

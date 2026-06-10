@@ -15,6 +15,7 @@
     "@expo-google-fonts/fraunces": "^0.2.3",
     "@expo-google-fonts/inter": "^0.2.3",
     "@expo-google-fonts/outfit": "^0.4.3",
+    "@expo-google-fonts/poppins": "^0.4.1",
     "@expo/metro-runtime": "~4.0.1",
     "@gloe/api-client": "*",
     "@gloe/auth": "*",

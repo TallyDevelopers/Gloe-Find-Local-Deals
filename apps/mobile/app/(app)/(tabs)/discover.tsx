@@ -5,7 +5,7 @@ import { keepPreviousData } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Dimensions, Pressable, RefreshControl, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useRequireAuth } from '../../../features/auth-gate/useRequireAuth';
@@ -16,7 +16,7 @@ import { CategoryRail, DISCOVER_HEADING_SIZE } from '../../../features/discover/
 import { ComingSoon } from '../../../features/discover/ComingSoon';
 import { RecentlyViewed } from '../../../features/discover/RecentlyViewed';
 import { Icon } from '../../../features/icon/Icon';
-import { DealCard } from '../../../features/discover/DealCard';
+import { DealCardLarge } from '../../../features/discover/DealCardLarge';
 import { LocationGate } from '../../../features/discover/LocationGate';
 import { BrowseByCategory } from '../../../features/discover/BrowseByCategory';
 import { FilterPills } from '../../../features/discover-header/FilterPills';
@@ -27,11 +27,6 @@ import { MapButton } from '../../../features/discover-header/MapButton';
 import { SearchBar } from '../../../features/discover-header/SearchBar';
 import { useSelectedLocation } from '../../../features/discover-header/SelectedLocationProvider';
 import { useSavedDeals } from '../../../features/saved/SavedDealsProvider';
-
-// 2-up grid geometry for the filtered/See-all view. screen − horizontal
-// padding (space[5] × 2 = 40) − the gap between the two columns, halved.
-const GRID_GAP = 12;
-const gridCardWidth = Math.floor((Dimensions.get('window').width - 40 - GRID_GAP) / 2);
 
 export default function DiscoverScreen() {
   const insets = useSafeAreaInsets();
@@ -310,16 +305,6 @@ export default function DiscoverScreen() {
                is intentionally omitted for now; it returns when sponsored is a
                paid placement. */
             <Stack gap={8} style={{ marginTop: space[2] }}>
-              {/* "Recently viewed" — a small strip of deals you recently opened
-                  (device-local; renders nothing until you've viewed one). Sits
-                  at the very top so you can pick up where you left off. */}
-              <RecentlyViewed
-                userLat={location.latitude}
-                userLng={location.longitude}
-                savedIds={savedIds}
-                onSave={toggleSave}
-              />
-
               {/* Browse tiles stay per raw category (a nav shortcut INTO a
                   category) even though the rails below are editorial sections. */}
               <BrowseByCategory
@@ -346,29 +331,38 @@ export default function DiscoverScreen() {
                   onSeeAll={() => openRailSeeAll(rail)}
                 />
               ))}
+
+              {/* "Recently viewed" — a small strip of deals you recently opened
+                  (device-local; renders nothing until you've viewed one). Lives
+                  at the BOTTOM of the feed: a quiet pick-up-where-you-left-off,
+                  not a headliner shouting over the fresh deals. */}
+              <RecentlyViewed
+                userLat={location.latitude}
+                userLng={location.longitude}
+                savedIds={savedIds}
+                onSave={toggleSave}
+              />
             </Stack>
           ) : (
-            /* Filtered view — 2-up grid of compact square cards. Same square
-               photos as the rails (no cropping), just half-width so ~6 listings
-               fit per screen instead of one giant card — much better on small
-               phones. */
+            /* Filtered view — one full-width card per row (DealCardLarge), so
+               you scroll the feed card by card instead of scanning a 2-up grid
+               of thumbnails. */
             <View style={{ paddingHorizontal: space[5], marginTop: space[2] }}>
               {rest.length === 0 ? (
                 <Text variant="body-md" tone="secondary">
                   No deals match your filters in {location.label}.
                 </Text>
               ) : (
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: GRID_GAP }}>
+                <Stack gap={5}>
                   {rest.map((deal) => (
-                    <DealCard
+                    <DealCardLarge
                       key={deal.id}
                       deal={deal}
-                      width={gridCardWidth}
                       isSaved={savedIds.has(deal.id)}
                       onSave={() => toggleSave(deal.id)}
                     />
                   ))}
-                </View>
+                </Stack>
               )}
             </View>
           )}

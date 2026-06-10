@@ -5,20 +5,20 @@ import { Dimensions, FlatList, Pressable, View } from 'react-native';
 import { Icon } from '../icon/Icon';
 import { DealCard } from './DealCard';
 
-const CARD_WIDTH = Math.round(Dimensions.get('window').width * 0.56);
-// Discover row headings — Browse + editorial section rails. The display token
-// (24px) read as oversized/"deformed" on phones; ResortPass (our north star)
-// uses 18px/500 for its feed-row headings, so we match that. Shared with
-// BrowseByCategory so both rows' headings stay identical.
+// Match the web's mobile rail cards (232px on a 390 screen ≈ 60vw): deal cards
+// are the page's hero — deliberately BIGGER than the category tiles.
+const CARD_WIDTH = Math.min(Math.round(Dimensions.get('window').width * 0.6), 232);
+// Discover row headings — Browse + editorial section rails. Matches the web's
+// mobile `.section-head h2` (18px, Poppins 600). Shared with BrowseByCategory
+// so both rows' headings stay identical.
 export const DISCOVER_HEADING_SIZE = 18;
-// Rail cards use a 4:3 image (not a full square) so they're shorter — a browse
-// rail should show more at a glance, not one billboard per item.
-const RAIL_IMAGE_RATIO = 4 / 3;
+// 16:11 image — same media ratio as the web deal card (approved comp).
+const RAIL_IMAGE_RATIO = 16 / 11;
 // The "See all" end tile is narrower than a card — it's a CTA, not content.
 const END_TILE_WIDTH = Math.round(CARD_WIDTH * 0.52);
-// Approx full card height (4:3 image + the text block) so the end tile centers
-// against the WHOLE card, not just the image — keeps it from floating high.
-const CARD_HEIGHT = Math.round(CARD_WIDTH / RAIL_IMAGE_RATIO) + 96;
+// Approx full card height (16:11 image + the taller comp text block) so the
+// end tile centers against the WHOLE card, not just the image.
+const CARD_HEIGHT = Math.round(CARD_WIDTH / RAIL_IMAGE_RATIO) + 150;
 
 interface CategoryRailProps {
   label: string;
@@ -44,7 +44,7 @@ export function CategoryRail({ label, deals, savedIds, onSave, onSeeAll }: Categ
           via the end-of-row "See all" tile (Netflix/ResortPass pattern), so the
           tired top-right "See all →" link is gone. The label stays tappable. */}
       <Pressable onPress={onSeeAll} style={{ paddingHorizontal: space[5] }} hitSlop={6}>
-        <Text variant="display-sm" tone="primary" weight="medium" style={{ fontSize: DISCOVER_HEADING_SIZE, lineHeight: DISCOVER_HEADING_SIZE * 1.15 }}>
+        <Text variant="display-sm" tone="primary" weight="semibold" style={{ fontSize: DISCOVER_HEADING_SIZE, lineHeight: DISCOVER_HEADING_SIZE * 1.25, letterSpacing: -0.2 }}>
           {label}
         </Text>
       </Pressable>

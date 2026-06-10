@@ -126,14 +126,36 @@ export function DealCardLarge({ deal, onSave, isSaved = false }: DealCardLargePr
         ) : null}
       </View>
 
+      {/* Body — same anatomy as the rail DealCard / web card (approved comp):
+          rose-gold eyebrow, title, verified provider · city, display price,
+          hairline-topped meta footer. */}
       <View style={{ padding: space[4] }}>
         <Stack gap={2}>
-          <Text variant="caption" tone="tertiary" weight="medium">
-            {(deal.category.subtypeDisplayName ?? deal.category.displayName).toUpperCase()}
+          <Text
+            numberOfLines={1}
+            style={{
+              fontSize: 11,
+              fontWeight: '700',
+              letterSpacing: 1.1,
+              textTransform: 'uppercase',
+              color: palette.brand[600],
+            }}
+          >
+            {deal.category.subtypeDisplayName ?? deal.category.displayName}
           </Text>
-          <Text variant="display-sm" tone="primary" weight="medium" numberOfLines={2}>
+          <Text variant="display-sm" tone="primary" weight="semibold" numberOfLines={2} style={{ letterSpacing: -0.2 }}>
             {deal.title}
           </Text>
+
+          <Stack direction="row" gap={1} align="center">
+            <Icon name="badgeCheck" size={15} color={palette.brand[500]} strokeWidth={2.25} />
+            <Text variant="body-sm" tone="secondary" weight="medium" numberOfLines={1} style={{ flex: 1 }}>
+              {' '}{deal.vendor.businessName}
+              {deal.vendor.city && !deal.vendor.businessName.toLowerCase().includes(deal.vendor.city.toLowerCase())
+                ? ` · ${deal.vendor.city}`
+                : ''}
+            </Text>
+          </Stack>
 
           <Stack direction="row" gap={2} align="baseline">
             <Text variant="display-sm" tone="primary" weight="semibold">
@@ -149,12 +171,25 @@ export function DealCardLarge({ deal, onSave, isSaved = false }: DealCardLargePr
             ) : null}
           </Stack>
 
-          <Text variant="body-sm" tone="primary" weight="semibold" numberOfLines={1}>
-            {deal.vendor.businessName}
-          </Text>
           {rating || driveTime || distance ? (
-            <Stack direction="row" gap={1} align="center" style={{ flexWrap: 'wrap' }}>
-              {rating ? <Text variant="body-sm" tone="secondary">{rating}</Text> : null}
+            <Stack
+              direction="row"
+              gap={1}
+              align="center"
+              style={{
+                flexWrap: 'wrap',
+                borderTopWidth: 1,
+                borderTopColor: palette.border.subtle,
+                paddingTop: space[2],
+                marginTop: 2,
+              }}
+            >
+              {rating ? (
+                <>
+                  <Icon name="star" size={12} color={palette.brand[500]} fill={palette.brand[500]} strokeWidth={0} />
+                  <Text variant="body-sm" tone="secondary"> {rating.replace('★ ', '')}</Text>
+                </>
+              ) : null}
               {driveTime ? (
                 <>
                   {rating ? <Text variant="body-sm" tone="secondary"> · </Text> : null}

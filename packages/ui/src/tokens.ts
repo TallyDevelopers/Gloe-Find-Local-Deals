@@ -152,7 +152,9 @@ export const radius = {
 } as const;
 
 export const fontFamily = {
-  display: 'ClashDisplay',
+  // Poppins matches the web consumer marketplace (approved Discover comp,
+  // June 2026). The wordmark stays Outfit — that's locked, see Wordmark.tsx.
+  display: 'Poppins',
   body: 'GeneralSans',
 } as const;
 

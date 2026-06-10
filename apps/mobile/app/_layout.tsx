@@ -1,4 +1,5 @@
 import { Outfit_500Medium, Outfit_600SemiBold } from '@expo-google-fonts/outfit';
+import { Poppins_400Regular, Poppins_500Medium, Poppins_600SemiBold, Poppins_700Bold } from '@expo-google-fonts/poppins';
 import Constants from 'expo-constants';
 import { useFonts } from 'expo-font';
 import { Slot } from 'expo-router';
@@ -40,15 +41,16 @@ function resolveApiUrl(): string {
 }
 
 export default function RootLayout() {
-  // Clash Display (headlines) + General Sans (body) — self-hosted OTFs, matching
-  // the web. The base family names (ClashDisplay / GeneralSans) are what
+  // Poppins (display — headlines, card titles/prices; matches the web's
+  // consumer marketplace per the approved June 2026 Discover comp) + General
+  // Sans (body). The base family names (Poppins / GeneralSans) are what
   // tokens.fontFamily references; the weighted variants are registered too for
-  // any explicit per-weight use. Outfit stays for the wordmark logo.
+  // any explicit per-weight use. Outfit stays for the wordmark logo (locked).
   const [fontsLoaded, fontError] = useFonts({
-    ClashDisplay: require('../assets/fonts/ClashDisplay-Regular.otf'),
-    'ClashDisplay-Medium': require('../assets/fonts/ClashDisplay-Medium.otf'),
-    'ClashDisplay-Semibold': require('../assets/fonts/ClashDisplay-Semibold.otf'),
-    'ClashDisplay-Bold': require('../assets/fonts/ClashDisplay-Bold.otf'),
+    Poppins: Poppins_400Regular,
+    'Poppins-Medium': Poppins_500Medium,
+    'Poppins-Semibold': Poppins_600SemiBold,
+    'Poppins-Bold': Poppins_700Bold,
     GeneralSans: require('../assets/fonts/GeneralSans-Regular.otf'),
     'GeneralSans-Medium': require('../assets/fonts/GeneralSans-Medium.otf'),
     'GeneralSans-Semibold': require('../assets/fonts/GeneralSans-Semibold.otf'),

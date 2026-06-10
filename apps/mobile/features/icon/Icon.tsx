@@ -1,5 +1,6 @@
 import {
   ArrowUpRight,
+  BadgeCheck,
   Camera,
   ChevronDown,
   ChevronLeft,
@@ -18,6 +19,7 @@ import {
   Share,
   SlidersHorizontal,
   Sparkles,
+  Star,
   Ticket,
   User,
   X,
@@ -43,6 +45,8 @@ const ICONS = {
 
   // Actions
   heart: Heart,
+  badgeCheck: BadgeCheck,
+  star: Star,
   share: Share,
   camera: Camera,
   image: ImageIcon,

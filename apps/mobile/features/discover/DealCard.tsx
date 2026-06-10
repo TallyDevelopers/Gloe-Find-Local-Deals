@@ -118,45 +118,87 @@ export function DealCard({ deal, onSave, isSaved = false, width, imageAspectRati
         {deal.isTrending ? <TrendingRibbon bottom={8} /> : null}
       </View>
 
-      <View style={{ padding: space[3] }}>
-        <Stack gap={1}>
-          <Text variant="caption" tone="tertiary" weight="medium" numberOfLines={1}>
+      {/* Body — mirrors the web card anatomy exactly (approved Discover comp):
+          rose-gold uppercase eyebrow, 2-line title with reserved height so
+          prices align across a rail, verified provider · city, display-font
+          price row, then a hairline-topped meta footer. */}
+      <View style={{ paddingHorizontal: space[3], paddingTop: space[3], paddingBottom: space[3] }}>
+        <Stack gap={2}>
+          <Text
+            numberOfLines={1}
+            style={{
+              fontSize: 11,
+              fontWeight: '700',
+              letterSpacing: 1.1,
+              textTransform: 'uppercase',
+              color: palette.brand[600],
+            }}
+          >
             {deal.category.subtypeDisplayName ?? deal.category.displayName}
           </Text>
-          <Text variant="body-md" tone="primary" weight="semibold" numberOfLines={1}>
+          <Text
+            variant="body-md"
+            tone="primary"
+            weight="semibold"
+            numberOfLines={2}
+            style={{ fontSize: 15.5, lineHeight: 20, minHeight: 40, letterSpacing: -0.15 }}
+          >
             {deal.title}
           </Text>
+
+          <Stack direction="row" gap={1} align="center">
+            <Icon name="badgeCheck" size={14} color={palette.brand[500]} strokeWidth={2.25} />
+            <Text variant="caption" tone="secondary" weight="medium" numberOfLines={1} style={{ flex: 1 }}>
+              {' '}{deal.vendor.businessName}
+              {deal.vendor.city && !deal.vendor.businessName.toLowerCase().includes(deal.vendor.city.toLowerCase())
+                ? ` · ${deal.vendor.city}`
+                : ''}
+            </Text>
+          </Stack>
+
           {/* Sponsored is shown by the top-left image badge now — no separate
-              in-text pill, which freed a whole row and removed the double
-              callout (the card was showing the discount + Sponsored + price
-              strikethrough all at once). */}
-          <Stack direction="row" gap={1} align="baseline">
-            <Text variant="body-md" tone="primary" weight="semibold">
+              in-text pill. */}
+          <Stack direction="row" gap={2} align="baseline">
+            <Text variant="display-sm" tone="primary" weight="semibold" style={{ fontSize: 19, lineHeight: 24 }}>
               {formatPrice(variant.dealPriceCents)}
             </Text>
             <Text
-              variant="caption"
+              variant="body-sm"
               tone="tertiary"
               style={{ textDecorationLine: 'line-through' }}
             >
               {formatPrice(variant.originalPriceCents)}
             </Text>
           </Stack>
-          <Text variant="caption" tone="secondary" numberOfLines={1} weight="medium">
-            {deal.vendor.businessName}
-          </Text>
+
           {rating || driveTime || distance ? (
-            <Stack direction="row" gap={1} align="center" style={{ flexWrap: 'wrap' }}>
-              {rating ? <Text variant="caption" tone="tertiary">{rating}</Text> : null}
+            <Stack
+              direction="row"
+              gap={1}
+              align="center"
+              style={{
+                flexWrap: 'wrap',
+                borderTopWidth: 1,
+                borderTopColor: palette.border.subtle,
+                paddingTop: space[2],
+                marginTop: 2,
+              }}
+            >
+              {rating ? (
+                <>
+                  <Icon name="star" size={11} color={palette.brand[500]} fill={palette.brand[500]} strokeWidth={0} />
+                  <Text variant="caption" tone="secondary"> {rating.replace('★ ', '')}</Text>
+                </>
+              ) : null}
               {driveTime ? (
                 <>
-                  {rating ? <Text variant="caption" tone="tertiary"> · </Text> : null}
-                  <Icon name="clock" size={11} color={palette.text.tertiary} strokeWidth={2} />
-                  <Text variant="caption" tone="tertiary"> {driveTime}</Text>
+                  {rating ? <Text variant="caption" tone="secondary"> · </Text> : null}
+                  <Icon name="clock" size={11} color={palette.text.secondary} strokeWidth={2} />
+                  <Text variant="caption" tone="secondary"> {driveTime}</Text>
                 </>
               ) : null}
               {distance ? (
-                <Text variant="caption" tone="tertiary">
+                <Text variant="caption" tone="secondary">
                   {(rating || driveTime) ? ' · ' : ''}{distance}
                 </Text>
               ) : null}
