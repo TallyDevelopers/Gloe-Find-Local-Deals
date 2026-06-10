@@ -23,7 +23,7 @@ function money(cents: number): string {
  */
 export function PayoutEmail(d: PayoutData) {
   return (
-    <BaseLayout preview={`You got paid ${money(d.amountCents)}`}>
+    <BaseLayout preview={`A redemption at ${d.businessName} just moved ${money(d.amountCents)} to your Stripe balance.`}>
       <Text style={h1}>You got paid 🎉</Text>
       <Text style={p}>
         A customer just redeemed at <strong>{d.businessName}</strong>, and your share is on its way.

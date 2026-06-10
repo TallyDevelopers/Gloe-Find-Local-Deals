@@ -20,7 +20,7 @@ export interface SupportReplyData {
 export function SupportReplyEmail(d: SupportReplyData) {
   const hi = d.firstName ? `Hi ${d.firstName},` : 'Hi there,';
   return (
-    <BaseLayout preview={`Gloē support replied: ${d.subject}`}>
+    <BaseLayout preview={d.replyBody.length > 110 ? `${d.replyBody.slice(0, 110)}…` : d.replyBody}>
       <Text style={h1}>{hi}</Text>
       <Text style={p}>
         We replied to your support request <strong>&ldquo;{d.subject}&rdquo;</strong>:

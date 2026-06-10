@@ -29,7 +29,7 @@ function money(cents: number): string {
 export function ReceiptEmail(d: ReceiptData) {
   const hi = d.firstName ? `Thanks, ${d.firstName}!` : 'Thanks for your purchase!';
   return (
-    <BaseLayout preview={`Your ${d.dealTitle} receipt from Gloē`}>
+    <BaseLayout preview={`${d.codes.length > 1 ? `${d.codes.length} voucher codes` : `Code ${d.codes[0]}`} · valid through ${d.expiresAt} · show it at ${d.vendorName}`}>
       <Text style={h1}>{hi}</Text>
       <Text style={p}>Your purchase is confirmed. Here&apos;s your receipt.</Text>
 

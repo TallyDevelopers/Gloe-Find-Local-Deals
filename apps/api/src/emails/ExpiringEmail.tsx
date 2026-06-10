@@ -21,7 +21,7 @@ export function ExpiringEmail(d: ExpiringData) {
   const hi = d.firstName ? `${d.firstName}, don't lose this!` : "Don't lose this!";
   const when = d.daysLeft <= 1 ? 'tomorrow' : `in ${d.daysLeft} days`;
   return (
-    <BaseLayout preview={`Your ${d.dealTitle} voucher expires ${when}`}>
+    <BaseLayout preview={`Expires ${when} (${d.expiresAt}) — code ${d.code} at ${d.vendorName}.`}>
       <Text style={h1}>{hi}</Text>
       <Text style={p}>
         Your voucher for <strong>{d.dealTitle}</strong> at {d.vendorName} expires <strong>{when}</strong> ({d.expiresAt}).

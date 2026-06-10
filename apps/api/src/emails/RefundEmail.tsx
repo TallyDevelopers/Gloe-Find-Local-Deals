@@ -25,7 +25,7 @@ function money(cents: number): string {
 export function RefundEmail(d: RefundData) {
   const hi = d.firstName ? `Hi ${d.firstName},` : 'Hi there,';
   return (
-    <BaseLayout preview={`Your ${money(d.amountCents)} refund from Gloē`}>
+    <BaseLayout preview={`${money(d.amountCents)} is on its way back to your original payment method.`}>
       <Text style={h1}>{hi}</Text>
       <Text style={p}>
         We&apos;ve refunded <strong>{money(d.amountCents)}</strong> for your purchase at {d.vendorName}.
