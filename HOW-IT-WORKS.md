@@ -784,7 +784,7 @@ account.**
 
 ### The treatment menu is yours to edit (Admin → Treatments)
 
-The master menu of the marketplace — 8 categories and the ~118 treatments under them (every tox
+The master menu of the marketplace — 8 categories and the ~128 treatments under them (every tox
 brand, every filler line, Kybella, dermaplaning, Fraxel, Emsculpt, TRT, lash extensions…) — lives in
 the database, and the **Treatments tab is its editor**. Add a treatment (type a name, optionally a
 unit like "syringe" or "session"), rename one, drag its order, or hide it — and within a minute it's

@@ -401,7 +401,7 @@ All tables in Supabase Postgres. PostGIS extension on. RLS enabled (auth at DB l
 | `review_photos` | Review imagery | review_id, url, display_order |
 | `saved_deals` | Favorited deals | user_id, deal_id |
 | `saved_vendors` | Favorited vendors | user_id, vendor_id |
-| `service_categories` / `service_subtypes` | Service taxonomy (8 categories → ~118 treatments; god-mode editable in Admin → Treatments) | slug, display_name, icon, is_unit_based, unit_label, helper_text, display_order, active |
+| `service_categories` / `service_subtypes` | Service taxonomy (8 categories → ~128 treatments; god-mode editable in Admin → Treatments) | slug, display_name, icon, is_unit_based, unit_label, helper_text, display_order, active |
 | `support_tickets` | Concierge cases (consumer ↔ Gloē) | id, user_id, subject, category, status (open/awaiting_us/awaiting_customer/resolved/closed), last_message_at, resolved_at |
 | `support_messages` | Ticket thread messages | id, ticket_id, sender_type (customer/agent/system), sender_user_id, body, read_at |
 | `support_message_attachments` | Photo/video on a message | id, message_id, kind (image/video), url, thumbnail_url, width, height, display_order |
@@ -416,7 +416,7 @@ Public: `deal-photos`, `deal-videos`, `deal-maps`, `review-photos`, `support-att
 
 The full schema history (38 migrations from the `drop_all_legacy_tables` reset forward) is tracked in `supabase/migrations/`. **Going forward, every schema change gets a file there in the same PR.** Note: the latest tables (`support_*`, `region_waitlist`, `users.deleted_at`) were applied directly via the Supabase MCP and are live, but a few of those migration files may still need backfilling into `supabase/migrations/` — verify before relying on a from-zero rebuild.
 
-### Service taxonomy (8 live categories → ~118 treatments)
+### Service taxonomy (8 live categories → ~128 treatments)
 
 Two tables are the spine of the marketplace — `service_categories` → `service_subtypes` — and **the DB is the source of truth** (vendor signup chips, deal-form treatment picker, Discover pills, and search all read it live):
 
@@ -599,7 +599,7 @@ Ranking lives in `listDeals`' blended score: a strong text match dominates, but 
 
 ### Treatment auto-tagging (vendor side)
 
-The taxonomy is **8 live categories → ~118 active treatment subtypes** (Botox, Kybella, PDO threads, Dermaplaning, Fraxel, Emsculpt, TRT, Lash Extensions…) — comprehensively seeded 2026-06-09 and **admin-editable in god mode** (Admin → Treatments, see below; no more SQL migrations to add a treatment). For search to know "this deal is Botox," the deal must carry `subtype_id`. The post-deal form captures it **without overwhelming the vendor**:
+The taxonomy is **8 live categories → ~128 active treatment subtypes** (Botox, Kybella, PDO threads, Dermaplaning, Fraxel, Emsculpt, TRT, Lash Extensions…) — comprehensively seeded 2026-06-09 and **admin-editable in god mode** (Admin → Treatments, see below; no more SQL migrations to add a treatment). For search to know "this deal is Botox," the deal must carry `subtype_id`. The post-deal form captures it **without overwhelming the vendor**:
 
 - `detectTreatment(title, subtypes, categorySlug)` reads the title as they type and returns the implied treatment + confidence. **Brand names auto-fill** ("Botox — first-timer" → ✓ Botox); **generic words suggest** ("lip filler" → "Looks like Dermal Filler?"). Category-scoped so names under two categories (Laser Hair Removal) disambiguate.
 - Vendor sees **one chip**, not 12. "Change" reveals only that category's treatments. Fully optional; detection never overrides a manual/edit choice.

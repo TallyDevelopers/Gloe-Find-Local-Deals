@@ -31,6 +31,26 @@ const SYNONYM_GROUPS: { triggers: string[]; expand: string[] }[] = [
     triggers: ['filler', 'fillers', 'dermal filler', 'lip filler', 'lips', 'cheek filler', 'jawline', 'chin filler', 'under eye', 'tear trough', 'plump', 'volume', 'nasolabial', 'smile lines'],
     expand: ['dermal filler', 'lip filler', 'cheek filler', 'juvederm', 'voluma', 'volbella', 'restylane', 'kysse', 'lyft', 'rha', 'sculptra', 'radiesse', 'versa', 'belotero', 'skinvive'],
   },
+  // ─── Liquid rhinoplasty / nose ───
+  {
+    triggers: ['nose job', 'nose filler', 'liquid nose job', 'rhinoplasty', 'liquid rhinoplasty', 'non surgical nose job', 'nose'],
+    expand: ['liquid rhinoplasty'],
+  },
+  // ─── Non-surgical lift (brow / neck / face) ───
+  {
+    triggers: ['brow lift', 'eyebrow lift', 'fox eye', 'neck lift', 'nefertiti', 'tech neck', 'face lift', 'facelift', 'non surgical facelift', 'liquid facelift'],
+    expand: ['botox brow lift', 'nefertiti neck lift', 'ultherapy', 'sofwave'],
+  },
+  // ─── Skin boosters / polynucleotides ───
+  {
+    triggers: ['rejuran', 'salmon dna', 'salmon sperm', 'polynucleotide', 'polynucleotides', 'skin booster', 'skin boosters', 'skinvive'],
+    expand: ['polynucleotides', 'skinvive', 'rejuran'],
+  },
+  // ─── Hair restoration ───
+  {
+    triggers: ['hair loss', 'hair restoration', 'prp hair', 'thinning hair', 'hair growth', 'hair regrowth', 'balding'],
+    expand: ['prp hair restoration'],
+  },
   // ─── Kybella / double chin ───
   {
     triggers: ['kybella', 'double chin', 'chin fat', 'submental'],
@@ -83,8 +103,8 @@ const SYNONYM_GROUPS: { triggers: string[]; expand: string[] }[] = [
   },
   // ─── Skin tightening / Morpheus ───
   {
-    triggers: ['skin tightening', 'tighten skin', 'tighten', 'morpheus', 'morpheus8', 'radiofrequency', 'sagging skin', 'firm skin', 'jowls', 'crepey'],
-    expand: ['morpheus8', 'rf microneedling', 'skin tightening', 'halo'],
+    triggers: ['skin tightening', 'tighten skin', 'tighten', 'morpheus', 'morpheus8', 'radiofrequency', 'sagging skin', 'firm skin', 'jowls', 'crepey', 'ultherapy', 'sofwave', 'ultrasound lift'],
+    expand: ['morpheus8', 'rf microneedling', 'skin tightening', 'halo', 'ultherapy', 'sofwave'],
   },
   // ─── Lasers / resurfacing / pigment / redness ───
   {
@@ -228,6 +248,16 @@ const SUBTYPE_ALIASES: Record<string, string[]> = {
   'skinvive': ['skinvive'],
   'prf / ez gel': ['prf', 'ez gel', 'ezgel'],
   'pdo thread lift': ['pdo', 'thread lift', 'threads'],
+  'liquid rhinoplasty (non-surgical nose job)': ['liquid rhinoplasty', 'nose job', 'nose filler', 'rhinoplasty'],
+  'temple filler': ['temple filler', 'temples'],
+  'hand rejuvenation filler': ['hand filler', 'hand rejuvenation'],
+  'botox brow lift': ['brow lift', 'eyebrow lift', 'fox eye'],
+  'nefertiti neck lift (botox)': ['nefertiti', 'neck lift', 'neck botox', 'tech neck'],
+  'hyperdilute radiesse (biostimulator)': ['hyperdilute radiesse', 'biostimulator'],
+  'polynucleotides / salmon dna (rejuran)': ['rejuran', 'polynucleotides', 'salmon dna', 'skin booster'],
+  'ultherapy (non-surgical lift)': ['ultherapy', 'ultrasound lift'],
+  'sofwave': ['sofwave'],
+  'prp hair restoration': ['prp hair', 'hair restoration', 'hair loss'],
   'filler dissolving (hyaluronidase)': ['filler dissolving', 'dissolve filler', 'hyaluronidase', 'hylenex'],
   'dysport': ['dysport'],
   'jeuveau': ['jeuveau', 'newtox'],
@@ -348,6 +378,7 @@ const BRAND_ALIASES = new Set([
   'diamondglow', 'glo2facial', 'geneo', 'vi peel', 'biorepeel', 'jessner', 'vivace', 'potenza',
   'fraxel', 'coolpeel', 'picosure', 'vbeam', 'aerolase', 'emsculpt', 'trusculpt', 'sculpsure',
   'emsella', 'aveli', 'qwo', 'phentermine', 'sermorelin', 'dermaplaning', 'microblading',
+  'rejuran', 'ultherapy', 'sofwave', 'nefertiti',
 ]);
 
 export interface SubtypeRef {
