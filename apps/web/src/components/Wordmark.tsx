@@ -2,30 +2,26 @@ interface WordmarkProps {
   size?: number;
   /** 'gold' for brand contexts, 'light' for dark backgrounds, 'dark' for light backgrounds */
   tone?: 'gold' | 'light' | 'dark';
-  /** Editorial serif cut (Newsreader) — used on FOR BUSINESS surfaces. */
-  serif?: boolean;
 }
 
 /**
  * The Gloē wordmark. Modern geometric sans (Outfit), wide letter-spacing,
  * rose gold. The ē carries the macron (U+0113) — Outfit's latin-ext
- * subset has the glyph. Business surfaces pass `serif` for the editorial
- * Newsreader cut (tighter tracking — wide tracking reads wrong on a serif).
+ * subset has the glyph. The font is the brand — never swap it per-surface.
  */
-export function Wordmark({ size = 28, tone = 'gold', serif = false }: WordmarkProps) {
+export function Wordmark({ size = 28, tone = 'gold' }: WordmarkProps) {
   const color =
     tone === 'gold' ? 'var(--gold)' : tone === 'light' ? 'var(--text-inverse)' : 'var(--text-primary)';
-  const tracking = serif ? '0.02em' : '0.18em';
   return (
     <span
       style={{
-        fontFamily: serif ? 'var(--font-serif)' : 'var(--font-wordmark)',
-        fontWeight: serif ? 500 : 600,
+        fontFamily: 'var(--font-wordmark)',
+        fontWeight: 600,
         fontSize: size,
-        letterSpacing: tracking,
+        letterSpacing: '0.18em',
         color,
         // pull the trailing letter-spacing off the right edge so it optically centers
-        paddingLeft: tracking,
+        paddingLeft: '0.18em',
         lineHeight: 1,
         userSelect: 'none',
       }}
