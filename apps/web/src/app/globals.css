@@ -703,39 +703,32 @@ input::placeholder {
     line-height: 1.42;
     margin-top: 10px;
   }
-  /* Wrapped mobile search, balanced: magnifier + input across the top row,
-     location chip + Search button as the action row below. */
+  /* Same single-row pill as desktop, just compacted: location · input · Search.
+     The standalone magnifier is the one thing dropped — no room at 360px. */
   .hero-search {
     margin-top: 14px;
-    flex-wrap: wrap;
-    border-radius: 26px;
-    padding: 8px 8px 8px 16px;
-    gap: 6px;
+    padding: 5px 5px 5px 6px;
+    gap: 7px;
   }
   .hero-search > svg {
-    order: 1;
-  }
-  .hero-search input {
-    order: 2;
-    flex: 1 1 60%;
-    font-size: 15px;
-    padding: 10px 4px;
-  }
-  .hero-search-sep {
     display: none;
   }
   .hero-search-loc {
-    order: 3;
-    margin-left: -8px;
-    padding: 9px 10px;
-    max-width: 50%;
+    margin-left: 0;
+    padding: 8px 6px 8px 10px;
+    gap: 5px;
+    font-size: 13px;
+    max-width: 38%;
+  }
+  .hero-search-sep {
+    height: 22px;
+  }
+  .hero-search input {
+    font-size: 15px;
+    padding: 8px 0;
   }
   .hero-search-btn {
-    order: 4;
-    flex: 1;
-    justify-content: center;
-    text-align: center;
-    padding: 10px 16px;
+    padding: 10px 15px;
     font-size: 14px;
   }
   /* The chips crowd the compact mobile hero — the cycling search placeholder
