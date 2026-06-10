@@ -107,3 +107,17 @@ export const CLERK_APPEARANCE = {
     badge: { display: 'none' },
   },
 } as const;
+
+/**
+ * Variant for the STANDALONE /sign-in + /sign-up pages. The modal needs
+ * `rootBox: 100%` to fill its shell, but on a page that stretches the wrapper
+ * across the viewport and the card inside left-aligns — so pages use the
+ * card's intrinsic width and let the page's flex centering do its job.
+ */
+export const CLERK_PAGE_APPEARANCE = {
+  ...CLERK_APPEARANCE,
+  elements: {
+    ...CLERK_APPEARANCE.elements,
+    rootBox: { width: 'auto' },
+  },
+} as const;

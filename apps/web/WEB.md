@@ -56,10 +56,15 @@ Design north star: **gorgeous, editorial, premium.** Light mode only (v1).
 | `/wallet`, `/wallet/[id]` | consumer | Clerk | Phase 2 |
 | `/account` | consumer | Clerk | Phase 2 |
 | `/support`, `/support/[id]` | consumer | Clerk | Phase 4 |
-| `/business` | business | public | Phase 0 (moved from `/`) |
+| `/business` | business | public | Phase 0 (moved from `/`); redesigned 2026-06: dark ink-mauve hero (matches vendor-portal brand panel), doc-sourced trust copy (license review, pay-on-redemption, dispute freeze) |
 | `/vendor/*` | business | Clerk | exists |
 | `/admin/*` | admin | Clerk+admin | exists |
 | `/gift/[sessionId]` | public | none | exists |
+
+**Business funnel continuity (2026-06):** `/business` → `/sign-up?redirect_url=/vendor` →
+`/vendor` all share the dark ink-mauve split-screen shell (`BizAuthShell` wraps Clerk's card on
+vendor-bound auth; consumer auth keeps the centered card via `CLERK_PAGE_APPEARANCE`, which fixes
+the rootBox full-width stretch on standalone pages).
 
 Note the `/vendor` collision: the consumer storefront is **`/spa/[id]`** (the
 business dashboard owns `/vendor`).
