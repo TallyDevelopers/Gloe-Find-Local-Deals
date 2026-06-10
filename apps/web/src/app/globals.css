@@ -457,6 +457,10 @@ textarea {
   gap: 22px;
 }
 .deal-card {
+  /* position+z-index so a hovered card (and its shadow) paints ABOVE its
+     siblings — without this the next card in DOM order overlaps the lifted
+     card's shadow and it reads as a glitch. */
+  position: relative;
   background: var(--surface-elevated);
   border-radius: var(--radius-lg);
   overflow: hidden;
@@ -467,6 +471,7 @@ textarea {
 .deal-card:hover {
   transform: translateY(-4px);
   box-shadow: 0 16px 40px rgba(43, 32, 25, 0.14);
+  z-index: 2;
 }
 
 .hide-scrollbar {
@@ -1484,7 +1489,14 @@ input::placeholder {
   scroll-padding-left: 2px;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-x: contain;
-  padding-bottom: 4px;
+  /* The track is a scroll container, so it clips vertically too. Vertical
+     padding (pulled back with equal negative margins, net layout unchanged)
+     gives the deal-card hover lift + shadow room to render instead of being
+     sheared off at the track's top/bottom edges. */
+  padding-top: 10px;
+  margin-top: -10px;
+  padding-bottom: 32px;
+  margin-bottom: -28px;
 }
 .carousel-track > * {
   scroll-snap-align: start;
