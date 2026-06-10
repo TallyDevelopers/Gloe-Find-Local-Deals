@@ -54,6 +54,21 @@
   font-style: normal;
   font-display: swap;
 }
+/* Editorial serif for accent words + the business wordmark (Newsreader, OFL). */
+@font-face {
+  font-family: 'Newsreader';
+  src: url('/fonts/newsreader-500.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Newsreader';
+  src: url('/fonts/newsreader-italic-500.woff2') format('woff2');
+  font-weight: 500;
+  font-style: italic;
+  font-display: swap;
+}
 
 :root {
   --surface-primary: #faf5f2;
@@ -92,6 +107,7 @@
   --font-display: 'Clash Display', var(--font-hanken), system-ui, sans-serif;
   --font-body: 'General Sans', var(--font-hanken), -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-wordmark: 'Outfit', 'Inter', sans-serif;
+  --font-serif: 'Newsreader', Georgia, 'Times New Roman', serif;
 }
 
 * {
@@ -2695,9 +2711,9 @@ input::placeholder {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 320px;
   gap: 56px;
-  align-items: end;
+  align-items: center;
 }
-.bl-hero-copy { padding: 80px 0 72px; }
+.bl-hero-copy { padding: 80px 0 104px; }
 .bl-hero h1 {
   font-family: var(--font-display);
   font-size: clamp(38px, 4.4vw, 58px);
@@ -2716,11 +2732,11 @@ input::placeholder {
 }
 .bl-hero-sub strong { color: #f0edf1; }
 .bl-hero-note { font-size: 14px; color: #857f89; margin-top: 16px; }
-/* Phone render emerging from the hero's bottom edge */
+/* Phone render — fully inside the hero (the floating trust cards own the seam) */
 .bl-hero-phone {
   justify-self: center;
-  margin-bottom: -190px;
-  transform: rotate(-4deg);
+  padding: 56px 0 72px;
+  transform: rotate(-3deg);
 }
 .bl-cta-primary {
   display: inline-flex;
@@ -2755,4 +2771,104 @@ input::placeholder {
   .bl-hero-grid { grid-template-columns: 1fr; gap: 0; }
   .bl-hero-phone { display: none; }
   .bl-hero-copy { padding: 56px 0; }
+}
+
+/* ---- /business v2: editorial serif accents + floating trust cards + bands ---- */
+.bl-accent {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.bl-hero .bl-accent { color: #ddab9c; }
+
+.bl-h2 {
+  font-family: var(--font-display);
+  font-size: clamp(30px, 3vw, 40px);
+  font-weight: 600;
+  line-height: 1.12;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  max-width: 640px;
+}
+.bl-h2 .bl-accent { color: var(--brand-600); }
+.bl-section-sub {
+  font-size: 17px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  max-width: 560px;
+  margin-top: 12px;
+}
+
+/* Header anchor links */
+.bl-nav-link {
+  font-size: 14px;
+  font-weight: 500;
+  color: #c2bcc4;
+  text-decoration: none;
+}
+.bl-nav-link:hover { color: #f0edf1; }
+/* Anchor links hide on phones (Sign in + CTA stay) */
+@media (max-width: 760px) {
+  .show-desktop-inline { display: none !important; }
+}
+
+/* Hero bullet trio under the CTAs */
+.bl-hero-bullets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin-top: 18px;
+  font-size: 13.5px;
+  color: #857f89;
+}
+.bl-hero-bullets span { display: inline-flex; align-items: center; gap: 7px; }
+
+/* Trust cards floating across the hero/cream seam */
+.bl-trust-float {
+  max-width: 1100px;
+  margin: -48px auto 0;
+  padding: 0 24px;
+  position: relative;
+  z-index: 2;
+}
+.bl-trust-float .trust-strip { box-shadow: 0 18px 48px rgba(43, 32, 25, 0.14); }
+
+/* Journey — numbered editorial rows */
+.bl-journey { max-width: 880px; margin: 0 auto; padding: 72px 24px 0; }
+.bl-journey-row {
+  display: flex;
+  gap: 28px;
+  padding: 26px 0;
+  border-top: 1px solid var(--border-subtle);
+}
+.bl-journey-row:first-of-type { border-top: none; }
+.bl-journey-num {
+  flex: none;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 26px;
+  color: var(--brand-600);
+  width: 44px;
+  padding-top: 2px;
+}
+.bl-journey-row h3 { font-size: 20px; font-weight: 600; color: var(--text-primary); }
+.bl-journey-row p { font-size: 15.5px; line-height: 1.6; color: var(--text-secondary); margin-top: 6px; max-width: 620px; }
+
+/* Dark bands (pricing, final CTA) — same ink-mauve as the hero */
+.bl-band-dark {
+  background:
+    radial-gradient(700px 400px at 50% -20%, rgba(200, 154, 140, 0.14), transparent 60%),
+    linear-gradient(165deg, #131217 0%, #1c1a22 55%, #26232e 100%);
+  padding: 72px 24px;
+  text-align: center;
+}
+.bl-band-dark .bl-h2 { color: #f0edf1; margin-inline: auto; }
+.bl-band-dark .bl-h2 .bl-accent { color: #ddab9c; }
+.bl-band-dark p { color: #c2bcc4; }
+
+@media (max-width: 760px) {
+  .bl-trust-float { margin-top: -32px; }
+  .bl-journey { padding-top: 56px; }
+  .bl-journey-row { gap: 16px; }
 }
