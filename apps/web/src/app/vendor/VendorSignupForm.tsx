@@ -1,5 +1,7 @@
 'use client';
 
+import { useClerk, useUser } from '@clerk/nextjs';
+import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 
@@ -41,6 +43,12 @@ export function VendorSignupForm({
   const [resolvingPlaceId, setResolvingPlaceId] = useState<string | null>(null);
   const [categories, setCategories] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
+
+  // The page is auth-gated with no site chrome, and claiming depends on WHICH
+  // account you're in — so the escape hatches live here: back home + sign out.
+  const { user } = useUser();
+  const { signOut } = useClerk();
+  const signedInEmail = user?.primaryEmailAddress?.emailAddress;
 
   const utils = trpc.useUtils();
 
@@ -113,6 +121,19 @@ export function VendorSignupForm({
 
       {/* Right form column */}
       <main className="biz-form-col">
+        <div className="biz-utility-row">
+          <Link href="/" className="biz-utility-link">← Back to Gloē</Link>
+          <span className="biz-utility-id">
+            {signedInEmail ? <span className="biz-utility-email">{signedInEmail}</span> : null}
+            <button
+              type="button"
+              className="biz-utility-link"
+              onClick={() => void signOut({ redirectUrl: '/vendor' })}
+            >
+              Sign out
+            </button>
+          </span>
+        </div>
         <div className="biz-form-inner">
           {/* Brand header for narrow screens, where the left panel is hidden */}
           <div className="biz-mobile-brand">
