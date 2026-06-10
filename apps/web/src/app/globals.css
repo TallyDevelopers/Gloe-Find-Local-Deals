@@ -481,7 +481,7 @@ textarea {
 .hero {
   position: relative;
   overflow: hidden;
-  min-height: 440px;
+  min-height: 600px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -513,7 +513,7 @@ textarea {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(180deg, rgba(24, 16, 12, 0.52) 0%, rgba(24, 16, 12, 0.4) 42%, rgba(24, 16, 12, 0.6) 100%);
+    linear-gradient(180deg, rgba(24, 16, 12, 0.62) 0%, rgba(24, 16, 12, 0.5) 42%, rgba(24, 16, 12, 0.7) 100%);
 }
 .hero-content {
   position: relative;
@@ -521,8 +521,9 @@ textarea {
   width: 100%;
   max-width: 720px;
   margin: 0 auto;
-  /* Extra bottom room: the trust strip overlaps the hero's bottom ~44px. */
-  padding: 48px 24px 92px;
+  /* Top room clears the overlaid 68px nav with air to spare; bottom room
+     because the trust strip overlaps the hero's bottom ~44px. */
+  padding: 128px 24px 96px;
   text-align: center;
   color: #fff;
 }
@@ -682,15 +683,16 @@ input::placeholder {
   /* Full-bleed hero on mobile — compact: just enough to frame the headline +
      search, then straight into deals. */
   .hero {
-    min-height: 410px;
+    min-height: 480px;
   }
   .hero-scrim {
     background:
       linear-gradient(180deg, rgba(24, 16, 12, 0.55) 0%, rgba(24, 16, 12, 0.42) 45%, rgba(24, 16, 12, 0.62) 100%);
   }
   .hero-content {
-    /* Bottom room for the overlapping trust strip (≈62px on phones). */
-    padding: 30px 16px 96px;
+    /* Top room clears the mobile header; bottom room for the overlapping
+       trust strip (≈62px on phones). */
+    padding: 84px 16px 96px;
   }
   .hero h1 {
     font-size: 38px;
@@ -701,42 +703,40 @@ input::placeholder {
     line-height: 1.42;
     margin-top: 10px;
   }
-  /* Comp's wrapped mobile search: location chip + Search button on the first
-     row, the input on its own full-width row below. */
+  /* Wrapped mobile search, balanced: magnifier + input across the top row,
+     location chip + Search button as the action row below. */
   .hero-search {
     margin-top: 14px;
     flex-wrap: wrap;
-    border-radius: 24px;
-    padding: 10px;
-    gap: 8px;
+    border-radius: 26px;
+    padding: 8px 8px 8px 16px;
+    gap: 6px;
   }
-  .hero-search-loc {
+  .hero-search > svg {
     order: 1;
-    margin-left: 0;
-    padding: 9px 10px;
-    max-width: 55%;
+  }
+  .hero-search input {
+    order: 2;
+    flex: 1 1 60%;
+    font-size: 15px;
+    padding: 10px 4px;
   }
   .hero-search-sep {
     display: none;
   }
+  .hero-search-loc {
+    order: 3;
+    margin-left: -8px;
+    padding: 9px 10px;
+    max-width: 50%;
+  }
   .hero-search-btn {
-    order: 2;
+    order: 4;
     flex: 1;
     justify-content: center;
     text-align: center;
     padding: 10px 16px;
     font-size: 14px;
-  }
-  /* The Search button already carries the affordance — the bare magnifier
-     would orphan itself at the end of the first wrapped row. */
-  .hero-search > svg {
-    display: none;
-  }
-  .hero-search input {
-    order: 3;
-    flex: 1 1 100%;
-    font-size: 15px;
-    padding: 10px 8px;
   }
   /* The chips crowd the compact mobile hero — the cycling search placeholder
      already sells the same treatments there. */
@@ -2894,6 +2894,19 @@ input::placeholder {
   transition: border-color 0.15s, background 0.15s;
 }
 .bl-cta-ghost:hover { border-color: rgba(240, 237, 241, 0.55); background: rgba(240, 237, 241, 0.06); }
+/* Small header CTA (was the inline cta('sm') style before BizHeader split out). */
+.bl-header-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  border-radius: var(--radius-pill);
+  font-size: 14px;
+  padding: 9px 18px;
+  background: var(--brand-500);
+  color: var(--text-inverse);
+  border: none;
+}
 
 @media (max-width: 900px) {
   .bl-hero-grid { grid-template-columns: 1fr; gap: 0; }

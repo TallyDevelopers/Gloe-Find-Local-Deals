@@ -4,7 +4,7 @@ import Link from 'next/link';
 
 import { Check, Lock, MapPin, ShieldCheck, Star, Wallet, Zap } from '../../components/consumer/icons';
 import { PhoneMock } from '../../components/consumer/GetTheApp';
-import { Wordmark } from '../../components/Wordmark';
+import { BizHeader } from './BizHeader';
 import { PortalShowcase } from './BizShowcase';
 
 export const metadata: Metadata = {
@@ -24,29 +24,9 @@ export const metadata: Metadata = {
 export default function ForBusinessPage() {
   return (
     <main style={{ minHeight: '100vh', background: 'var(--surface-primary)' }}>
-      {/* Header */}
-      <header style={{ position: 'sticky', top: 0, zIndex: 30, background: 'rgba(19,18,23,0.85)', backdropFilter: 'saturate(140%) blur(14px)', borderBottom: '1px solid rgba(240,237,241,0.1)' }}>
-        {/* Same metrics as the consumer .topnav-inner (1600 / 68 / 40px gutters)
-            so the wordmark doesn't jump when flipping between gloe.app and here. */}
-        <div style={{ maxWidth: 1600, margin: '0 auto', height: 68, padding: '0 clamp(20px, 4vw, 40px)', display: 'flex', alignItems: 'center', gap: 22 }}>
-          <Link href="/" aria-label="Gloē home" style={{ display: 'inline-flex', alignItems: 'baseline', gap: 12 }}>
-            <Wordmark size={26} tone="gold" />
-            <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.14em', color: '#857f89' }}>FOR BUSINESS</span>
-          </Link>
-          <nav style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 22 }}>
-            <a href="#how" className="bl-nav-link show-desktop-inline">How it works</a>
-            <a href="#pricing" className="bl-nav-link show-desktop-inline">Pricing</a>
-            <a href="#faq" className="bl-nav-link show-desktop-inline">FAQ</a>
-            <SignedOut>
-              <Link href="/sign-in?redirect_url=/vendor" className="bl-nav-link">Sign in</Link>
-              <Link href="/sign-up?redirect_url=/vendor" style={cta('sm')}>List your spa</Link>
-            </SignedOut>
-            <SignedIn>
-              <Link href="/vendor" style={cta('sm')}>Go to dashboard</Link>
-            </SignedIn>
-          </nav>
-        </div>
-      </header>
+      {/* Header — consumer-style liquid glass: transparent over the dark hero,
+          frosted ink once scrolled (client component for the scroll state). */}
+      <BizHeader />
 
       {/* Hero — dark ink-mauve, same family as the vendor signup panel */}
       <section className="bl-hero">
@@ -241,21 +221,6 @@ const eyebrow: React.CSSProperties = {
   textTransform: 'uppercase',
   color: 'var(--brand-600)',
 };
-
-function cta(size: 'sm' | 'lg'): React.CSSProperties {
-  return {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontWeight: 700,
-    borderRadius: 'var(--radius-pill)',
-    fontSize: size === 'lg' ? 16 : 14,
-    padding: size === 'lg' ? '14px 28px' : '9px 18px',
-    background: 'var(--brand-500)',
-    color: 'var(--text-inverse)',
-    border: 'none',
-  };
-}
 
 function TrustItem({ icon, title, body }: { icon: React.ReactNode; title: string; body: string }) {
   return (
