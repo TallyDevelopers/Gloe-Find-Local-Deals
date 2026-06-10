@@ -2361,3 +2361,254 @@ input::placeholder {
 @media (max-width: 760px) {
   .skel-tile { width: 62vw; max-width: 240px; }
 }
+
+/* ============================================================
+   Gloē for Business — vendor signup (.biz-*)
+   Split-screen onboarding: sticky editorial brand panel left,
+   form column right. Inline styles can't express :focus/:hover,
+   so all stateful styling lives here.
+   ============================================================ */
+.biz-layout { display: flex; min-height: 100vh; align-items: stretch; }
+
+.biz-form-col {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 64px 72px;
+}
+.biz-form-inner { width: 100%; max-width: 460px; margin: 0 auto; }
+
+.biz-form-col h1 {
+  font-family: var(--font-display);
+  font-size: 38px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.biz-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin-bottom: 8px;
+}
+
+.biz-input {
+  width: 100%;
+  font-size: 16px;
+  font-family: var(--font-body);
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--border-default);
+  background: var(--surface-elevated);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.biz-input::placeholder { color: var(--text-tertiary); }
+.biz-input:hover { border-color: var(--brand-500); }
+.biz-input:focus { border-color: var(--brand-500); box-shadow: 0 0 0 4px var(--brand-100); }
+
+/* Address autocomplete dropdown */
+.biz-suggestions {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 10;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--surface-elevated);
+  box-shadow: 0 16px 40px rgba(43, 32, 25, 0.16);
+}
+.biz-suggestion {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 13px 16px;
+  background: var(--surface-elevated);
+  border: none;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 15px;
+  font-family: var(--font-body);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.biz-suggestion:last-child { border-bottom: none; }
+.biz-suggestion:hover, .biz-suggestion:focus-visible { background: var(--brand-50); }
+
+/* Resolved-address confirmation */
+.biz-resolved {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 11px 14px;
+  border-radius: 12px;
+  background: var(--brand-50);
+  border: 1px solid var(--brand-100);
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+.biz-resolved-check {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--success);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+}
+
+/* Category chips */
+.biz-chip {
+  padding: 10px 18px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-default);
+  background: var(--surface-elevated);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.biz-chip:hover { border-color: var(--brand-500); background: var(--brand-50); }
+.biz-chip[data-on='true'] {
+  border-color: var(--brand-600);
+  background: var(--brand-600);
+  color: var(--text-inverse);
+}
+
+/* Primary CTA */
+.biz-cta {
+  width: 100%;
+  padding: 17px 24px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(135deg, var(--brand-500), var(--gold-deep));
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  font-family: var(--font-body);
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(184, 128, 111, 0.35);
+  transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+}
+.biz-cta:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 12px 32px rgba(184, 128, 111, 0.45); }
+.biz-cta:active:not(:disabled) { transform: translateY(0); }
+.biz-cta:disabled { opacity: 0.45; cursor: default; box-shadow: none; }
+
+/* "Was your spa set up for you?" claim card */
+.biz-claim-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: var(--brand-50);
+  border: 1px solid var(--brand-100);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.biz-claim-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--brand-600);
+  font-weight: 700;
+  font-size: 14px;
+  font-family: var(--font-body);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.biz-claim-link:hover { color: var(--brand-500); }
+
+/* ---- Left brand panel ---- */
+.biz-brand-panel {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 32px;
+  padding: 56px 64px 0;
+  overflow: hidden;
+  border-right: 1px solid var(--border-subtle);
+  background:
+    radial-gradient(900px 600px at 110% -10%, var(--brand-100), transparent 60%),
+    radial-gradient(700px 500px at -20% 110%, rgba(232, 180, 171, 0.35), transparent 60%),
+    var(--brand-50);
+}
+.biz-brand-headline {
+  font-family: var(--font-display);
+  font-size: clamp(34px, 3.2vw, 48px);
+  font-weight: 600;
+  line-height: 1.08;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  max-width: 440px;
+}
+.biz-value-row {
+  display: flex;
+  gap: 16px;
+  padding: 18px 0;
+  border-top: 1px solid var(--border-subtle);
+  max-width: 440px;
+}
+.biz-value-num {
+  flex: none;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--brand-600);
+  padding-top: 2px;
+}
+.biz-value-row strong {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+.biz-value-row p { font-size: 14px; line-height: 1.5; color: var(--text-secondary); }
+
+/* Phone mockup cropped into the bottom edge of the panel */
+.biz-phone-wrap {
+  align-self: center;
+  margin-bottom: -150px;
+  transform: rotate(-4deg);
+  transition: transform 0.4s ease, margin-bottom 0.4s ease;
+}
+.biz-brand-panel:hover .biz-phone-wrap { transform: rotate(-2deg) translateY(-12px); }
+
+@media (max-width: 1100px) {
+  .biz-form-col { padding: 48px 40px; }
+  .biz-brand-panel { padding: 48px 40px 0; }
+}
+/* Wordmark above the form on narrow screens (left panel hidden there) */
+.biz-mobile-brand { display: none; }
+@media (max-width: 900px) {
+  .biz-form-col { padding: 40px 20px 56px; justify-content: flex-start; }
+  .biz-mobile-brand {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+}

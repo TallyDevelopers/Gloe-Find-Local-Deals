@@ -84,45 +84,33 @@ function ClaimOrSignup({ onVendorReady }: { onVendorReady: () => void }) {
     }
   };
 
+  // Auto-claim already ran and found nothing, so for almost everyone this
+  // form is correct. The footnote covers the one edge case: their listing
+  // exists but the admin added their email AFTER the auto-check above.
   return (
-    <div>
-      <div
-        style={{
-          maxWidth: 560,
-          margin: '20px auto 0',
-          padding: '12px 16px',
-          background: 'var(--brand-50)',
-          border: '1px solid var(--brand-100)',
-          borderRadius: 'var(--radius-md)',
-          fontSize: 14,
-          color: 'var(--text-secondary)',
-        }}
-      >
-        <strong>Was your spa set up for you?</strong> If Gloē created your listing, you don&rsquo;t
-        need this form — sign in with the email we have on file and{' '}
-        <button
-          onClick={manualClaim}
-          disabled={claim.isPending}
+    <VendorSignupForm
+      onCreated={onVendorReady}
+      footnote={
+        <p
           style={{
-            background: 'none',
-            border: 'none',
-            padding: 0,
-            color: 'var(--brand-600)',
-            fontWeight: 700,
-            fontSize: 14,
-            cursor: 'pointer',
-            textDecoration: 'underline',
+            fontSize: 13,
+            color: 'var(--text-tertiary)',
+            textAlign: 'center',
+            lineHeight: 1.5,
+            borderTop: '1px solid var(--border-subtle)',
+            paddingTop: 18,
           }}
         >
-          {claim.isPending ? 'checking…' : 'claim your business'}
-        </button>
-        .
-        {manualResult ? (
-          <div style={{ marginTop: 6, color: 'var(--text-tertiary)', fontSize: 13 }}>{manualResult}</div>
-        ) : null}
-      </div>
-      <VendorSignupForm onCreated={onVendorReady} />
-    </div>
+          Expecting to see a listing Gloē set up for you?{' '}
+          <button onClick={manualClaim} disabled={claim.isPending} className="biz-claim-link">
+            {claim.isPending ? 'Checking…' : 'Check again'}
+          </button>
+          {manualResult ? (
+            <span style={{ display: 'block', marginTop: 6 }}>{manualResult}</span>
+          ) : null}
+        </p>
+      }
+    />
   );
 }
 

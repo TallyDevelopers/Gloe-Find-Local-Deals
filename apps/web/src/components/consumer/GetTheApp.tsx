@@ -1,4 +1,4 @@
-import { Bookmark, Check, ChevronDown, Clock, Heart, MapPin, Search, Sparkles, Star, User, Wallet } from './icons';
+import { Bookmark, Check, ChevronDown, Clock, Heart, Map, MapPin, Search, Sparkles, Star, User, Wallet } from './icons';
 
 /**
  * "Get the app" marketing band: value copy + App Store / Google Play badges on
@@ -56,7 +56,8 @@ export function GetTheApp() {
 
 /* ------------------------------- iPhone mock ------------------------------ */
 
-function PhoneMock() {
+/** Exported for reuse on the business signup brand panel. */
+export function PhoneMock() {
   return (
     <div
       className="phone-mock"
@@ -99,46 +100,25 @@ function PhoneMock() {
           </span>
         </div>
 
-        {/* App header — mirrors the real Discover screen: a "Near you" location
-            pill, search, and filter pills. (The app shows no wordmark/avatar here.) */}
-        <div style={{ padding: '6px 14px 0' }}>
-          {/* Location pill */}
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '6px 11px', borderRadius: 999, background: 'var(--surface-elevated)', border: '1px solid var(--border-subtle)', fontSize: 11.5, fontWeight: 600, color: 'var(--text-primary)' }}>
-            <MapPin size={12} color="var(--text-primary)" /> Near you <ChevronDown size={11} color="var(--text-tertiary)" />
+        {/* App header — mirrors the real Discover screen: one row with the
+            search bar (location folded in as a tappable left segment) and the
+            square brand map button beside it (ResortPass pattern). */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 14px 0' }}>
+          {/* Search bar with "📍 Near you │ Search…" left segment */}
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 7, padding: '10px 11px', borderRadius: 999, background: 'var(--surface-elevated)', border: '1px solid var(--border-subtle)' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0, fontSize: 11, fontWeight: 700, color: 'var(--text-primary)' }}>
+              <MapPin size={12} color="var(--brand-600)" /> Near you <ChevronDown size={10} color="var(--text-tertiary)" />
+            </span>
+            <span style={{ width: 1, alignSelf: 'stretch', background: 'var(--border-subtle)' }} />
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+              <Search size={12} color="var(--text-tertiary)" style={{ flexShrink: 0 }} />
+              <span style={{ fontSize: 11, color: 'var(--text-tertiary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Search Botox, filler…</span>
+            </span>
+          </div>
+          {/* Square map-view button */}
+          <span style={{ flexShrink: 0, width: 36, height: 36, borderRadius: 10, background: 'var(--brand-500)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px rgba(43,32,25,0.18)' }}>
+            <Map size={17} color="#fff" />
           </span>
-
-          {/* Search */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 10, padding: '9px 13px', borderRadius: 999, background: 'var(--surface-elevated)', border: '1px solid var(--border-subtle)' }}>
-            <Search size={13} color="var(--text-tertiary)" />
-            <span style={{ fontSize: 11.5, color: 'var(--text-tertiary)' }}>Search Botox, filler, lasers…</span>
-          </div>
-
-          {/* Category pills — active is dark-filled, like the app */}
-          <div style={{ display: 'flex', gap: 6, marginTop: 10, overflow: 'hidden' }}>
-            {[
-              { label: 'All', active: false },
-              { label: 'Injectables', active: false },
-              { label: 'Hormones & Peptides', active: true },
-              { label: 'Laser', active: false },
-            ].map((p) => (
-              <span
-                key={p.label}
-                style={{
-                  flexShrink: 0,
-                  fontSize: 10.5,
-                  fontWeight: 700,
-                  padding: '6px 12px',
-                  borderRadius: 999,
-                  whiteSpace: 'nowrap',
-                  background: p.active ? 'var(--text-primary)' : 'var(--surface-elevated)',
-                  color: p.active ? 'var(--text-inverse)' : 'var(--text-secondary)',
-                  border: p.active ? 'none' : '1px solid var(--border-subtle)',
-                }}
-              >
-                {p.label}
-              </span>
-            ))}
-          </div>
         </div>
 
         {/* Deal feed — one full-width hero card like the real DealCardLarge, with
