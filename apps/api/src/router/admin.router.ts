@@ -283,13 +283,18 @@ export const adminRouter = router({
   /** All editorial home-feed sections (active + inactive), in display order. */
   listDiscoverSections: adminProcedure.query(({ ctx }) => listDiscoverSections(ctx.sql)),
 
-  /** Author a new section: a tagline that pools 1..N categories into one rail. */
+  /** Author a new section: a tagline (+ optional description) that pools whole
+   *  categories and/or specific treatments into one rail. At least one target. */
   createDiscoverSection: adminProcedure
     .input(z.object({
       tagline: z.string().min(1).max(120),
-      categoryIds: z.array(z.string().uuid()).min(1).max(8),
+      description: z.string().max(240).nullable().optional(),
+      categoryIds: z.array(z.string().uuid()).max(8).optional(),
+      subtypeIds: z.array(z.string().uuid()).max(24).optional(),
       imageUrl: z.string().url().nullable().optional(),
       active: z.boolean().optional(),
+    }).refine((v) => (v.categoryIds?.length ?? 0) + (v.subtypeIds?.length ?? 0) > 0, {
+      message: 'Pick at least one category or treatment.',
     }))
     .mutation(async ({ ctx, input }) => {
       const section = await createDiscoverSection(ctx.sql, input);
@@ -301,12 +306,15 @@ export const adminRouter = router({
       return section;
     }),
 
-  /** Edit a section: tagline, categories (replaces the set), image, order, active. */
+  /** Edit a section: tagline, description, categories/treatments (each replaces
+   *  its set when present), image, order, active. */
   updateDiscoverSection: adminProcedure
     .input(z.object({
       id: z.string().uuid(),
       tagline: z.string().min(1).max(120).optional(),
-      categoryIds: z.array(z.string().uuid()).min(1).max(8).optional(),
+      description: z.string().max(240).nullable().optional(),
+      categoryIds: z.array(z.string().uuid()).max(8).optional(),
+      subtypeIds: z.array(z.string().uuid()).max(24).optional(),
       imageUrl: z.string().url().nullable().optional(),
       displayOrder: z.number().int().min(0).optional(),
       active: z.boolean().optional(),

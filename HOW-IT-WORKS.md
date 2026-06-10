@@ -188,18 +188,22 @@ Right at the top of Discover, a small strip quietly remembers the last handful o
 
 Those rail headings aren't the boring category name anymore. **You** write them. In the admin
 console under **Discover**, you create "sections" — each one is a **cute, benefit-led tagline** that
-*replaces* the category label, and you pick **which categories it pulls from** (one, or several).
-So instead of a rail called "Injectables," you can have **"Find fillers & Botox to boost your glow"**;
-instead of "Injectables" and "Skin" as two separate rails, you can pool them into one **"Look snatched"**
-rail. Add as many as you want, drag them into the order you want, hide one with a toggle, give it its
-own photo. It's saved in the database, so changing the copy is instant — **no app update, no code.**
+*replaces* the category label, an optional **description you type** that shows right under it, and
+you pick **what it pulls from**: whole categories (one, or several), **specific treatments**, or a
+mix. So instead of a rail called "Injectables," you can have **"Find fillers & Botox to boost your
+glow"**; you can pool "Injectables" and "Skin" into one **"Look snatched"** rail — or go fully
+pointed: **"Rhinoplasty, without living with it forever"** targeting just the *Liquid Rhinoplasty*
+treatment, with "15-minute liquid nose jobs — no surgery, no downtime" typed underneath. Add as many
+as you want, drag them into the order you want, hide one with a toggle, give it its own photo. It's
+saved in the database, so changing the copy is instant — **no app update, no code.**
 
 A couple of honest details:
 - The little **"Browse by category" photo tiles** at the top stay as plain category shortcuts (a fast
   way to jump *into* a category) — only the rails below become editorial.
 - If you haven't written any sections yet, the feed quietly falls back to one rail per category, so it's
-  **never blank** — and a multi-category section's "See all" pools all its categories together on the
-  app. (On the website, a multi-category rail shows its deals but skips the "View more" link for now.)
+  **never blank** — and a multi-category or treatment-targeted section's "See all" pools all its targets
+  together on the app, description included. (On the website, those pooled rails show their deals but
+  skip the "View more" link for now.)
 
 **Refreshes happen when:** your location changes, you change a category/filter, or you pull-to-refresh
 (which gives a little haptic buzz and re-fetches). Otherwise, after 30 seconds of staleness, the next

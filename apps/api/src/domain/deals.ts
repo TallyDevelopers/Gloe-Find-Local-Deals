@@ -200,6 +200,14 @@ interface ListParams {
    */
   categories?: string[];
   /**
+   * Pool deals tagged with ANY of these treatment (subtype) slugs, OR-combined
+   * with `categories` when both are present. Powers editorial sections that
+   * target a specific treatment ("Liquid Rhinoplasty") instead of — or on top
+   * of — whole categories. Distinct from `subtypeSlug`, which is an AND filter
+   * (the customer drill-down within an already-scoped view).
+   */
+  subtypes?: string[];
+  /**
    * Restrict to this exact set of deal ids. Powers "Recently viewed" — the
    * caller passes the ids it has and re-orders the result to its own order
    * (view recency), since the SQL ranking here doesn't know about it.
@@ -253,7 +261,7 @@ export interface DealPage {
 
 export async function listDeals(sql: Sql, params: ListParams = {}): Promise<DealPage> {
   const {
-    userLat, userLng, maxDistanceMiles = 50, category, categories, dealIds: dealIdFilterInput, limit = 50, offset = 0,
+    userLat, userLng, maxDistanceMiles = 50, category, categories, subtypes, dealIds: dealIdFilterInput, limit = 50, offset = 0,
     minPriceCents, maxPriceCents, minDiscountPct, q, subtypeSlug, minRating, vibes, sort, viewerSeed,
   } = params;
   const idFilter = (dealIdFilterInput ?? []).filter((s) => typeof s === 'string' && s.length > 0);
@@ -263,6 +271,10 @@ export async function listDeals(sql: Sql, params: ListParams = {}): Promise<Deal
   // doesn't accidentally filter to nothing.
   const categorySlugs = (categories ?? []).filter((c) => typeof c === 'string' && c.length > 0);
   const hasCategoryList = categorySlugs.length > 0;
+  // Treatment pooling (editorial sections): OR-combined with the category pool,
+  // so a section can mix "all of Skin" with "just Liquid Rhinoplasty".
+  const subtypePool = (subtypes ?? []).filter((s) => typeof s === 'string' && s.length > 0);
+  const hasSubtypePool = subtypePool.length > 0;
   const vibeFilter = Array.isArray(vibes) ? vibes.filter((v) => typeof v === 'string' && v.length > 0) : [];
   const hasVibes = vibeFilter.length > 0;
   const hasUserLocation = typeof userLat === 'number' && typeof userLng === 'number';
@@ -390,13 +402,14 @@ export async function listDeals(sql: Sql, params: ListParams = {}): Promise<Deal
       AND v.status = 'active'
       AND d.expires_at > now()
       ${hasIdFilter ? sql`AND d.id = ANY(${sql.array(idFilter)}::uuid[])` : sql``}
-      ${hasCategoryList ? sql`AND (
-        c.slug = ANY(${sql.array(categorySlugs)}::text[])
+      ${hasCategoryList || hasSubtypePool ? sql`AND (
+        ${hasCategoryList ? sql`c.slug = ANY(${sql.array(categorySlugs)}::text[])
         OR EXISTS (
           SELECT 1 FROM public.service_categories c2
            WHERE c2.id = d.secondary_category_id
              AND c2.slug = ANY(${sql.array(categorySlugs)}::text[])
-        )
+        )` : sql`false`}
+        OR ${hasSubtypePool ? sql`s.slug = ANY(${sql.array(subtypePool)}::text[])` : sql`false`}
       )` : category ? sql`AND (
         c.slug = ${category}
         OR EXISTS (
@@ -482,12 +495,20 @@ export interface DiscoverRail {
    * NOT show. In per-category fallback mode it's the category display name.
    */
   displayName: string;
+  /** Optional admin-typed copy under the tagline. Null in fallback mode. */
+  description: string | null;
   /**
    * The category slugs this rail pools. One entry in fallback mode; 1..N for an
    * editorial section. The client passes these to a section-scoped "See all"
    * view (deals.list with `categories`).
    */
   categorySlugs: string[];
+  /**
+   * Treatment slugs this rail pools (editorial sections targeting specific
+   * treatments). OR-combined with categorySlugs. Empty in fallback mode. The
+   * client passes these to the See-all view (deals.list with `subtypes`).
+   */
+  subtypeSlugs: string[];
   deals: DealSummary[];
   hasMore: boolean;
   /** Curated "browse by category" tile image (shared with the web), or null to
@@ -571,46 +592,55 @@ export async function getDiscoverFeed(sql: Sql, params: DiscoverFeedParams = {})
       WHERE active = true
       ORDER BY display_order
     `,
-    sql<{ id: string; tagline: string; image_url: string | null; category_slugs: string[] }[]>`
+    sql<{ id: string; tagline: string; description: string | null; image_url: string | null; category_slugs: string[]; subtype_slugs: string[] }[]>`
       SELECT
         s.id,
         s.tagline,
+        s.description,
         s.image_url,
-        COALESCE(
-          array_agg(c.slug ORDER BY sc.position, c.display_order)
-            FILTER (WHERE c.slug IS NOT NULL),
-          '{}'
-        ) AS category_slugs
+        (
+          SELECT COALESCE(array_agg(c.slug ORDER BY sc.position, c.display_order), '{}')
+          FROM public.discover_section_categories sc
+          JOIN public.service_categories c ON c.id = sc.category_id AND c.active = true
+          WHERE sc.section_id = s.id
+        ) AS category_slugs,
+        (
+          SELECT COALESCE(array_agg(st.slug ORDER BY ss.position, st.display_order), '{}')
+          FROM public.discover_section_subtypes ss
+          JOIN public.service_subtypes st ON st.id = ss.subtype_id AND st.active = true
+          WHERE ss.section_id = s.id
+        ) AS subtype_slugs
       FROM public.discover_sections s
-      LEFT JOIN public.discover_section_categories sc ON sc.section_id = s.id
-      LEFT JOIN public.service_categories c ON c.id = sc.category_id AND c.active = true
       WHERE s.active = true
-      GROUP BY s.id, s.tagline, s.image_url, s.display_order
       ORDER BY s.display_order
     `,
     getTrendingConfig(sql),
   ]);
 
   // Editorial mode: one rail per active section that actually resolves to ≥1
-  // active category. (A section whose every category was deactivated/deleted
-  // pools nothing, so skip it.)
-  const editorialSections = sections.filter((s) => s.category_slugs.length > 0);
+  // active target (category or treatment). (A section whose every target was
+  // deactivated/deleted pools nothing, so skip it.)
+  const editorialSections = sections.filter((s) => s.category_slugs.length > 0 || s.subtype_slugs.length > 0);
 
-  const railSpecs: { slug: string; displayName: string; categorySlugs: string[]; tileImageUrl: string | null }[] =
+  const railSpecs: { slug: string; displayName: string; description: string | null; categorySlugs: string[]; subtypeSlugs: string[]; tileImageUrl: string | null }[] =
     editorialSections.length > 0
       ? editorialSections.map((s) => ({
           slug: s.id,
           displayName: s.tagline,
+          description: s.description,
           categorySlugs: s.category_slugs,
+          subtypeSlugs: s.subtype_slugs,
           // Admin-set art first; else derive from the first category's curated
-          // tile; else null → client falls back to a deal photo. (category_slugs
-          // is non-empty here — editorialSections filtered out the empty ones.)
-          tileImageUrl: s.image_url ?? curatedTileUrl(s.category_slugs[0]!),
+          // tile; else null → client falls back to a deal photo. (A subtype-only
+          // section has no category slug, so it skips straight to the fallback.)
+          tileImageUrl: s.image_url ?? (s.category_slugs[0] ? curatedTileUrl(s.category_slugs[0]) : null),
         }))
       : cats.map((c) => ({
           slug: c.slug,
           displayName: c.display_name,
+          description: null,
           categorySlugs: [c.slug],
+          subtypeSlugs: [],
           tileImageUrl: curatedTileUrl(c.slug),
         }));
 
@@ -661,10 +691,12 @@ export async function getDiscoverFeed(sql: Sql, params: DiscoverFeedParams = {})
     listDeals(sql, { ...shared, trending, limit: 10 }).then((p) => p.deals.filter((d) => d.isSponsored)),
     browseRowsPromise,
     ...railSpecs.map((spec) =>
-      listDeals(sql, { ...shared, trending, categories: spec.categorySlugs, limit: railLimit }).then((page) => ({
+      listDeals(sql, { ...shared, trending, categories: spec.categorySlugs, subtypes: spec.subtypeSlugs, limit: railLimit }).then((page) => ({
         slug: spec.slug,
         displayName: spec.displayName,
+        description: spec.description,
         categorySlugs: spec.categorySlugs,
+        subtypeSlugs: spec.subtypeSlugs,
         deals: page.deals,
         hasMore: page.hasMore,
         tileImageUrl: spec.tileImageUrl,

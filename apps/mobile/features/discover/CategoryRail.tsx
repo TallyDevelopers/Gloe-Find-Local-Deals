@@ -22,6 +22,8 @@ const CARD_HEIGHT = Math.round(CARD_WIDTH / RAIL_IMAGE_RATIO) + 150;
 
 interface CategoryRailProps {
   label: string;
+  /** Optional admin-typed copy rendered under the label (editorial sections). */
+  description?: string | null;
   /** Deals for this rail — supplied by the parent's single discoverFeed query
    *  (the rail no longer fetches its own data; that fan-out drained the pool). */
   deals: DealSummary[];
@@ -35,7 +37,7 @@ interface CategoryRailProps {
  * presentational: it renders the deals handed to it. Tap "See all" to open the
  * full category view (which paginates). Hides itself if empty.
  */
-export function CategoryRail({ label, deals, savedIds, onSave, onSeeAll }: CategoryRailProps) {
+export function CategoryRail({ label, description, deals, savedIds, onSave, onSeeAll }: CategoryRailProps) {
   if (deals.length === 0) return null;
 
   return (
@@ -47,6 +49,11 @@ export function CategoryRail({ label, deals, savedIds, onSave, onSeeAll }: Categ
         <Text variant="display-sm" tone="primary" weight="semibold" style={{ fontSize: DISCOVER_HEADING_SIZE, lineHeight: DISCOVER_HEADING_SIZE * 1.25, letterSpacing: -0.2 }}>
           {label}
         </Text>
+        {description ? (
+          <Text variant="body-sm" tone="secondary" style={{ marginTop: 2 }} numberOfLines={2}>
+            {description}
+          </Text>
+        ) : null}
       </Pressable>
 
       <FlatList

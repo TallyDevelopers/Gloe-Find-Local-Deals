@@ -22,6 +22,12 @@ export const dealsRouter = router({
            * (GLO-27). Takes precedence over `category` when both are present.
            */
           categories: z.array(z.string().max(60)).max(8).optional(),
+          /**
+           * Pool deals tagged with ANY of these treatment slugs, OR-combined
+           * with `categories`. Powers the See-all of an editorial section that
+           * targets specific treatments (e.g. liquid rhinoplasty).
+           */
+          subtypes: z.array(z.string().max(60)).max(24).optional(),
           /** Optional treatment drill-down under the category (second pill row). */
           subtypeSlug: z.string().optional(),
           limit: z.number().int().positive().max(100).optional(),

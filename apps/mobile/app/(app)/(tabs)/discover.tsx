@@ -42,11 +42,12 @@ export default function DiscoverScreen() {
   // Optional treatment drill-down under the selected category (second pill row).
   const [subtypeSlug, setSubtypeSlug] = useState<string | null>(null);
   const [filters, setFilters] = useState<DiscoverFilters>({});
-  // A multi-category editorial section's "See all" (GLO-27): pool several
-  // categories under the section's tagline. Single-category navigation still
-  // goes through `categorySlug` (the pills + Browse tiles); this is only set
-  // when a section spans >1 category, where a single slug can't represent it.
-  const [sectionScope, setSectionScope] = useState<{ categories: string[]; title: string } | null>(null);
+  // An editorial section's "See all" (GLO-27): pool the section's categories
+  // and/or treatments under its tagline. Single-category navigation still goes
+  // through `categorySlug` (the pills + Browse tiles); this is set when the
+  // section spans >1 category OR targets specific treatments — cases a single
+  // category slug can't represent.
+  const [sectionScope, setSectionScope] = useState<{ categories: string[]; subtypes: string[]; title: string; description: string | null } | null>(null);
 
   // Switching category clears any treatment drill-down + section scope — the old
   // treatment/section doesn't belong to the new category.
@@ -56,16 +57,18 @@ export default function DiscoverScreen() {
     setSectionScope(null);
   };
 
-  // Open a rail's "See all". A single-category section/rail routes to the normal
-  // category view (pills work); a multi-category section opens the pooled,
-  // tagline-titled scope.
-  const openRailSeeAll = (rail: { displayName: string; categorySlugs: string[] }) => {
-    if (rail.categorySlugs.length === 1) {
+  // Open a rail's "See all". A pure single-category section/rail routes to the
+  // normal category view (pills work); a multi-category or treatment-targeted
+  // section opens the pooled, tagline-titled scope (a category slug can't
+  // carry a treatment filter).
+  const openRailSeeAll = (rail: { displayName: string; description?: string | null; categorySlugs: string[]; subtypeSlugs?: string[] }) => {
+    const subtypes = rail.subtypeSlugs ?? [];
+    if (rail.categorySlugs.length === 1 && subtypes.length === 0) {
       selectCategory(rail.categorySlugs[0]!);
     } else {
       setSubtypeSlug(null);
       setCategorySlug(null);
-      setSectionScope({ categories: rail.categorySlugs, title: rail.displayName });
+      setSectionScope({ categories: rail.categorySlugs, subtypes, title: rail.displayName, description: rail.description ?? null });
     }
   };
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
@@ -117,7 +120,12 @@ export default function DiscoverScreen() {
       limit: 50,
       // A multi-category section scope pools its categories; otherwise the
       // single selected category drives the grid.
-      ...(sectionScope ? { categories: sectionScope.categories } : categorySlug ? { category: categorySlug } : {}),
+      ...(sectionScope
+        ? {
+            ...(sectionScope.categories.length ? { categories: sectionScope.categories } : {}),
+            ...(sectionScope.subtypes.length ? { subtypes: sectionScope.subtypes } : {}),
+          }
+        : categorySlug ? { category: categorySlug } : {}),
       ...(subtypeSlug ? { subtypeSlug } : {}),
       ...(filters.minPriceCents !== undefined ? { minPriceCents: filters.minPriceCents } : {}),
       ...(filters.maxPriceCents !== undefined ? { maxPriceCents: filters.maxPriceCents } : {}),
@@ -239,6 +247,11 @@ export default function DiscoverScreen() {
               <Text variant="display-sm" tone="primary" weight="medium" style={{ fontSize: DISCOVER_HEADING_SIZE, lineHeight: DISCOVER_HEADING_SIZE * 1.15 }}>
                 {sectionScope.title}
               </Text>
+              {sectionScope.description ? (
+                <Text variant="body-sm" tone="secondary">
+                  {sectionScope.description}
+                </Text>
+              ) : null}
             </View>
           ) : !isAllView ? (
             /* Inside a single category: pills (incl. "All" to go back), the
@@ -325,6 +338,7 @@ export default function DiscoverScreen() {
                 <CategoryRail
                   key={rail.slug}
                   label={rail.displayName}
+                  description={rail.description}
                   deals={rail.deals}
                   savedIds={savedIds}
                   onSave={toggleSave}

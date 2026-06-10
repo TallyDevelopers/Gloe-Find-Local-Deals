@@ -6,11 +6,13 @@ import { trpc } from '../../../lib/trpc';
 
 /**
  * Discover editorial sections (GLO-27) — the merchandising layer for the home
- * (All) feed. Each section is a warm tagline that REPLACES the dry category noun
- * on a rail and pools deals from 1..N categories under that one line. Authored,
- * reordered, and toggled here; the DB is the source of truth (no code release to
- * change copy). When no section is active, the consumer feed falls back to one
- * rail per category — so it's safe to have zero, and safe to draft with `active`
+ * (All) feed. Each section is a warm tagline (+ optional typed description)
+ * that REPLACES the dry category noun on a rail, pooling deals from whole
+ * categories AND/OR specific treatments — so a rail can be as broad as "all of
+ * Skin" or as pointed as just Liquid Rhinoplasty. Authored, reordered, and
+ * toggled here; the DB is the source of truth (no code release to change
+ * copy). When no section is active, the consumer feed falls back to one rail
+ * per category — so it's safe to have zero, and safe to draft with `active`
  * off.
  */
 export function SectionsView() {
@@ -30,6 +32,13 @@ export function SectionsView() {
   const sections = sectionsQ.data ?? [];
   const categories = categoriesQ.data ?? [];
   const catName = (id: string) => categories.find((c) => c.id === id)?.displayName ?? '—';
+  const subName = (id: string) => {
+    for (const c of categories) {
+      const s = c.subtypes.find((s) => s.id === id);
+      if (s) return s.displayName;
+    }
+    return '—';
+  };
 
   const move = async (index: number, dir: -1 | 1) => {
     const next = index + dir;
@@ -47,8 +56,9 @@ export function SectionsView() {
           <h1 style={{ fontSize: 28 }}>Discover sections</h1>
           <p style={{ color: 'var(--text-tertiary)', fontSize: 14, marginTop: 4, maxWidth: 620 }}>
             Cute, benefit-led taglines that replace the category name on the home feed — each one can
-            pool deals from several categories. Reorder to set the order on the app. With none active,
-            the feed shows one rail per category automatically.
+            pool whole categories, specific treatments (e.g. just Liquid Rhinoplasty), or a mix, with an
+            optional description under the heading. Reorder to set the order on the app. With none
+            active, the feed shows one rail per category automatically.
           </p>
         </div>
         {editing !== 'new' ? (
@@ -100,8 +110,15 @@ export function SectionsView() {
                     <div style={{ fontWeight: 700, fontSize: 15, color: s.active ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>
                       {s.tagline}{!s.active ? ' · (hidden)' : ''}
                     </div>
+                    {s.description ? (
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {s.description}
+                      </div>
+                    ) : null}
                     <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 2 }}>
-                      {s.categoryIds.length ? s.categoryIds.map(catName).join(' · ') : 'No categories — won’t show'}
+                      {s.categoryIds.length || s.subtypeIds.length
+                        ? [...s.categoryIds.map(catName), ...s.subtypeIds.map((id) => `⚲ ${subName(id)}`)].join(' · ')
+                        : 'No categories or treatments — won’t show'}
                     </div>
                   </div>
 
@@ -130,7 +147,7 @@ export function SectionsView() {
                     <SectionForm
                       categories={categories}
                       busy={update.isPending}
-                      initial={{ tagline: s.tagline, categoryIds: s.categoryIds, imageUrl: s.imageUrl }}
+                      initial={{ tagline: s.tagline, description: s.description, categoryIds: s.categoryIds, subtypeIds: s.subtypeIds, imageUrl: s.imageUrl }}
                       onCancel={() => setEditing(null)}
                       onSubmit={async (draft) => {
                         await update.mutateAsync({ id: s.id, ...draft });
@@ -149,8 +166,8 @@ export function SectionsView() {
   );
 }
 
-interface Category { id: string; displayName: string }
-interface Draft { tagline: string; categoryIds: string[]; imageUrl: string | null }
+interface Category { id: string; displayName: string; subtypes: { id: string; displayName: string }[] }
+interface Draft { tagline: string; description: string | null; categoryIds: string[]; subtypeIds: string[]; imageUrl: string | null }
 
 function SectionForm({
   categories,
@@ -167,13 +184,29 @@ function SectionForm({
 }) {
   const sign = trpc.admin.signDiscoverSectionUpload.useMutation();
   const [tagline, setTagline] = useState(initial?.tagline ?? '');
+  const [description, setDescription] = useState(initial?.description ?? '');
   const [categoryIds, setCategoryIds] = useState<string[]>(initial?.categoryIds ?? []);
+  const [subtypeIds, setSubtypeIds] = useState<string[]>(initial?.subtypeIds ?? []);
+  const [treatmentQuery, setTreatmentQuery] = useState('');
   const [imageUrl, setImageUrl] = useState<string | null>(initial?.imageUrl ?? null);
   const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const toggleCat = (id: string) =>
     setCategoryIds((prev) => (prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]));
+  const toggleSub = (id: string) =>
+    setSubtypeIds((prev) => (prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]));
+
+  // Flat treatment list for the picker; filtered by the search box. Selected
+  // ones always show (so they're removable even when they don't match the query).
+  const allTreatments = categories.flatMap((c) =>
+    c.subtypes.map((s) => ({ id: s.id, name: s.displayName, cat: c.displayName })),
+  );
+  const tq = treatmentQuery.trim().toLowerCase();
+  const treatmentMatches = tq
+    ? allTreatments.filter((t) => t.name.toLowerCase().includes(tq) || t.cat.toLowerCase().includes(tq)).slice(0, 12)
+    : [];
+  const selectedTreatments = allTreatments.filter((t) => subtypeIds.includes(t.id));
 
   const onPickImage = async (file: File) => {
     setErr(null);
@@ -191,7 +224,7 @@ function SectionForm({
     }
   };
 
-  const canSave = tagline.trim().length > 0 && categoryIds.length > 0 && !busy && !uploading;
+  const canSave = tagline.trim().length > 0 && (categoryIds.length > 0 || subtypeIds.length > 0) && !busy && !uploading;
 
   return (
     <div style={{ border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', padding: 16, background: 'var(--surface-elevated)', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -203,6 +236,18 @@ function SectionForm({
           placeholder="Find fillers & Botox to boost your glow"
           maxLength={120}
           style={textInput}
+        />
+      </div>
+
+      <div>
+        <label style={fieldLabel}>Description (optional — shows under the tagline on the rail)</label>
+        <textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Liquid nose jobs reshape in 15 minutes — no surgery, no downtime."
+          maxLength={240}
+          rows={2}
+          style={{ ...textInput, resize: 'vertical', fontFamily: 'inherit' }}
         />
       </div>
 
@@ -231,6 +276,61 @@ function SectionForm({
       </div>
 
       <div>
+        <label style={fieldLabel}>
+          Target specific treatments (optional — {subtypeIds.length} selected). The rail pools these ON TOP of any
+          categories above; pick only treatments to make a single-treatment rail (e.g. just Liquid Rhinoplasty).
+        </label>
+        {selectedTreatments.length > 0 ? (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
+            {selectedTreatments.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => toggleSub(t.id)}
+                title={`${t.cat} — click to remove`}
+                style={{
+                  fontSize: 13, fontWeight: 600, padding: '6px 12px', borderRadius: 999, cursor: 'pointer',
+                  border: '1px solid var(--brand-500)', background: 'var(--brand-50)', color: 'var(--brand-700)',
+                }}
+              >
+                ✓ {t.name} ✕
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <input
+          value={treatmentQuery}
+          onChange={(e) => setTreatmentQuery(e.target.value)}
+          placeholder="Type to find a treatment… (e.g. rhinoplasty)"
+          style={textInput}
+        />
+        {treatmentMatches.length > 0 ? (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+            {treatmentMatches.map((t) => {
+              const on = subtypeIds.includes(t.id);
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => toggleSub(t.id)}
+                  style={{
+                    fontSize: 13, fontWeight: 600, padding: '6px 12px', borderRadius: 999, cursor: 'pointer',
+                    border: on ? '1px solid var(--brand-500)' : '1px solid var(--border-default)',
+                    background: on ? 'var(--brand-50)' : 'var(--surface-elevated)',
+                    color: on ? 'var(--brand-700)' : 'var(--text-secondary)',
+                  }}
+                >
+                  {on ? '✓ ' : ''}{t.name} <span style={{ fontWeight: 400, opacity: 0.7 }}>· {t.cat}</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : tq ? (
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginTop: 8 }}>No treatments match “{treatmentQuery}”.</div>
+        ) : null}
+      </div>
+
+      <div>
         <label style={fieldLabel}>Tile image (optional — falls back to the first category’s art / a deal photo)</label>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ width: 72, height: 56, borderRadius: 8, overflow: 'hidden', background: 'var(--surface-secondary)', flexShrink: 0 }}>
@@ -254,7 +354,7 @@ function SectionForm({
       <div style={{ display: 'flex', gap: 10 }}>
         <button
           disabled={!canSave}
-          onClick={() => void onSubmit({ tagline: tagline.trim(), categoryIds, imageUrl })}
+          onClick={() => void onSubmit({ tagline: tagline.trim(), description: description.trim() || null, categoryIds, subtypeIds, imageUrl })}
           style={{ ...primaryBtn, opacity: canSave ? 1 : 0.5, cursor: canSave ? 'pointer' : 'not-allowed' }}
         >
           {busy ? 'Saving…' : 'Save section'}

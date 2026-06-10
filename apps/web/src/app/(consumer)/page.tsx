@@ -64,9 +64,9 @@ export default function HomePage() {
   // Browse tiles + the per-category fallback rails: categories that have deals.
   const populated = (categories.data ?? []).filter((c) => (byCat.get(c.slug)?.length ?? 0) > 0);
 
-  // The editorial rails to render. Each section pools its categories' deals
-  // (deduped by deal id, since a deal can carry two of the section's categories)
-  // in the feed's existing relevance order. A section with no deals nearby is
+  // The editorial rails to render. Each section pools deals matching ANY of
+  // its categories OR its targeted treatments (deduped by deal id), in the
+  // feed's existing relevance order. A section with no deals nearby is
   // dropped. Falls back to one rail per populated category when no section is
   // authored — identical to the prior behavior.
   const editorialRails = useMemo(() => {
@@ -74,19 +74,24 @@ export default function HomePage() {
       const seen = new Set<string>();
       const deals: DealSummary[] = [];
       for (const d of feed.data?.deals ?? []) {
-        if (s.categorySlugs.includes(d.category.slug) && !seen.has(d.id)) {
+        const matches =
+          s.categorySlugs.includes(d.category.slug) ||
+          (d.category.subtypeSlug != null && s.subtypeSlugs.includes(d.category.subtypeSlug));
+        if (matches && !seen.has(d.id)) {
           seen.add(d.id);
           deals.push(d);
         }
       }
-      return { id: s.id, tagline: s.tagline, categorySlugs: s.categorySlugs, deals };
+      return { id: s.id, tagline: s.tagline, description: s.description, categorySlugs: s.categorySlugs, subtypeSlugs: s.subtypeSlugs, deals };
     }).filter((r) => r.deals.length > 0);
     if (built.length > 0) return built;
     // Fallback: one rail per populated category, tagline = the category name.
     return populated.map((c) => ({
       id: c.slug,
       tagline: c.displayName,
+      description: null as string | null,
       categorySlugs: [c.slug],
+      subtypeSlugs: [] as string[],
       deals: byCat.get(c.slug) ?? [],
     }));
   }, [sections.data, feed.data, populated, byCat]);
@@ -199,12 +204,13 @@ export default function HomePage() {
           ) : null}
 
           {editorialRails.map((rail) => {
-            // A single-category rail still links to its SEO treatment page +
-            // shows a "View more" card. A multi-category editorial section has no
-            // single destination on web, so its heading isn't a link and the
-            // View-more card is omitted (the rail shows its pooled deals). The
-            // tagline is the heading either way — the category noun never shows.
-            const singleSlug = rail.categorySlugs.length === 1 ? rail.categorySlugs[0]! : null;
+            // A pure single-category rail still links to its SEO treatment page +
+            // shows a "View more" card. A multi-category or treatment-targeted
+            // editorial section has no single destination on web, so its heading
+            // isn't a link and the View-more card is omitted (the rail shows its
+            // pooled deals). The tagline is the heading either way — the category
+            // noun never shows; the admin-typed description sits under it.
+            const singleSlug = rail.categorySlugs.length === 1 && rail.subtypeSlugs.length === 0 ? rail.categorySlugs[0]! : null;
             return (
               <div key={rail.id} style={{ marginTop: 8 }}>
                 <div className="consumer-container" style={{ paddingTop: 12, paddingBottom: 0 }}>
@@ -216,6 +222,11 @@ export default function HomePage() {
                     ) : (
                       <h2 style={{ margin: 0 }}>{rail.tagline}</h2>
                     )}
+                    {rail.description ? (
+                      <p style={{ margin: '4px 0 0', color: 'var(--text-secondary, #6b6661)', fontSize: 14, maxWidth: 560 }}>
+                        {rail.description}
+                      </p>
+                    ) : null}
                   </div>
                   <Carousel ariaLabel={rail.tagline}>
                     {rail.deals.slice(0, 12).map((deal) => (
