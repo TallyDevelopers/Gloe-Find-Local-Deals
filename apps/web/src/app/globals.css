@@ -1425,6 +1425,18 @@ input::placeholder {
     width: 62vw;
     max-width: 240px;
   }
+  /* Full-bleed rails on phones: escape .consumer-container's 16px side
+     padding so cards run to the physical screen edge (Airbnb/ResortPass).
+     The track's own padding keeps the first card aligned with the heading;
+     scroll-padding keeps snap stops aligned too. The 16px here must match
+     .consumer-container's mobile padding above. */
+  .carousel {
+    margin-inline: -16px;
+  }
+  .carousel-track {
+    padding-inline: 16px;
+    scroll-padding-left: 16px;
+  }
 }
 .cat-card {
   position: relative;
