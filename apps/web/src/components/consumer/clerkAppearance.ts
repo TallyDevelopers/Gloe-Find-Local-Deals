@@ -137,8 +137,10 @@ export const CLERK_BIZ_APPEARANCE = {
     logoBox: { display: 'none' },
     logoImage: { display: 'none' },
     header: { display: 'none' },
-    card: { boxShadow: 'none', backgroundColor: 'transparent', padding: '0.25rem 0 0' },
-    cardBox: { boxShadow: 'none', border: 'none' },
+    // The wrapper is invisible here, but it still clips: kill its radius +
+    // overflow so the social buttons' rounded corners don't get shaved.
+    card: { boxShadow: 'none', backgroundColor: 'transparent', padding: '0.5rem 2px 0' },
+    cardBox: { boxShadow: 'none', border: 'none', borderRadius: 0, overflow: 'visible' },
     footer: { textAlign: 'center', background: 'transparent' },
   },
 } as const;
