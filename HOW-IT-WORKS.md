@@ -731,7 +731,7 @@ so genuinely ambiguous names (Laser Hair Removal exists under two categories) re
 always a head-start, **never a lock-in** — it never overrides a human's pick.
 
 Why it matters: search can only say "this deal is Botox" if the deal carries the treatment tag — but a
-front-desk worker won't hunt through 42 treatments. So the form does it from the title they already typed.
+front-desk worker won't hunt through a hundred treatments. So the form does it from the title they already typed.
 
 *Deeper: `GLOE.md` §6A, §7. Code: `PostDealForm`, `dealCreate.ts`, `aestheticSynonyms.ts` (`detectTreatment`).*
 
@@ -781,6 +781,29 @@ day-to-day review and support but **can't** drain a vendor's balance or lock the
 owner-only force-refunds and "last owner" guards). Combined with the server-derived Stripe destinations
 and the 8 transfer walls from §8, god-mode convenience **never becomes a way to send money to the wrong
 account.**
+
+### The treatment menu is yours to edit (Admin → Treatments)
+
+The master menu of the marketplace — 8 categories and the ~118 treatments under them (every tox
+brand, every filler line, Kybella, dermaplaning, Fraxel, Emsculpt, TRT, lash extensions…) — lives in
+the database, and the **Treatments tab is its editor**. Add a treatment (type a name, optionally a
+unit like "syringe" or "session"), rename one, drag its order, or hide it — and within a minute it's
+live **everywhere at once**: the vendor signup chips, the deal form's treatment picker, the Discover
+drill-down pills, and search. No code release, no SQL.
+
+Two details worth knowing:
+
+- **"Remove" is a hide, not a delete.** Deals already tagged with a treatment keep their tag and stay
+  live; the treatment just disappears from every picker and from search suggestions. Permanent delete
+  only appears for treatments no deal has ever used. (Semaglutide/tirzepatide are currently parked
+  this way under Weight Loss — one click restores them.)
+- **A new treatment is instantly searchable** by its name (search matches treatment names directly,
+  typo-tolerant). The hand-curated slang layer ("fat freeze" → CoolSculpting, "tox" → every
+  neuromodulator) is separate and still code-side — so name new treatments the way customers say them.
+
+Category chips themselves can be renamed, reordered, or hidden here too. Every edit writes an audit row.
+
+*Deeper: `GLOE.md` §"Service taxonomy". Code: `TaxonomyView.tsx`, `domain/taxonomy.ts`, `admin.listTaxonomy` + CRUD.*
 
 ### The license review queue
 

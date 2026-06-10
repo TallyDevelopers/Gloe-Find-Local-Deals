@@ -10,7 +10,7 @@ import { CommandPalette } from './CommandPalette';
 
 export type WorkspaceView =
   | 'pulse' | 'transactions' | 'vendors' | 'customers'
-  | 'payouts' | 'refunds' | 'fees' | 'support' | 'sections' | 'waitlist' | 'audit' | 'admins' | 'settings';
+  | 'payouts' | 'refunds' | 'fees' | 'support' | 'sections' | 'taxonomy' | 'waitlist' | 'audit' | 'admins' | 'settings';
 
 const NAV: { key: WorkspaceView; label: string; badgeFor?: 'failed_payouts' | 'pending_deals' }[] = [
   { key: 'pulse',        label: 'Pulse' },
@@ -22,6 +22,7 @@ const NAV: { key: WorkspaceView; label: string; badgeFor?: 'failed_payouts' | 'p
   { key: 'fees',         label: 'Fees' },
   { key: 'support',      label: 'Support' },
   { key: 'sections',     label: 'Discover' },
+  { key: 'taxonomy',     label: 'Treatments' },
   { key: 'waitlist',     label: 'Waitlist' },
   { key: 'audit',        label: 'Audit' },
   { key: 'admins',       label: 'Admins' },
@@ -70,6 +71,9 @@ function NavIcon({ name }: { name: WorkspaceView }) {
     case 'sections':
       // Layout/grid glyph — editorial merchandising rails.
       return <svg {...p}><rect width="7" height="9" x="3" y="3" rx="1" /><rect width="7" height="5" x="14" y="3" rx="1" /><rect width="7" height="9" x="14" y="12" rx="1" /><rect width="7" height="5" x="3" y="16" rx="1" /></svg>;
+    case 'taxonomy':
+      // List-tree glyph — categories with treatments nested under them.
+      return <svg {...p}><path d="M21 12h-8" /><path d="M21 6H8" /><path d="M21 18h-8" /><path d="M3 6v4c0 1.1.9 2 2 2h3" /><path d="M3 10v6c0 1.1.9 2 2 2h3" /></svg>;
   }
 }
 

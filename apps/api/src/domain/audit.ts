@@ -76,6 +76,11 @@ export type AuditAction =
   | 'discover_section.created'
   | 'discover_section.updated'
   | 'discover_section.deleted'
+  // Service taxonomy (categories + treatments, god-mode editor)
+  | 'taxonomy.subtype_created'
+  | 'taxonomy.subtype_updated'
+  | 'taxonomy.subtype_deleted'
+  | 'taxonomy.category_updated'
   // Support tickets
   | 'support.replied'      // agent replied to a support ticket
   | 'support.status_set'   // agent resolved / closed / reopened a ticket

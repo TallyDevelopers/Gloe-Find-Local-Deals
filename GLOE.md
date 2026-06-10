@@ -401,7 +401,7 @@ All tables in Supabase Postgres. PostGIS extension on. RLS enabled (auth at DB l
 | `review_photos` | Review imagery | review_id, url, display_order |
 | `saved_deals` | Favorited deals | user_id, deal_id |
 | `saved_vendors` | Favorited vendors | user_id, vendor_id |
-| `categories` | Service taxonomy | slug, label, description, icon, parent_id |
+| `service_categories` / `service_subtypes` | Service taxonomy (8 categories → ~118 treatments; god-mode editable in Admin → Treatments) | slug, display_name, icon, is_unit_based, unit_label, helper_text, display_order, active |
 | `support_tickets` | Concierge cases (consumer ↔ Gloē) | id, user_id, subject, category, status (open/awaiting_us/awaiting_customer/resolved/closed), last_message_at, resolved_at |
 | `support_messages` | Ticket thread messages | id, ticket_id, sender_type (customer/agent/system), sender_user_id, body, read_at |
 | `support_message_attachments` | Photo/video on a message | id, message_id, kind (image/video), url, thumbnail_url, width, height, display_order |
@@ -416,24 +416,22 @@ Public: `deal-photos`, `deal-videos`, `deal-maps`, `review-photos`, `support-att
 
 The full schema history (38 migrations from the `drop_all_legacy_tables` reset forward) is tracked in `supabase/migrations/`. **Going forward, every schema change gets a file there in the same PR.** Note: the latest tables (`support_*`, `region_waitlist`, `users.deleted_at`) were applied directly via the Supabase MCP and are live, but a few of those migration files may still need backfilling into `supabase/migrations/` — verify before relying on a from-zero rebuild.
 
-### Service taxonomy categories (14)
+### Service taxonomy (8 live categories → ~118 treatments)
 
-1. Neuromodulators (Botox, Dysport, Xeomin)
-2. Dermal fillers
-3. Skin treatments (laser, peels, microneedling, hydrafacial)
-4. Body contouring (CoolSculpting, Emsculpt)
-5. Hair removal & restoration
-6. Massage & spa
-7. IV therapy & wellness drips
-8. Facials & skincare services
-9. Vitamin / B12 shots
-10. Cosmetic dentistry (whitening, veneers)
-11. Lashes & brows
-12. PRP / microneedling combos
-13. Vaginal rejuvenation
-14. Concierge / mobile aesthetic
+Two tables are the spine of the marketplace — `service_categories` → `service_subtypes` — and **the DB is the source of truth** (vendor signup chips, deal-form treatment picker, Discover pills, and search all read it live):
 
-Hierarchical, editable in admin without code change.
+1. **Injectables** (unit-based) — tox brands, every major filler line, lip/cheek/jawline/under-eye, Kybella, PDO threads, filler dissolving… (33)
+2. **Skin** — facials (Hydrafacial, DiamondGlow, Glo2Facial…), dermaplaning, peels (VI, Jessner, BioRePeel), microneedling (+PRP, Vivace, Potenza, Morpheus8), LED, plasma fibroblast… (25)
+3. **Laser** — BBL/IPL, HALO, Moxi, CO2/CoolPeel, Fraxel, Clear+Brilliant, Pico, Vbeam, laser hair, tattoo removal… (14)
+4. **Weight Loss** — program, lipo/MIC-B12 shots, InBody, phentermine; *semaglutide/tirzepatide rows exist but are deactivated* (toggle in god mode)
+5. **Body & Contouring** — CoolSculpting, Emsculpt NEO, truSculpt, SculpSure, cellulite, Emsella, lymphatic… (10)
+6. **IV Therapy** (`wellness`) — NAD+, Myers, glutathione, vitamin C, immunity/beauty/energy/hangover/recovery drips, shots… (14)
+7. **Hormones & Peptides** — BHRT, TRT, pellets, peptide therapy (sermorelin, BPC-157), consult+labs (7)
+8. **Lashes & Eyes** (`other`) — extensions, fills, lift & tint, brow lamination/tint, microblading, powder brows, permanent eyeliner, Latisse, Upneeq (10)
+
+(+ a hidden legacy `beauty` category — spray tans, teeth whitening etc., all inactive.)
+
+**Edited in god mode — Admin → Treatments** (`TaxonomyView.tsx`, `admin.listTaxonomy/createSubtype/updateSubtype/deleteSubtype/reorderSubtypes/updateCategory`). Add, rename, set unit label, reorder, hide/restore; categories can be renamed/hidden too. "Remove" is **soft** (deals keep their tag; the chip vanishes from every picker and from search); hard delete only for treatments no deal ever used. Every change is audit-logged (`taxonomy.*`). A new treatment is **instantly searchable** — search matches subtype display names directly in SQL — without touching the synonym file (that only adds slang like "fat freeze" → CoolSculpting).
 
 ---
 
@@ -601,14 +599,14 @@ Ranking lives in `listDeals`' blended score: a strong text match dominates, but 
 
 ### Treatment auto-tagging (vendor side)
 
-The taxonomy is **7 categories → 42 treatment subtypes** (Botox, Dysport, Juvederm, Sculptra, Semaglutide…). For search to know "this deal is Botox," the deal must carry `subtype_id`. The post-deal form captures it **without overwhelming the vendor**:
+The taxonomy is **8 live categories → ~118 active treatment subtypes** (Botox, Kybella, PDO threads, Dermaplaning, Fraxel, Emsculpt, TRT, Lash Extensions…) — comprehensively seeded 2026-06-09 and **admin-editable in god mode** (Admin → Treatments, see below; no more SQL migrations to add a treatment). For search to know "this deal is Botox," the deal must carry `subtype_id`. The post-deal form captures it **without overwhelming the vendor**:
 
 - `detectTreatment(title, subtypes, categorySlug)` reads the title as they type and returns the implied treatment + confidence. **Brand names auto-fill** ("Botox — first-timer" → ✓ Botox); **generic words suggest** ("lip filler" → "Looks like Dermal Filler?"). Category-scoped so names under two categories (Laser Hair Removal) disambiguate.
 - Vendor sees **one chip**, not 12. "Change" reveals only that category's treatments. Fully optional; detection never overrides a manual/edit choice.
 
 ### Customer drill-down (inventory-gated)
 
-Pills are the **7 categories** by default. Tap one → an optional second row of **treatment** sub-pills appears — but only treatments with **≥2 nearby deals** (`TreatmentPills` renders nothing below that). Cold-start safe: with thin inventory there's no drill row (no dead-ends "showing nothing but one"); as vendors are added and treatments cross the floor, the row lights up **on its own, same code**. Drilling is always opt-in — a leading "All" pill keeps the whole category.
+Pills are the **8 categories** by default. Tap one → an optional second row of **treatment** sub-pills appears — but only treatments with **≥2 nearby deals** (`TreatmentPills` renders nothing below that). Cold-start safe: with thin inventory there's no drill row (no dead-ends "showing nothing but one"); as vendors are added and treatments cross the floor, the row lights up **on its own, same code**. Drilling is always opt-in — a leading "All" pill keeps the whole category.
 
 ### Home rails & "See all" (`features/discover/`)
 

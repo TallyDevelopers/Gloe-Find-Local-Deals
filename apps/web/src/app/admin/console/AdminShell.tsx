@@ -14,13 +14,14 @@ import { RefundsView } from './RefundsView';
 import { SectionsView } from './SectionsView';
 import { SettingsView } from './SettingsView';
 import { SupportView } from './SupportView';
+import { TaxonomyView } from './TaxonomyView';
 import { TransactionsView } from './TransactionsView';
 import { VendorsView } from './VendorsView';
 import { WaitlistView } from './WaitlistView';
 
 const TABS: readonly WorkspaceView[] = [
   'pulse', 'transactions', 'vendors', 'customers', 'payouts', 'refunds',
-  'fees', 'support', 'sections', 'waitlist', 'audit', 'admins', 'settings',
+  'fees', 'support', 'sections', 'taxonomy', 'waitlist', 'audit', 'admins', 'settings',
 ];
 
 export function AdminShell() {
@@ -76,6 +77,7 @@ export function AdminShell() {
       {view === 'fees'         ? <FeesView /> : null}
       {view === 'support'      ? <SupportView onJumpToRefundByTxn={jumpToRefundByTxn} /> : null}
       {view === 'sections'     ? <SectionsView /> : null}
+      {view === 'taxonomy'     ? <TaxonomyView /> : null}
       {view === 'waitlist'     ? <WaitlistView /> : null}
       {view === 'audit'        ? <AuditView /> : null}
       {view === 'admins'       ? <AdminsView /> : null}

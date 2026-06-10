@@ -76,6 +76,14 @@ import {
   deleteDiscoverSection,
   reorderDiscoverSections,
 } from '../domain/discoverSections';
+import {
+  listTaxonomy,
+  createSubtype,
+  updateSubtype,
+  deleteSubtype,
+  reorderSubtypes,
+  updateCategory,
+} from '../domain/taxonomy';
 import { adminProcedure, protectedProcedure, router } from './trpc';
 
 /** Throws FORBIDDEN unless the caller is an `owner` (not just an admin). */
@@ -321,6 +329,88 @@ export const adminRouter = router({
         action: 'discover_section.deleted',
         actorUserId: ctx.auth.userId,
         meta: { sectionId: input.id },
+      });
+      return { ok: true };
+    }),
+
+  /* ─────────────── Service taxonomy (categories + treatments) ─────────────── */
+
+  /** Full taxonomy incl. inactive rows + per-treatment deal counts. */
+  listTaxonomy: adminProcedure.query(({ ctx }) => listTaxonomy(ctx.sql)),
+
+  /** Add a treatment to a category (slug auto-derived; appended to the end). */
+  createSubtype: adminProcedure
+    .input(z.object({
+      categoryId: z.string().uuid(),
+      displayName: z.string().min(2).max(80),
+      unitLabel: z.string().max(24).nullable().optional(),
+      helperText: z.string().max(200).nullable().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const created = await createSubtype(ctx.sql, input);
+      void writeAudit(ctx.sql, {
+        action: 'taxonomy.subtype_created',
+        actorUserId: ctx.auth.userId,
+        meta: { subtypeId: created.id, slug: created.slug, displayName: input.displayName, categoryId: input.categoryId },
+      });
+      return created;
+    }),
+
+  /** Rename / re-unit / hide / restore / reorder a treatment. */
+  updateSubtype: adminProcedure
+    .input(z.object({
+      id: z.string().uuid(),
+      displayName: z.string().min(2).max(80).optional(),
+      unitLabel: z.string().max(24).nullable().optional(),
+      helperText: z.string().max(200).nullable().optional(),
+      active: z.boolean().optional(),
+      displayOrder: z.number().int().min(0).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await updateSubtype(ctx.sql, input);
+      void writeAudit(ctx.sql, {
+        action: 'taxonomy.subtype_updated',
+        actorUserId: ctx.auth.userId,
+        meta: { subtypeId: input.id, ...input },
+      });
+      return { ok: true };
+    }),
+
+  /** Hard delete — refused (PRECONDITION_FAILED) if any deal references it. */
+  deleteSubtype: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      await deleteSubtype(ctx.sql, input.id);
+      void writeAudit(ctx.sql, {
+        action: 'taxonomy.subtype_deleted',
+        actorUserId: ctx.auth.userId,
+        meta: { subtypeId: input.id },
+      });
+      return { ok: true };
+    }),
+
+  /** Persist a new treatment ordering within one category. */
+  reorderSubtypes: adminProcedure
+    .input(z.object({ categoryId: z.string().uuid(), orderedIds: z.array(z.string().uuid()).min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      await reorderSubtypes(ctx.sql, input.categoryId, input.orderedIds);
+      return { ok: true };
+    }),
+
+  /** Rename / hide / reorder a category (creation stays migration-only). */
+  updateCategory: adminProcedure
+    .input(z.object({
+      id: z.string().uuid(),
+      displayName: z.string().min(2).max(60).optional(),
+      active: z.boolean().optional(),
+      displayOrder: z.number().int().min(0).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await updateCategory(ctx.sql, input);
+      void writeAudit(ctx.sql, {
+        action: 'taxonomy.category_updated',
+        actorUserId: ctx.auth.userId,
+        meta: { categoryId: input.id, ...input },
       });
       return { ok: true };
     }),
