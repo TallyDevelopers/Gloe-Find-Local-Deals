@@ -158,6 +158,13 @@ CSS: `apps/web/design-ref-gloe-cards.html`). Formatting only — colors untouche
 - [x] **Size hierarchy** — category tiles shrunk below deal cards (desktop
   210px vs 260px; mobile 42vw/168px vs 196px): deals are the hero, categories
   are wayfinding. Skeletons resized to match.
+- [x] **Feedback round (same day)** — trust strip straddles the hero's bottom
+  edge (half photo / half page); hero "here." wears the /business serif italic
+  accent (Newsreader blush); Popular chips desktop-only; mobile hero search
+  wraps (location chip + Search row, input row); nav `LocationPill` hidden
+  while the hero is on screen; mobile rail cards 232px; app-band eyebrow
+  dropped; /business header matches consumer TopNav metrics; sort-select got a
+  custom in-pill chevron.
 - [ ] iOS half of GLO-42 (same card anatomy in the native app) + GLO-41 Deal of
   the Week band.
 

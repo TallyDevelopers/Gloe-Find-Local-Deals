@@ -11,21 +11,7 @@ export function GetTheApp() {
     <section className="app-band">
       <div className="app-band-inner">
         <div className="app-copy-col">
-          <span
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 7,
-              fontSize: 13,
-              fontWeight: 700,
-              letterSpacing: '0.08em',
-              textTransform: 'uppercase',
-              color: 'var(--brand-600)',
-            }}
-          >
-            <Sparkles size={15} color="var(--brand-600)" /> The Gloē app
-          </span>
-          <h2 style={{ fontSize: 38, lineHeight: 1.08, marginTop: 12, maxWidth: 460 }}>Take Gloē with you</h2>
+          <h2 style={{ fontSize: 38, lineHeight: 1.08, maxWidth: 460 }}>Take Gloē with you</h2>
           <p style={{ fontSize: 18, color: 'var(--text-secondary)', lineHeight: 1.55, marginTop: 14, maxWidth: 440 }}>
             Your vouchers in Apple Wallet, one‑tap Apple Pay checkout, and a ping the moment a deal drops near you.
           </p>

@@ -31,7 +31,10 @@ export function TopNav() {
         {overHero ? <div style={{ flex: 1 }} /> : <NavSearch />}
 
         <nav className="topnav-links">
-          <LocationPill />
+          {/* While the hero is on screen its search pill owns location — the
+              nav pill would be a duplicate. It returns on scroll, with the
+              nav search, and on every other page. */}
+          {overHero ? null : <LocationPill />}
           <SignedOut>
             <button type="button" className="topnav-signin" onClick={() => openSignIn()}>
               Sign in

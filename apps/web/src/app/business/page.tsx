@@ -26,9 +26,11 @@ export default function ForBusinessPage() {
     <main style={{ minHeight: '100vh', background: 'var(--surface-primary)' }}>
       {/* Header */}
       <header style={{ position: 'sticky', top: 0, zIndex: 30, background: 'rgba(19,18,23,0.85)', backdropFilter: 'saturate(140%) blur(14px)', borderBottom: '1px solid rgba(240,237,241,0.1)' }}>
-        <div style={{ maxWidth: 1180, margin: '0 auto', height: 64, padding: '0 24px', display: 'flex', alignItems: 'center', gap: 16 }}>
+        {/* Same metrics as the consumer .topnav-inner (1600 / 68 / 40px gutters)
+            so the wordmark doesn't jump when flipping between gloe.app and here. */}
+        <div style={{ maxWidth: 1600, margin: '0 auto', height: 68, padding: '0 clamp(20px, 4vw, 40px)', display: 'flex', alignItems: 'center', gap: 22 }}>
           <Link href="/" aria-label="Gloē home" style={{ display: 'inline-flex', alignItems: 'baseline', gap: 12 }}>
-            <Wordmark size={24} tone="gold" />
+            <Wordmark size={26} tone="gold" />
             <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.14em', color: '#857f89' }}>FOR BUSINESS</span>
           </Link>
           <nav style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 22 }}>
