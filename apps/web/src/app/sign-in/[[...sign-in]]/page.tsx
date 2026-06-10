@@ -1,7 +1,7 @@
 import { SignIn } from '@clerk/nextjs';
 
 import { BizAuthShell } from '../../../components/BizAuthShell';
-import { CLERK_PAGE_APPEARANCE } from '../../../components/consumer/clerkAppearance';
+import { CLERK_BIZ_APPEARANCE, CLERK_PAGE_APPEARANCE } from '../../../components/consumer/clerkAppearance';
 
 /**
  * Sign-in. Honors a `redirect_url` query param so the consumer flow returns to
@@ -17,15 +17,21 @@ export default async function SignInPage({
   const { redirect_url } = await searchParams;
   const dest = redirect_url && redirect_url.startsWith('/') ? redirect_url : '/';
   const signUpHref = `/sign-up${redirect_url ? `?redirect_url=${encodeURIComponent(redirect_url)}` : ''}`;
-  const card = <SignIn appearance={CLERK_PAGE_APPEARANCE} forceRedirectUrl={dest} signUpUrl={signUpHref} />;
 
   if (dest.startsWith('/vendor')) {
-    return <BizAuthShell>{card}</BizAuthShell>;
+    return (
+      <BizAuthShell
+        title="Welcome back"
+        subtitle="Sign in to manage your spa — deals, redemptions, and payouts."
+      >
+        <SignIn appearance={CLERK_BIZ_APPEARANCE} forceRedirectUrl={dest} signUpUrl={signUpHref} />
+      </BizAuthShell>
+    );
   }
 
   return (
     <main style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      {card}
+      <SignIn appearance={CLERK_PAGE_APPEARANCE} forceRedirectUrl={dest} signUpUrl={signUpHref} />
     </main>
   );
 }

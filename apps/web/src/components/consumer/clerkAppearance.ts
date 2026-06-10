@@ -121,3 +121,24 @@ export const CLERK_PAGE_APPEARANCE = {
     rootBox: { width: 'auto' },
   },
 } as const;
+
+/**
+ * Variant for the BUSINESS auth shell (BizAuthShell). The shell already shows
+ * the Gloē FOR BUSINESS wordmark and renders its own business-specific heading
+ * above the card, so Clerk's in-card logo + generic "Create your account /
+ * Welcome!" header are hidden — that duplication is what made the prebuilt
+ * card feel like a bolted-on widget. The card also drops its tinted surface
+ * so it sits flush on the page instead of reading as a box-in-a-box.
+ */
+export const CLERK_BIZ_APPEARANCE = {
+  ...CLERK_PAGE_APPEARANCE,
+  elements: {
+    ...CLERK_PAGE_APPEARANCE.elements,
+    logoBox: { display: 'none' },
+    logoImage: { display: 'none' },
+    header: { display: 'none' },
+    card: { boxShadow: 'none', backgroundColor: 'transparent', padding: '0.25rem 0 0' },
+    cardBox: { boxShadow: 'none', border: 'none' },
+    footer: { textAlign: 'center', background: 'transparent' },
+  },
+} as const;

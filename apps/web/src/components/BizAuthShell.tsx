@@ -8,9 +8,19 @@ import { Wordmark } from './Wordmark';
  * Split-screen shell for business-bound auth (sign-in/sign-up reached with
  * `redirect_url=/vendor*`). Reuses the vendor signup's dark brand panel so
  * /business → auth → /vendor reads as ONE continuous flow instead of bouncing
- * through a generic consumer login. Children = the Clerk card.
+ * through a generic consumer login. Children = the Clerk card (rendered with
+ * CLERK_BIZ_APPEARANCE, which strips Clerk's own logo/header — the shell owns
+ * the branding and the heading below).
  */
-export function BizAuthShell({ children }: { children: ReactNode }) {
+export function BizAuthShell({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  children: ReactNode;
+}) {
   return (
     <div className="biz-layout">
       {/* Left brand panel — hidden on narrow screens */}
@@ -23,8 +33,8 @@ export function BizAuthShell({ children }: { children: ReactNode }) {
           <Link href="/business" className="biz-utility-link">← For Businesses</Link>
           <Link href="/" className="biz-utility-link">gloe.app</Link>
         </div>
-        <div className="biz-form-inner" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-          <div className="biz-mobile-brand" style={{ alignSelf: 'flex-start' }}>
+        <div className="biz-form-inner">
+          <div className="biz-mobile-brand">
             <Wordmark size={26} tone="gold" />
             <span
               style={{
@@ -37,7 +47,11 @@ export function BizAuthShell({ children }: { children: ReactNode }) {
               FOR BUSINESS
             </span>
           </div>
-          {children}
+          <h1>{title}</h1>
+          <p style={{ color: 'var(--text-secondary)', fontSize: 16, lineHeight: 1.55, marginTop: 10 }}>
+            {subtitle}
+          </p>
+          <div style={{ marginTop: 28, display: 'flex', justifyContent: 'center' }}>{children}</div>
         </div>
       </main>
     </div>
