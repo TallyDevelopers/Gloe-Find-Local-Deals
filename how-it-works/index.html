@@ -142,7 +142,6 @@
   <div class="tabs" id="tabs">
     <button class="tab active" data-doc="how"><span class="tdot"></span>The Tour</button>
     <button class="tab" data-doc="spec"><span class="tdot"></span>The Spec</button>
-    <button class="tab" data-doc="web"><span class="tdot"></span>The Web</button>
   </div>
   <div class="tab-meta"><span class="live"></span><span id="metaText">founder-readable</span></div>
 </div>
@@ -166,9 +165,8 @@
 
 <script>
 const DOCS = {
-  how:  { file:'../HOW-IT-WORKS.md',   meta:'founder-readable', label:'The Tour' },
-  spec: { file:'../GLOE.md',           meta:'engineering spec', label:'The Spec' },
-  web:  { file:'../apps/web/WEB.md',   meta:'gloe.app build',   label:'The Web' },
+  how:  { file:'../HOW-IT-WORKS.md', meta:'founder-readable', label:'The Tour' },
+  spec: { file:'../GLOE.md',         meta:'engineering spec', label:'The Spec' },
 };
 const cache = {};
 let current = 'how';
