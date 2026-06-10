@@ -25,9 +25,10 @@
   },
   "include": [
     ".next/types/**/*",
+    ".next/types/**/*.ts",
     "next-env.d.ts",
     "src/**/*",
-    ".next/types/**/*.ts"
+    ".next.nosync/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"
