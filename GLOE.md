@@ -970,6 +970,8 @@ function loadPem(envName: string, filename: string): Buffer {
 }
 ```
 
+**⚠️ Clerk production instance — social OAuth credentials (easy to miss):** the dev instance runs on Clerk's *shared* OAuth credentials, so social sign-in "just works" today. A production Clerk instance requires **our own credentials for every provider** or each button errors at tap: **Apple** (Services ID + Team ID + Key ID + `.p8` from the dev portal — bundle with the Apple Pay portal session; GLO-9), **Google** (Cloud Console OAuth client), **TikTok** (developer-app creds). **Facebook** renders in the app but `oauth_facebook` is off even in dev — enable it in Clerk or drop the button. The prod instance also prompts for `clerk.gloe.app` DNS records.
+
 ### Phase 5 — Mobile build
 
 18. `apps/mobile/.env`: `EXPO_PUBLIC_API_URL` → `https://api.gloe.app`. Use EAS Secrets for prod Clerk + Stripe publishable keys.
