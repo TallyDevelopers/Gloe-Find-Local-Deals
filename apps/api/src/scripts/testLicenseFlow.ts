@@ -35,8 +35,8 @@ async function main() {
     VALUES (${ownerUserId}, ${'test_license_' + suffix}, ${'license-test-' + suffix + '@example.com'}, 'LicenseTest')
   `;
   const vRows = await sql<{ id: string }[]>`
-    INSERT INTO public.vendors (owner_user_id, business_name, slug, phone, address_line1, city, region, postal_code, country, status)
-    VALUES (${ownerUserId}, ${'License Test Spa ' + suffix}, ${'license-test-' + suffix}, '5550100', '1 Test St', 'Austin', 'TX', '78701', 'US', 'pending_approval')
+    INSERT INTO public.vendors (owner_user_id, business_name, slug, phone, address_line1, city, region, postal_code, country, location, status)
+    VALUES (${ownerUserId}, ${'License Test Spa ' + suffix}, ${'license-test-' + suffix}, '5550100', '1 Test St', 'Austin', 'TX', '78701', 'US', ST_SetSRID(ST_MakePoint(-97.74, 30.27), 4326)::geography, 'pending_approval')
     RETURNING id
   `;
   const vendorId = vRows[0]!.id;

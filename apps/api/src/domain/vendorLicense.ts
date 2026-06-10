@@ -96,7 +96,7 @@ export async function submitLicense(sql: Sql, vendorId: string, input: LicenseSu
         license_rejection_reason = NULL
     WHERE id = ${vendorId}
       AND license_status <> 'verified'
-      AND (${input.documentPath} IS NOT NULL OR license_document_path IS NOT NULL)
+      AND (${input.documentPath}::text IS NOT NULL OR license_document_path IS NOT NULL)
     RETURNING license_status, license_submitted_at, license_document_path
   `;
   const v = rows[0];
