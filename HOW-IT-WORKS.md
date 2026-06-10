@@ -28,7 +28,7 @@
 9. [The vendor side](#9-the-vendor-side)
 10. [Behind the glass (admin god-mode)](#10-behind-the-glass-admin-god-mode)
 11. [Accounts & login](#11-accounts--login)
-12. [Notifications](#12-notifications)
+12. [Emails & notifications](#12-emails--notifications)
 13. [Support / Concierge](#13-support--concierge)
 14. [The website (gloe.app)](#14-the-website-gloeapp)
 15. [What's NOT built yet](#15-whats-not-built-yet)
@@ -523,26 +523,11 @@ And **that redemption is what releases the vendor's money** (next section).
 
 *Deeper: `GLOE.md` §4, §7. Code: `claims.ts` (`redeemClaimByVendor`, `lookupVoucher`).*
 
-### What lands in your inbox
+### And the customer's inbox?
 
-We send branded emails (via Resend) at the moments that matter — all on-brand, all with a "reply reaches a real person" footer:
-
-- **Receipt** — the instant a purchase is fulfilled. Deal photo, what you paid, your voucher code(s), and **how to pull up your QR** (Wallet tab on the app, or a button to `gloe.app/wallet` on a computer). A broken/missing deal photo is detected and simply omitted, never shown as a broken image.
-- **Refund confirmation** — whenever a refund is issued (full or partial): the amount, "back to your card in 5–10 business days," and whether the voucher was cancelled (full) or stays alive for the balance (partial). Fires from both the pre-redemption refund and the post-redemption/dispute clawback.
-- **Voucher expiring soon** — a once-only reminder ~7 days before an unredeemed voucher lapses, so you don't lose money you already paid. Sent by a daily background sweep (expiry is lazy, so this is what actually nudges you), de-duplicated so you're never spammed.
-- **Welcome** — once, the moment your account is first created (never on later logins). Deliberately **static**: no listings, no prices, nothing that goes stale — just the premium pitch ("your city's best aesthetic treatments, all in one place"), a warm you're-early line, one CTA ("Explore treatments near you →" → the location-aware discover page), and the three-step how-it-works. All freshness lives in the app behind that button.
-- **You got paid** (to the spa) — the instant a redemption fires their Stripe transfer: the amount,
-  which deal, and a "View in Stripe" button. One per transfer, keyed to the transfer itself, so
-  retries can't double-send. Goes to the owner's account email (business email as fallback).
-- **Support reply** — when a Gloē agent answers your support ticket, the **full reply text lands in
-  your inbox** (not just "you have a message"), with a pointer back to Profile → Support in the app.
-  The push notification and the email are twins of the same moment.
-
-These send to your account email (for a gift link, the payer's email is the fallback). Email delivery is best-effort and never blocks a purchase or refund. Auth emails (verify/reset) come from Clerk separately.
-
-> Still missing: the gift-confirmation email. (See [§15](#15-whats-not-built-yet).)
-
-*Deeper: `GLOE.md` §4 "Transactional email". Code: `domain/email.ts` (`sendEmail`), `emails/` (React Email templates), `transactionalEmails.ts` (`sendRefundEmail`, `sendExpiryReminders`, `sendWelcomeEmail`, `sendVendorPayoutEmail`, `sendSupportReplyEmail`), `checkout.ts` (receipt), `vendorOps.ts` (refund), `payouts.ts` (payout notice), `admin.ts` (support reply), `index.ts` (expiry sweep), `context/auth.ts` (welcome, on first user insert).*
+The receipt email lands seconds after the purchase, and a reminder goes out if a voucher is about to
+expire unused. Every automated email — what triggers it, who gets it, exactly when it sends — lives in
+one table in [§12](#12-emails--notifications), so this section stays about the voucher itself.
 
 ---
 
@@ -865,7 +850,34 @@ into). It's a muted text link behind two confirmations — a rare, irreversible 
 
 ---
 
-## 12. Notifications
+## 12. Emails & notifications
+
+Everything Gloē sends automatically — no human pressing "send" — in one place: the emails first, then
+the phone pushes.
+
+### Every email, and exactly when it sends
+
+All branded, all via Resend, all with a footer where replying reaches a real person. A failed email
+never blocks anything — a purchase or refund always goes through even if the note about it doesn't.
+
+| The email | Who gets it | When it sends |
+|---|---|---|
+| **Receipt** | The customer | Seconds after their purchase goes through — what they paid, their code(s), how to pull up the QR |
+| **Refund confirmation** | The customer | The moment a refund is issued, full or partial — the amount, and "back to your card in 5–10 business days" |
+| **Voucher expiring soon** | The customer | Once, about 7 days before their unredeemed voucher lapses — so they never lose money they already paid |
+| **Welcome** | The customer | Once, the moment their account is created — never again on later logins |
+| **You got paid** | The spa | The instant a redemption moves their share to their Stripe balance — amount, deal, "View in Stripe" button |
+| **Support reply** | The customer | When a Gloē agent answers their ticket — the full reply text is right there in the email |
+
+Three fine-print notes: emails go to the customer's account email (for a gift link, the payer's address
+is the fallback); each send is keyed so retries can't double-send; and the password/verification emails come
+from Clerk separately, branded in the Clerk dashboard.
+
+> Still missing: a gift-confirmation email. (See [§15](#15-whats-not-built-yet).)
+
+*Deeper: `GLOE.md` §4 "Transactional email". Code: `domain/email.ts` (`sendEmail`), `emails/` (React Email templates), `transactionalEmails.ts`, `checkout.ts` (receipt), `vendorOps.ts` (refund), `payouts.ts` (payout notice), `admin.ts` (support reply), `index.ts` (expiry sweep), `context/auth.ts` (welcome).*
+
+### Push notifications
 
 Gloē talks **straight to Apple's push gateway** (APNs) — no Expo middleman — signing its own
 credentials. Devices register their push token on every signed-in launch, and the permission ask is
@@ -939,7 +951,7 @@ built. Each is either tracked in Linear or worth a ticket.
 ### Recently graduated off this list ✅
 Gaps this doc surfaced that have since shipped (kept for the record, details in their sections):
 - **Transactional email** — Resend foundation + receipt (GLO-37/GLO-11), refund confirmation (GLO-38),
-  voucher-expiring reminder (GLO-39), and the welcome email (GLO-28). See §7 "What lands in your inbox."
+  voucher-expiring reminder (GLO-39), and the welcome email (GLO-28). See §12 "Emails & notifications."
   *(Resend is in testing mode until launch — delivers only to verified addresses for now.)*
 - **Stripe dispute/chargeback handling** (GLO-34) — `charge.dispute.*` freezes unredeemed vouchers, halts
   the payout, flags already-redeemed orders, reconciles a lost dispute. See §8.
