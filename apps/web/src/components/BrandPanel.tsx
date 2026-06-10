@@ -3,9 +3,10 @@ import { Wordmark } from './Wordmark';
 
 /**
  * Left-side brand panel for the business signup screen. Sticky, full-height,
- * editorial: headline + the pay-per-sale pitch on the same warm cream + rose
- * glow palette as the gloe.app homepage, with the homepage's iPhone render
- * cropped into the bottom edge. Hidden on narrow screens.
+ * editorial: headline + the pay-per-sale pitch on the app's dark theme (cool
+ * ink-mauve, see packages/ui tokens.ts colorDark — rose gold glows on it),
+ * with the homepage's iPhone render cropped into the bottom edge. Hidden on
+ * narrow screens.
  */
 export function BrandPanel() {
   return (
@@ -13,16 +14,7 @@ export function BrandPanel() {
       <div style={{ zIndex: 1 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 14 }}>
           <Wordmark size={30} tone="gold" />
-          <span
-            style={{
-              color: 'var(--text-tertiary)',
-              fontSize: 12,
-              fontWeight: 600,
-              letterSpacing: '0.14em',
-            }}
-          >
-            FOR BUSINESS
-          </span>
+          <span className="biz-brand-eyebrow">FOR BUSINESS</span>
         </div>
 
         <h2 className="biz-brand-headline" style={{ marginTop: 56 }}>
@@ -30,16 +22,7 @@ export function BrandPanel() {
           <br />
           booked.
         </h2>
-        <p
-          style={{
-            marginTop: 16,
-            marginBottom: 40,
-            fontSize: 16,
-            lineHeight: 1.55,
-            color: 'var(--text-secondary)',
-            maxWidth: 400,
-          }}
-        >
+        <p className="biz-brand-sub" style={{ marginTop: 16, marginBottom: 40 }}>
           Gloē puts your open slots in front of clients searching for med-spa
           deals near you — right now.
         </p>

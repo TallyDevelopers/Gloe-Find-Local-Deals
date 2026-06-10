@@ -2549,11 +2549,13 @@ input::placeholder {
   gap: 32px;
   padding: 56px 64px 0;
   overflow: hidden;
-  border-right: 1px solid var(--border-subtle);
+  /* Dark side = the app's dark theme (cool ink-mauve, packages/ui tokens.ts
+     colorDark) — rose gold glows on it and the phone screen pops. Deliberately
+     NOT a warm/brown dark. */
   background:
-    radial-gradient(900px 600px at 110% -10%, var(--brand-100), transparent 60%),
-    radial-gradient(700px 500px at -20% 110%, rgba(232, 180, 171, 0.35), transparent 60%),
-    var(--brand-50);
+    radial-gradient(900px 600px at 110% -10%, rgba(200, 154, 140, 0.18), transparent 60%),
+    radial-gradient(700px 500px at -20% 110%, rgba(152, 136, 160, 0.15), transparent 60%),
+    linear-gradient(165deg, #131217 0%, #1c1a22 55%, #26232e 100%);
 }
 .biz-brand-headline {
   font-family: var(--font-display);
@@ -2561,14 +2563,26 @@ input::placeholder {
   font-weight: 600;
   line-height: 1.08;
   letter-spacing: -0.01em;
-  color: var(--text-primary);
+  color: #f0edf1; /* colorDark text.primary */
   max-width: 440px;
+}
+.biz-brand-sub {
+  font-size: 16px;
+  line-height: 1.55;
+  color: #c2bcc4; /* colorDark text.secondary */
+  max-width: 400px;
+}
+.biz-brand-eyebrow {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  color: #857f89; /* colorDark text.tertiary */
 }
 .biz-value-row {
   display: flex;
   gap: 16px;
   padding: 18px 0;
-  border-top: 1px solid var(--border-subtle);
+  border-top: 1px solid rgba(240, 237, 241, 0.12);
   max-width: 440px;
 }
 .biz-value-num {
@@ -2576,17 +2590,17 @@ input::placeholder {
   font-family: var(--font-display);
   font-size: 14px;
   font-weight: 600;
-  color: var(--brand-600);
+  color: #ddab9c; /* colorDark text.link — rose gold lifted for dark bg */
   padding-top: 2px;
 }
 .biz-value-row strong {
   display: block;
   font-size: 15px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: #f0edf1;
   margin-bottom: 2px;
 }
-.biz-value-row p { font-size: 14px; line-height: 1.5; color: var(--text-secondary); }
+.biz-value-row p { font-size: 14px; line-height: 1.5; color: #c2bcc4; }
 
 /* Phone mockup cropped into the bottom edge of the panel */
 .biz-phone-wrap {
@@ -2604,11 +2618,12 @@ input::placeholder {
 /* Wordmark above the form on narrow screens (left panel hidden there) */
 .biz-mobile-brand { display: none; }
 @media (max-width: 900px) {
-  .biz-form-col { padding: 40px 20px 56px; justify-content: flex-start; }
+  .biz-form-col { padding: 44px 20px 56px; justify-content: flex-start; }
   .biz-mobile-brand {
     display: flex;
     align-items: baseline;
-    gap: 12px;
-    margin-bottom: 28px;
+    gap: 14px;
+    margin-bottom: 44px;
   }
+  .biz-form-col h1 { font-size: 30px; }
 }
