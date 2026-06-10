@@ -683,10 +683,12 @@ physically cannot receive funds.**
 
 Plenty of spas get onboarded by the founder before they've ever logged in — the listing exists,
 deals may even be selling, but nobody owns it yet. The handover is one email: the admin hits
-**"Invite owner"**, the owner gets a sign-up invitation, and the moment they sign in at `/vendor`
-the system **matches their verified email to the unclaimed listing and links it to them** — they
-land in their own dashboard, never see a signup form, and can't accidentally create a duplicate
-spa. The match only trusts **verified** emails (an unverified address can never hijack a business),
+**"Invite owner"**, and the owner's invite link opens a create-password page that **names their
+email and says it's already verified** (clicking the invite link *is* the verification — no code
+to type, and no social-login buttons that could create the account under a different address).
+Password set, they land at `/vendor`, where the system **matches their verified email to the
+unclaimed listing and links it to them** — straight into their own dashboard, never a signup
+form, and they can't accidentally create a duplicate spa. The match only trusts **verified** emails (an unverified address can never hijack a business),
 the link is atomic (two racing sessions can't both claim it), and every claim writes an audit row.
 
 ### Getting verified ("vetted & licensed", for real)

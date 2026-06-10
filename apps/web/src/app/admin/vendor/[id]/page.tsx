@@ -409,7 +409,8 @@ function InviteOwnerButton({
       // Must land on a PUBLIC page that mounts <SignUp> — it consumes the
       // __clerk_ticket (pre-verified email + password screen). /vendor itself
       // is auth-protected, so the ticket would be dropped at the middleware.
-      redirectUrl: `${window.location.origin}/sign-up?redirect_url=${encodeURIComponent('/vendor')}`,
+      // invited_email drives the "this invite is for X" copy on that page.
+      redirectUrl: `${window.location.origin}/sign-up?redirect_url=${encodeURIComponent('/vendor')}&invited_email=${encodeURIComponent(target.toLowerCase())}`,
     });
   };
 

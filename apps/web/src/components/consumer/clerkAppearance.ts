@@ -144,3 +144,20 @@ export const CLERK_BIZ_APPEARANCE = {
     footer: { textAlign: 'center', background: 'transparent' },
   },
 } as const;
+
+/**
+ * Variant for INVITED owners (claim & invite, GLO-5). The Clerk ticket binds
+ * the account to the invited email — an SSO button here would let them sign
+ * up as a different address, the claim-by-email match would miss, and they'd
+ * fall into the signup form and create the duplicate vendor the invite flow
+ * exists to prevent. So: password only, no social row.
+ */
+export const CLERK_INVITED_BIZ_APPEARANCE = {
+  ...CLERK_BIZ_APPEARANCE,
+  elements: {
+    ...CLERK_BIZ_APPEARANCE.elements,
+    socialButtons: { display: 'none' },
+    socialButtonsBlockButton: { display: 'none' },
+    dividerRow: { display: 'none' },
+  },
+} as const;
