@@ -2780,6 +2780,10 @@ input::placeholder {
 }
 .biz-value-num {
   flex: none;
+  /* Fixed column: Clash Display digits are proportional, so "01" renders
+     narrower than "02"/"03" and would shift each row's text differently. */
+  width: 2ch;
+  font-variant-numeric: tabular-nums;
   font-family: var(--font-display);
   font-size: 14px;
   font-weight: 600;
