@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Check, Lock, MapPin, ShieldCheck, Star, Wallet, Zap } from '../../components/consumer/icons';
 import { PhoneMock } from '../../components/consumer/GetTheApp';
 import { Wordmark } from '../../components/Wordmark';
+import { PortalShowcase } from './BizShowcase';
 
 export const metadata: Metadata = {
   title: 'For Businesses — fill your chairs with Gloē',
@@ -162,19 +163,24 @@ export default function ForBusinessPage() {
         </div>
       </section>
 
-      {/* One portal */}
-      <section style={{ maxWidth: 1100, margin: '0 auto', padding: '72px 24px 0' }}>
-        <h2 className="bl-h2" style={{ textAlign: 'center', marginInline: 'auto' }}>
-          Run the whole thing from <span className="bl-accent">one portal.</span>
-        </h2>
-        <div className="value-grid" style={{ padding: '32px 0 0' }}>
-          <Feature title="Multiple options" body="Offer variants — e.g. 20, 40, or 60 units — each with its own price and spot count." />
-          <Feature title="Photos & video" body="Show your space and results with a gallery and short clips that build trust." />
-          <Feature title="Your providers" body="Introduce the injector or esthetician with a bio and photo, so clients know who they’ll see." />
-          <Feature title="Auto-tagging" body="Type the treatment and the listing tags it for you, so search always finds you. It suggests; you stay in charge." />
-          <Feature title="Smart limits" body="Per-customer and lifetime caps, spot counts, and expirations keep deals on your terms." />
-          <Feature title="Payouts & reporting" body="Today’s sales, money queued for transfer, and your live Stripe balance — no spreadsheet." />
+      {/* One portal — real product UI, statically rendered */}
+      <section className="bl-portal-grid">
+        <div>
+          <h2 className="bl-h2">
+            Run the whole thing from <span className="bl-accent">one portal.</span>
+          </h2>
+          <p className="bl-section-sub">
+            Post deals, scan vouchers, watch the money land — from any browser, no extra hardware.
+            This is the actual UI.
+          </p>
+          <div className="bl-portal-list">
+            <PortalListItem title="Listings that sell themselves" body="Variants with their own price and spots, photo & video galleries, provider bios — and auto-tagging that files your deal under the right treatment as you type." />
+            <PortalListItem title="The voucher is the ticket" body="Clients pay up front and carry a QR voucher. Your scanner verifies it read-only, you confirm, and it burns exactly once — no codes to track by hand." />
+            <PortalListItem title="Money you can see" body="Today’s sales, money queued for transfer, and your live Stripe balance on one card. Instant payout to a debit card when you need cash fast." />
+            <PortalListItem title="Deals on your terms" body="Per-customer and lifetime caps, spot counts, expirations. Pause or edit anytime — edits go back through human review." />
+          </div>
         </div>
+        <PortalShowcase />
       </section>
 
       {/* FAQ */}
@@ -281,6 +287,15 @@ function Benefit({ Icon, title, body }: { Icon: typeof Wallet; title: string; bo
       </div>
       <h3 style={{ fontSize: 18, marginTop: 12 }}>{title}</h3>
       <p style={{ color: 'var(--text-secondary)', lineHeight: 1.55, marginTop: 6 }}>{body}</p>
+    </div>
+  );
+}
+
+function PortalListItem({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="bl-portal-list-item">
+      <h4>{title}</h4>
+      <p>{body}</p>
     </div>
   );
 }
