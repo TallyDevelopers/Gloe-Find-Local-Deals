@@ -854,7 +854,7 @@ Ranked. These are what stand between "today" and "your wife's friend can install
 | 5 | **ATT prompt** | Apple **rejection** (5.1.2) IF any cross-app analytics ship. `expo-tracking-transparency` not installed. If we launch with zero analytics SDKs we can defer; the moment Mixpanel/Sentry land, this is mandatory. | ~1h | ❌ Not installed (conditionally required) |
 | 6 | **Universal Links / AASA** | Gift + deal share links (`/deal/*`, `/gift/*`) won't deep-link into the app without the `.well-known/apple-app-site-association` file served by web + `associatedDomains` in `app.json`. Not strictly a rejection, but share/gift flows are broken without it. | ~1h + rebuild | ❌ Not served |
 | 7 | **ToS + Privacy Policy (hosted)** | App Store **requires** a Privacy Policy URL; "marketplace facilitator, not provider" clauses are legal protection for an aesthetic-services marketplace. No `/privacy` or `/terms` page exists. | ~half day (Termly) | ❌ Not hosted |
-| 8 | **Landing page + support email** | App Store needs a Support URL; `gloe.app` should not be a dead root. `page.tsx` exists (55 lines) — verify it's a real landing, not a stub. `hello@gloe.app` forwarding must work. | ~half day | 🟡 Verify |
+| 8 | **Support email** | App Store needs a Support URL; `hello@gloe.app` forwarding must work. (The old "landing page" half of this item is obsolete — GLO-16 canceled; `gloe.app` is now the full consumer marketplace and serves as the ad/App Store destination.) | ~1h | 🟡 Verify forwarding |
 
 **Not blockers (explicitly OK to launch without):** robust search, deeper filters, credit/loyalty, Wallet live updates, OTA, map tab, OSRM, reconciliation cron. All parked in §14.
 
@@ -1008,7 +1008,7 @@ When you DO set it up (one-time, ~30 min, do it calmly):
 
 ### Phase 8 — Pre-launch checklist (non-code)
 
-- **Landing page at gloe.app** — single-pager (hero + 3-step + app badge + vendor CTA). Half a day.
+- ~~**Landing page at gloe.app**~~ — ✅ obsolete (GLO-16 canceled): gloe.app is the full consumer marketplace (hero, live deals, "Get the app" section, vendor CTA) and is the destination for ads.
 - **Transactional email via Resend** — receipts (critical, prevents chargebacks), voucher expiry reminders, vendor welcome, gift-link confirmations.
 - **Push notifications** — contextual asks (after first save or purchase, not cold). 60–80% opt-in vs. 20% cold.
 - **ToS + Privacy via Termly** ($15–50/mo). Critical clauses: "Gloē is a marketplace facilitator, not a service provider," "vendors are independent licensed providers," "all services subject to consultation," refund window (3 days goodwill), arbitration, vendor indemnification.
@@ -1026,7 +1026,7 @@ When you DO set it up (one-time, ~30 min, do it calmly):
 
 ### "Launched" definition
 
-5+ live spas. TestFlight approved. Stripe live. Receipts firing. gloe.app shows landing. ToS + Privacy live. Support email works. Your wife's friend can install and buy.
+5+ live spas. TestFlight approved. Stripe live. Receipts firing. gloe.app marketplace live. ToS + Privacy live. Support email works. Your wife's friend can install and buy.
 
 ---
 
@@ -1161,7 +1161,7 @@ All 4 green = ready to sign first real spa.
 
 - Consumer iOS app (**iPhone only** — `supportsTablet:false`; iPad support is a v2.0 item), vendor portal, admin, Stripe Connect, Apple Pay, Apple Wallet pass.
 - 5 launch vendors, 25+ deals across 3–4 categories.
-- gloe.app landing page.
+- gloe.app consumer marketplace website.
 - US only.
 
 ### v1.1 — Polish
