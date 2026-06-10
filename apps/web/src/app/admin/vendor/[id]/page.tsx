@@ -406,7 +406,10 @@ function InviteOwnerButton({
     invite.mutate({
       vendorId,
       email: target === email ? null : target,
-      redirectUrl: `${window.location.origin}/vendor`,
+      // Must land on a PUBLIC page that mounts <SignUp> — it consumes the
+      // __clerk_ticket (pre-verified email + password screen). /vendor itself
+      // is auth-protected, so the ticket would be dropped at the middleware.
+      redirectUrl: `${window.location.origin}/sign-up?redirect_url=${encodeURIComponent('/vendor')}`,
     });
   };
 
