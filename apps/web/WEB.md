@@ -140,6 +140,27 @@ Geolocation + manual city (`geocode.*`) saved to `localStorage` · maps/tel →
 - [x] **mobile = app vibes**: filter rail collapses to a slide-up drawer; marketing bands (how-it-works, CTA) hidden on mobile so the home reads like the native feed. **Desktop = full website.**
 - [ ] remaining nice-to-haves: real testimonials/press strip, attachments on support replies, replace legal placeholder copy
 
+### Discover-comp adoption ✅ (2026-06-09) — GLO-42 web half
+From the approved "Gloe Discover" comp (reference render with the exact extracted
+CSS: `apps/web/design-ref-gloe-cards.html`). Formatting only — colors untouched.
+- [x] **Poppins is the consumer display font** (`--font-display` overridden inside
+  `.consumer-shell` only): hero headline, section heads, card prices. Business +
+  admin portals keep Clash Display; the **wordmark stays Outfit** (locked).
+- [x] **Hero** — frosted eyebrow chip with green dot ("Vetted med-spas near
+  {location}"), Poppins-600 headline with blush `<em>here.</em>`, wallet-forward
+  sub copy, location chip inside the search pill (opens `LocationSheet`; hidden
+  on phones), "Popular:" quick-search chips (swipeable row on mobile).
+- [x] **DealCard anatomy** (everywhere it renders) — 16/11 image, rose-gold
+  uppercase category eyebrow, 2-line clamped title (reserved height so prices
+  align across a rail), `BadgeCheck` + provider · city (city suppressed when the
+  name already contains it), display-font price + struck compare, hairline-topped
+  meta footer (★ rating · drive · distance).
+- [x] **Size hierarchy** — category tiles shrunk below deal cards (desktop
+  210px vs 260px; mobile 42vw/168px vs 196px): deals are the hero, categories
+  are wayfinding. Skeletons resized to match.
+- [ ] iOS half of GLO-42 (same card anatomy in the native app) + GLO-41 Deal of
+  the Week band.
+
 ---
 
 ## How to run / verify

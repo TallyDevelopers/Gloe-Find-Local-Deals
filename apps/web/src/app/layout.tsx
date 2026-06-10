@@ -1,6 +1,6 @@
 import { ClerkProvider } from '@clerk/nextjs';
 import type { Metadata, Viewport } from 'next';
-import { Fraunces, Hanken_Grotesk, Inter, Outfit } from 'next/font/google';
+import { Fraunces, Hanken_Grotesk, Inter, Outfit, Poppins } from 'next/font/google';
 import type { ReactNode } from 'react';
 
 import { JsonLd, organizationLd, websiteLd } from '../lib/jsonLd';
@@ -19,6 +19,15 @@ const hanken = Hanken_Grotesk({ subsets: ['latin'], variable: '--font-hanken', d
 const outfit = Outfit({
   subsets: ['latin', 'latin-ext'],
   variable: '--font-outfit',
+  weight: ['400', '500', '600', '700'],
+  display: 'swap',
+});
+// Poppins — the consumer marketplace display face (approved June 2026 Discover
+// comp): hero headline, section heads, card titles/prices. The wordmark stays
+// Outfit — that decision is locked; this is everything-but-the-wordmark.
+const poppins = Poppins({
+  subsets: ['latin', 'latin-ext'],
+  variable: '--font-poppins',
   weight: ['400', '500', '600', '700'],
   display: 'swap',
 });
@@ -81,7 +90,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <ClerkProvider>
-      <html lang="en" className={`${fraunces.variable} ${inter.variable} ${hanken.variable} ${outfit.variable}`}>
+      <html lang="en" className={`${fraunces.variable} ${inter.variable} ${hanken.variable} ${outfit.variable} ${poppins.variable}`}>
         <body>
           <JsonLd data={[organizationLd(), websiteLd()]} />
           <TrpcProvider>{children}</TrpcProvider>

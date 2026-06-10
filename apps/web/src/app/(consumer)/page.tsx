@@ -11,6 +11,7 @@ import { DealCard } from '../../components/consumer/DealCard';
 import { GetTheApp } from '../../components/consumer/GetTheApp';
 import { useMediaQuery } from '../../components/consumer/useMediaQuery';
 import { LocationBanner } from '../../components/consumer/LocationBanner';
+import { LocationSheet } from '../../components/consumer/LocationSheet';
 import { ArrowRight, ChevronDown, Lock, MapPin, Search, ShieldCheck, Star, Wallet, Zap } from '../../components/consumer/icons';
 import { useCyclingPlaceholder } from '../../components/consumer/useCyclingPlaceholder';
 import { useDealLocationArgs, useLocation } from '../../lib/location';
@@ -27,12 +28,14 @@ export default function HomePage() {
   const { location } = useLocation();
   const locArgs = useDealLocationArgs();
   const [q, setQ] = useState('');
+  const [locOpen, setLocOpen] = useState(false);
   // Cycle the hint through treatments (Try "Botox"… → "Hydrafacial"… → "GLP-1"…),
   // matching the native search bar. Freeze it once the user starts typing.
   const heroPlaceholder = useCyclingPlaceholder((w) => `Try “${w}”…`, { paused: q.length > 0 });
-  // Denser, ResortPass-style rail cards on phones (more peek = "scroll me");
-  // unchanged on desktop. Defaults to 260 on SSR/desktop.
-  const railCardW = useMediaQuery('(max-width: 760px)') ? 196 : 260;
+  // Rail cards on phones: wide enough that the meta footer (★ · drive · miles)
+  // holds one line, with a sliver of next-card peek. Defaults to 260 on
+  // SSR/desktop.
+  const railCardW = useMediaQuery('(max-width: 760px)') ? 232 : 260;
 
   const categories = trpc.categories.list.useQuery();
   const feed = trpc.deals.list.useQuery({ ...locArgs, limit: 100 });
@@ -100,13 +103,24 @@ export default function HomePage() {
           <h1>
             Your best glow
             <br />
-            starts here.
+            starts <em>here.</em>
           </h1>
           <p className="hero-sub">
-            Discover vetted med-spas near you for Botox, fillers, facials, and more.
+            Book vetted med-spas for Botox, fillers, facials and lasers — pay in
+            seconds and your voucher lands in your wallet.
           </p>
 
           <form className="hero-search" onSubmit={submitSearch}>
+            <button
+              type="button"
+              className="hero-search-loc"
+              onClick={() => setLocOpen(true)}
+              aria-label="Change location"
+            >
+              <MapPin size={16} color="var(--brand-500)" />
+              <span>{location?.label ?? 'Set location'}</span>
+            </button>
+            <span className="hero-search-sep" aria-hidden />
             <Search size={20} color="var(--text-tertiary)" />
             <input
               value={q}
@@ -119,12 +133,23 @@ export default function HomePage() {
               Search
             </button>
           </form>
+
+          <div className="hero-qchips">
+            <span>Popular:</span>
+            {POPULAR_SEARCHES.map((w) => (
+              <Link key={w} href={`/search?q=${encodeURIComponent(w)}`} className="qchip">
+                {w}
+              </Link>
+            ))}
+          </div>
         </div>
+        <LocationSheet open={locOpen} onClose={() => setLocOpen(false)} />
       </section>
 
-      {/* Trust strip — reassurance band right under the hero (ResortPass-style).
+      {/* Trust strip — straddles the hero's bottom edge: top half over the
+          photo, bottom half on the page background (approved comp move).
           Inventory-independent, so it fills the page even with thin data. */}
-      <div className="consumer-container" style={{ paddingTop: 20 }}>
+      <div className="consumer-container trust-strip-wrap">
         <div className="trust-strip">
           <TrustItem icon={<ShieldCheck size={22} color="var(--brand-600)" />} title="Vetted med-spas" body="Every provider licensed & reviewed" />
           <TrustItem icon={<Wallet size={22} color="var(--brand-600)" />} title="Booking protection" body="Support if the offer isn’t as described" />
@@ -250,6 +275,9 @@ export default function HomePage() {
  * category has one, it overrides the auto-picked deal photo (more consistent,
  * on-brand). Add more as art is sourced — drop the file in /public/treatments.
  */
+/** Quick-search chips under the hero search — the marketplace's greatest hits. */
+const POPULAR_SEARCHES = ['Botox', 'Hydrafacial', 'Lip filler', 'NAD+ IV', 'Microneedling'];
+
 const TREATMENT_TILE_IMAGES: Record<string, string> = {
   injectables: '/treatments/injectables.jpg',
   'hormones-peptides': '/treatments/peptides.jpg',

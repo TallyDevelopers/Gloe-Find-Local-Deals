@@ -5,7 +5,7 @@ import Link from 'next/link';
 
 import { BlurImage } from './BlurImage';
 import { SaveButton } from './SaveButton';
-import { Clock, MapPin, Star } from './icons';
+import { BadgeCheck, Clock, MapPin, Star } from './icons';
 import { discountPct, formatDistance, formatDriveTime, formatPrice, formatRating } from './format';
 
 /**
@@ -21,6 +21,9 @@ export function DealCard({ deal, width }: { deal: DealSummary; width?: number })
   const drive = formatDriveTime(deal.driveSeconds);
   const distance = formatDistance(deal.distanceMiles);
   const subtitle = deal.category.subtypeDisplayName ?? deal.category.displayName;
+  // "Glow Aesthetics La Jolla · La Jolla" reads silly — only append the city
+  // when the business name doesn't already carry it.
+  const showCity = deal.vendor.city && !deal.vendor.businessName.toLowerCase().includes(deal.vendor.city.toLowerCase());
 
   return (
     <Link
@@ -28,7 +31,7 @@ export function DealCard({ deal, width }: { deal: DealSummary; width?: number })
       className="deal-card"
       style={{ display: 'block', width: width ? width : undefined, color: 'inherit' }}
     >
-      <div style={{ position: 'relative', width: '100%', aspectRatio: '1 / 1', background: 'var(--surface-secondary)' }}>
+      <div style={{ position: 'relative', width: '100%', aspectRatio: '16 / 11', background: 'var(--surface-secondary)' }}>
         {deal.primaryPhotoUrl ? (
           <BlurImage
             src={deal.primaryPhotoUrl}
@@ -83,59 +86,77 @@ export function DealCard({ deal, width }: { deal: DealSummary; width?: number })
         ) : null}
       </div>
 
-      <div style={{ padding: '12px 14px 16px' }}>
-        <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text-tertiary)' }}>
+      {/* Body — the comp's anatomy, top to bottom: rose-gold category eyebrow,
+          2-line title, verified provider row, price row, then a hairline-topped
+          meta footer (rating · drive · distance). */}
+      <div style={{ padding: '13px 15px 15px', display: 'flex', flexDirection: 'column', gap: 7 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--brand-600)' }}>
           {subtitle}
         </div>
-        {/* Product name: bold sans (ResortPass pattern) — the one bold element;
-            everything below it (vendor, rating, distance) stays regular/muted. */}
         <div
           style={{
             fontSize: 16,
-            fontWeight: 700,
+            fontWeight: 600,
             letterSpacing: '-0.01em',
-            lineHeight: 1.25,
+            lineHeight: 1.28,
             color: 'var(--text-primary)',
-            marginTop: 3,
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical',
             overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
+            // Two lines reserved so price rows align across a rail.
+            minHeight: '2.56em',
           }}
         >
           {deal.title}
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, marginTop: 7 }}>
-          <span style={{ fontSize: 17, fontWeight: 700, color: 'var(--text-primary)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)', minWidth: 0 }}>
+          <BadgeCheck size={14} color="var(--brand-500)" style={{ flexShrink: 0 }} />
+          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {deal.vendor.businessName}
+            {showCity ? ` · ${deal.vendor.city}` : null}
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+          <span style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 600, letterSpacing: '-0.01em', color: 'var(--text-primary)' }}>
             {formatPrice(variant.dealPriceCents)}
           </span>
           {pct > 0 ? (
-            <span style={{ fontSize: 13, color: 'var(--text-tertiary)', textDecoration: 'line-through' }}>
+            <span style={{ fontSize: 14, color: 'var(--text-tertiary)', textDecoration: 'line-through' }}>
               {formatPrice(variant.originalPriceCents)}
             </span>
           ) : null}
         </div>
 
-        <div style={{ fontSize: 13, fontWeight: 400, color: 'var(--text-secondary)', marginTop: 5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {deal.vendor.businessName}
-        </div>
-
         {(rating || drive || distance) && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 4, fontSize: 12.5, color: 'var(--text-tertiary)', flexWrap: 'wrap' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              fontSize: 12,
+              color: 'var(--text-secondary)',
+              flexWrap: 'wrap',
+              paddingTop: 9,
+              borderTop: '1px solid var(--border-subtle)',
+            }}
+          >
             {rating ? (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                 <Star size={12} color="var(--gold)" fill="var(--gold)" strokeWidth={0} />
                 {rating}
               </span>
             ) : null}
             {drive ? (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                 {rating ? <Dot /> : null}
                 <Clock size={11} /> {drive}
               </span>
             ) : null}
             {distance ? (
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                 {rating || drive ? <Dot /> : null}
                 <MapPin size={11} /> {distance}
               </span>

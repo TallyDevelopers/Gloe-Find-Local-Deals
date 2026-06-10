@@ -154,12 +154,14 @@ textarea {
    Fonts (Clash Display + General Sans) are now global (see :root). These rules
    are the consumer-only sizing/weight tweaks that don't belong in the portals. */
 .consumer-shell .hero h1 {
-  /* Medium (not light) — the hero sits over a photo, where thin strokes get lost
-     and read weak. 500 holds authority without the heavy look. */
-  font-weight: 500;
+  /* SemiBold Poppins over the photo — the approved comp's headline voice. */
+  font-weight: 600;
+  letter-spacing: -0.025em;
 }
 .consumer-shell .section-head h2 {
-  font-size: 32px;
+  font-size: clamp(26px, 3vw, 34px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
 }
 
 /* Hide the brand panel on narrow screens — form goes full-width */
@@ -318,6 +320,10 @@ textarea {
   display: flex;
   flex-direction: column;
   background: var(--surface-primary);
+  /* Consumer marketplace display face is Poppins (approved Discover comp,
+     June 2026). Scoped here so the business/admin portals keep Clash Display
+     and the wordmark keeps Outfit (--font-wordmark, locked). */
+  --font-display: var(--font-poppins), var(--font-hanken), system-ui, sans-serif;
 }
 
 /* Visibility helpers (desktop nav vs mobile tab bar) */
@@ -515,17 +521,79 @@ textarea {
   width: 100%;
   max-width: 720px;
   margin: 0 auto;
-  padding: 56px 24px 52px;
+  /* Extra bottom room: the trust strip overlaps the hero's bottom ~44px. */
+  padding: 48px 24px 92px;
   text-align: center;
   color: #fff;
 }
 .hero h1 {
-  font-size: 60px;
-  font-weight: 300; /* light serif — the ResortPass "Moulin 300" headline look */
-  line-height: 1.05;
-  letter-spacing: -0.015em;
+  font-size: clamp(44px, 6vw, 78px);
+  line-height: 1;
+  letter-spacing: -0.025em;
   color: #fff;
   text-shadow: 0 2px 24px rgba(0, 0, 0, 0.3);
+}
+/* The accented word ("here.") — blush against the dark photo. */
+.hero h1 em {
+  font-style: normal;
+  color: var(--brand-100);
+}
+/* Location chip inside the search pill — opens the shared LocationSheet. */
+.hero-search-loc {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+  margin-left: -12px;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-pill);
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 14px;
+  white-space: nowrap;
+  max-width: 170px;
+}
+.hero-search-loc span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hero-search-sep {
+  width: 1px;
+  height: 26px;
+  flex-shrink: 0;
+  background: var(--border-default);
+}
+/* "Popular:" quick-search chips under the search bar. */
+.hero-qchips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  justify-content: center;
+  margin-top: 20px;
+}
+.hero-qchips > span {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 13px;
+  font-weight: 600;
+  align-self: center;
+}
+.qchip {
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  white-space: nowrap;
+  color: #fff;
+  font-weight: 600;
+  font-size: 13.5px;
+  padding: 7px 14px;
+  border-radius: var(--radius-pill);
+  transition: background 0.18s ease, transform 0.15s ease;
+}
+.qchip:hover {
+  background: rgba(255, 255, 255, 0.26);
+  transform: translateY(-1px);
 }
 .hero-sub {
   font-size: 19px;
@@ -610,18 +678,19 @@ input::placeholder {
   /* Full-bleed hero on mobile — compact: just enough to frame the headline +
      search, then straight into deals. */
   .hero {
-    min-height: 380px;
+    min-height: 410px;
   }
   .hero-scrim {
     background:
       linear-gradient(180deg, rgba(24, 16, 12, 0.55) 0%, rgba(24, 16, 12, 0.42) 45%, rgba(24, 16, 12, 0.62) 100%);
   }
   .hero-content {
-    padding: 34px 16px 34px;
+    /* Bottom room for the overlapping trust strip (≈62px on phones). */
+    padding: 30px 16px 96px;
   }
   .hero h1 {
-    font-size: 36px;
-    line-height: 1.05;
+    font-size: 38px;
+    line-height: 1.02;
   }
   .hero-sub {
     font-size: 14.5px;
@@ -639,6 +708,17 @@ input::placeholder {
   .hero-search-btn {
     padding: 10px 16px;
     font-size: 14px;
+  }
+  /* The location chip crowds a 360px pill — fold it; the sticky search and
+     nav already own location on mobile. */
+  .hero-search-loc,
+  .hero-search-sep {
+    display: none;
+  }
+  /* The chips crowd the compact mobile hero — the cycling search placeholder
+     already sells the same treatments there. */
+  .hero-qchips {
+    display: none;
   }
   /* Tighter section rhythm so more content shows per scroll. ResortPass (our
      north star) uses 18px feed-row headings on mobile; match it — and it reads
@@ -1395,7 +1475,12 @@ input::placeholder {
   flex: 0 0 auto;
 }
 .cat-card--carousel {
-  width: 260px;
+  /* Deliberately a notch SMALLER than the 260px deal rail cards — deal cards
+     are the hero of the page, category tiles are wayfinding (approved comp). */
+  width: 210px;
+}
+.cat-card--carousel .cat-card-label .name {
+  font-size: 18px;
 }
 .carousel-arrow {
   position: absolute;
@@ -1438,8 +1523,10 @@ input::placeholder {
 }
 @media (max-width: 760px) {
   .cat-card--carousel {
-    width: 62vw;
-    max-width: 240px;
+    /* Smaller than the ~196px mobile deal cards (same hierarchy as desktop):
+       categories are wayfinding chips, deals get the visual weight. */
+    width: 42vw;
+    max-width: 168px;
   }
   /* Full-bleed rails on phones: escape .consumer-container's 16px side
      padding so cards run to the physical screen edge (Airbnb/ResortPass).
@@ -1725,6 +1812,14 @@ input::placeholder {
 }
 
 /* --- Trust strip (under the hero) --- */
+/* Wrapper that pulls the card up over the hero — half on the photo, half on
+   the page background. z-index lifts it above the hero's bottom border. */
+.trust-strip-wrap {
+  position: relative;
+  z-index: 5;
+  padding-top: 0;
+  margin-top: -44px;
+}
 .trust-strip {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -1733,7 +1828,7 @@ input::placeholder {
   background: var(--surface-elevated);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
-  box-shadow: 0 1px 3px rgba(43, 32, 25, 0.05);
+  box-shadow: 0 6px 24px rgba(43, 32, 25, 0.1);
 }
 .trust-item {
   display: flex;
@@ -1762,6 +1857,9 @@ input::placeholder {
   margin-top: 2px;
 }
 @media (max-width: 860px) {
+  .trust-strip-wrap {
+    margin-top: -62px;
+  }
   .trust-strip {
     grid-template-columns: repeat(2, 1fr);
     gap: 16px 18px;
@@ -2371,11 +2469,11 @@ input::placeholder {
 /* Home feed loading skeleton — same shape/height as Browse + rails, so the
    page reserves space and doesn't reflow when deals arrive. */
 .skel-rail { display: flex; gap: 16px; overflow: hidden; padding-bottom: 4px; }
-.skel-tile { flex: 0 0 auto; width: 260px; aspect-ratio: 5 / 4; border-radius: var(--radius-lg); background: var(--surface-secondary); }
-.skel-card { flex: 0 0 auto; aspect-ratio: 1 / 1.4; border-radius: var(--radius-lg); background: var(--surface-secondary); }
+.skel-tile { flex: 0 0 auto; width: 210px; aspect-ratio: 5 / 4; border-radius: var(--radius-lg); background: var(--surface-secondary); }
+.skel-card { flex: 0 0 auto; aspect-ratio: 1 / 1.3; border-radius: var(--radius-lg); background: var(--surface-secondary); }
 .skel-h2 { display: inline-block; width: 160px; height: 24px; border-radius: 8px; background: var(--surface-secondary); }
 @media (max-width: 760px) {
-  .skel-tile { width: 62vw; max-width: 240px; }
+  .skel-tile { width: 42vw; max-width: 168px; }
 }
 
 /* ============================================================
