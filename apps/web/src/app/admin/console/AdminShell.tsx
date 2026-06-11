@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { AdminChrome, type WorkspaceView } from './AdminChrome';
 import { AdminsView } from './AdminsView';
 import { AuditView } from './AuditView';
+import { CreditsView } from './CreditsView';
 import { CustomersView } from './CustomersView';
 import { FeesView } from './FeesView';
 import { PayoutsView } from './PayoutsView';
@@ -21,7 +22,7 @@ import { WaitlistView } from './WaitlistView';
 
 const TABS: readonly WorkspaceView[] = [
   'pulse', 'transactions', 'vendors', 'customers', 'payouts', 'refunds',
-  'fees', 'support', 'sections', 'taxonomy', 'waitlist', 'audit', 'admins', 'settings',
+  'fees', 'credits', 'support', 'sections', 'taxonomy', 'waitlist', 'audit', 'admins', 'settings',
 ];
 
 export function AdminShell() {
@@ -75,6 +76,7 @@ export function AdminShell() {
       {view === 'payouts'      ? <PayoutsView /> : null}
       {view === 'refunds'      ? <RefundsView highlightTransactionId={preselectedRefundTxnId} onHighlightConsumed={() => setPreselectedRefundTxnId(null)} onJumpToCustomer={jumpToCustomer} /> : null}
       {view === 'fees'         ? <FeesView /> : null}
+      {view === 'credits'      ? <CreditsView /> : null}
       {view === 'support'      ? <SupportView onJumpToRefundByTxn={jumpToRefundByTxn} /> : null}
       {view === 'sections'     ? <SectionsView /> : null}
       {view === 'taxonomy'     ? <TaxonomyView /> : null}

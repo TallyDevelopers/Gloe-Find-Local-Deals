@@ -10,7 +10,7 @@ import { CommandPalette } from './CommandPalette';
 
 export type WorkspaceView =
   | 'pulse' | 'transactions' | 'vendors' | 'customers'
-  | 'payouts' | 'refunds' | 'fees' | 'support' | 'sections' | 'taxonomy' | 'waitlist' | 'audit' | 'admins' | 'settings';
+  | 'payouts' | 'refunds' | 'fees' | 'credits' | 'support' | 'sections' | 'taxonomy' | 'waitlist' | 'audit' | 'admins' | 'settings';
 
 const NAV: { key: WorkspaceView; label: string; badgeFor?: 'failed_payouts' | 'pending_deals' }[] = [
   { key: 'pulse',        label: 'Pulse' },
@@ -20,6 +20,7 @@ const NAV: { key: WorkspaceView; label: string; badgeFor?: 'failed_payouts' | 'p
   { key: 'payouts',      label: 'Payouts', badgeFor: 'failed_payouts' },
   { key: 'refunds',      label: 'Refunds' },
   { key: 'fees',         label: 'Fees' },
+  { key: 'credits',      label: 'Credits' },
   { key: 'support',      label: 'Support' },
   { key: 'sections',     label: 'Discover' },
   { key: 'taxonomy',     label: 'Treatments' },
@@ -58,6 +59,9 @@ function NavIcon({ name }: { name: WorkspaceView }) {
       return <svg {...p}><path d="M9 14 4 9l5-5" /><path d="M4 9h11a6 6 0 0 1 0 12h-3" /></svg>;
     case 'fees':
       return <svg {...p}><line x1="19" x2="5" y1="5" y2="19" /><circle cx="6.5" cy="6.5" r="2.5" /><circle cx="17.5" cy="17.5" r="2.5" /></svg>;
+    case 'credits':
+      // Wallet glyph — the customer credit balance program.
+      return <svg {...p}><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1" /><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4" /></svg>;
     case 'support':
       return <svg {...p}><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" /></svg>;
     case 'waitlist':

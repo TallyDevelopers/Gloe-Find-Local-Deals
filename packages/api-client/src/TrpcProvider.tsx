@@ -8,6 +8,12 @@ interface TrpcProviderProps {
   apiUrl: string;
   /** Async function the client calls when it needs a fresh Clerk session token. */
   getToken: () => Promise<string | null>;
+  /**
+   * Optional extra per-request headers (e.g. `x-gloe-referral-code` while a
+   * signup invite code is pending). Called fresh on every request — pass a
+   * stable function that reads current state, not a captured snapshot.
+   */
+  getExtraHeaders?: () => Record<string, string>;
   children: ReactNode;
 }
 
@@ -16,7 +22,7 @@ interface TrpcProviderProps {
  * attached per request by calling `getToken()` (passed in by the host app
  * so we don't bake Clerk into this package).
  */
-export function TrpcProvider({ apiUrl, getToken, children }: TrpcProviderProps) {
+export function TrpcProvider({ apiUrl, getToken, getExtraHeaders, children }: TrpcProviderProps) {
   const [queryClient] = useState(
     () =>
       new QueryClient({
@@ -62,7 +68,10 @@ export function TrpcProvider({ apiUrl, getToken, children }: TrpcProviderProps) 
             // the token isn't ready within 4s, send the request unauthenticated
             // rather than spinning indefinitely.
             const token = await withTimeout(getToken(), 4000);
-            return token ? { Authorization: `Bearer ${token}` } : {};
+            return {
+              ...(getExtraHeaders?.() ?? {}),
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            };
           },
         }),
       ],

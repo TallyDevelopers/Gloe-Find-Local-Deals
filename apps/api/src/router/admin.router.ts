@@ -52,6 +52,23 @@ import {
   updateTier,
 } from '../domain/fees';
 import {
+  adminGrantCredit,
+  createCreditCampaign,
+  createCreditRule,
+  CreditRuleConflictError,
+  deactivateCreditRule,
+  deleteDraftCampaign,
+  getCreditLedgerForUser,
+  getCreditProgramStats,
+  listCreditCampaigns,
+  listCreditRules,
+  previewCampaignAudience,
+  reactivateCreditRule,
+  revokeCreditLot,
+  sendCreditCampaign,
+  updateCreditRule,
+} from '../domain/creditAdmin';
+import {
   reconcileVendorTransfers,
   releaseTransferForClaim,
   retryFailedPayout,
@@ -85,6 +102,22 @@ import {
   updateCategory,
 } from '../domain/taxonomy';
 import { adminProcedure, protectedProcedure, router } from './trpc';
+
+/** One earn rule (GLO-24). Shape rules per type are enforced in the domain. */
+const creditRuleInput = z.object({
+  ruleType: z.enum(['purchase_tier', 'referral', 'signup_bonus']),
+  minPurchaseCents: z.number().int().min(0).nullable().optional(),
+  maxPurchaseCents: z.number().int().positive().nullable().optional(),
+  creditCents: z.number().int().positive().max(100_000).nullable().optional(),
+  percentBps: z.number().int().min(1).max(10_000).nullable().optional(),
+  giveCents: z.number().int().positive().max(100_000).nullable().optional(),
+  getCents: z.number().int().positive().max(100_000).nullable().optional(),
+  minFirstPurchaseCents: z.number().int().min(0).nullable().optional(),
+  expiresAfterDays: z.number().int().min(1).max(3650),
+  monthlyUserCapCents: z.number().int().positive().nullable().optional(),
+  monthlyReferralPayoutCap: z.number().int().positive().nullable().optional(),
+  active: z.boolean().optional(),
+});
 
 /** Throws FORBIDDEN unless the caller is an `owner` (not just an admin). */
 async function assertOwner(ctx: { sql: Parameters<typeof getAdminRole>[0]; auth: { userId: string } }) {
@@ -1175,6 +1208,185 @@ export const adminRouter = router({
           code: 'BAD_REQUEST',
           message: e instanceof Error ? e.message : 'Could not reactivate tier.',
         });
+      }
+    }),
+
+  /* ---------- Wallet credits (GLO-24) ---------- */
+
+  /** Every earn rule (active + inactive) for the Credits rules editor. */
+  listCreditRules: adminProcedure.query(({ ctx }) => listCreditRules(ctx.sql)),
+
+  /** Author a new earn rule. Refuses configs that fight an active rule. */
+  createCreditRule: adminProcedure
+    .input(creditRuleInput)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const rule = await createCreditRule(ctx.sql, input);
+        void writeAudit(ctx.sql, {
+          action: 'credit_rule.created',
+          actorUserId: ctx.auth.userId,
+          meta: { ruleId: rule.id, ...input },
+        });
+        return rule;
+      } catch (e) {
+        if (e instanceof CreditRuleConflictError) {
+          throw new TRPCError({ code: 'CONFLICT', message: e.message });
+        }
+        throw new TRPCError({ code: 'BAD_REQUEST', message: e instanceof Error ? e.message : 'Could not create rule.' });
+      }
+    }),
+
+  /** Edit a rule in place. Past grants keep their own amounts/expiries. */
+  updateCreditRule: adminProcedure
+    .input(creditRuleInput.extend({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...patch } = input;
+      try {
+        const rule = await updateCreditRule(ctx.sql, id, patch);
+        void writeAudit(ctx.sql, {
+          action: 'credit_rule.updated',
+          actorUserId: ctx.auth.userId,
+          meta: { ruleId: id, ...patch },
+        });
+        return rule;
+      } catch (e) {
+        if (e instanceof CreditRuleConflictError) {
+          throw new TRPCError({ code: 'CONFLICT', message: e.message });
+        }
+        throw new TRPCError({ code: 'BAD_REQUEST', message: e instanceof Error ? e.message : 'Could not update rule.' });
+      }
+    }),
+
+  /** Turn a rule OFF (soft-delete — never DELETE a policy row). */
+  deactivateCreditRule: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      await deactivateCreditRule(ctx.sql, input.id);
+      void writeAudit(ctx.sql, {
+        action: 'credit_rule.deactivated',
+        actorUserId: ctx.auth.userId,
+        meta: { ruleId: input.id },
+      });
+      return { ok: true };
+    }),
+
+  /** Turn a rule back ON. Refuses if it would fight another active rule. */
+  reactivateCreditRule: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        await reactivateCreditRule(ctx.sql, input.id);
+        void writeAudit(ctx.sql, {
+          action: 'credit_rule.reactivated',
+          actorUserId: ctx.auth.userId,
+          meta: { ruleId: input.id },
+        });
+        return { ok: true };
+      } catch (e) {
+        if (e instanceof CreditRuleConflictError) {
+          throw new TRPCError({ code: 'CONFLICT', message: e.message });
+        }
+        throw new TRPCError({ code: 'BAD_REQUEST', message: e instanceof Error ? e.message : 'Could not reactivate rule.' });
+      }
+    }),
+
+  /** Program dashboard: issued/redeemed/clawed/expired/forfeited + liability. */
+  creditProgramStats: adminProcedure.query(({ ctx }) => getCreditProgramStats(ctx.sql)),
+
+  /** Push-credit campaigns, newest first, with live cost columns. */
+  listCreditCampaigns: adminProcedure.query(({ ctx }) => listCreditCampaigns(ctx.sql)),
+
+  /** Draft a campaign — nothing is granted until sendCreditCampaign. */
+  createCreditCampaign: adminProcedure
+    .input(z.object({
+      name: z.string().min(2).max(80),
+      amountCents: z.number().int().positive().max(50_000),
+      expiresAfterDays: z.number().int().min(1).max(3650),
+      audience: z.enum(['everyone', 'lapsed_60d', 'signed_up_never_purchased']),
+      messageTitle: z.string().min(2).max(120),
+      messageBody: z.string().min(2).max(300),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { id } = await createCreditCampaign(ctx.sql, input, ctx.auth.userId);
+      void writeAudit(ctx.sql, {
+        action: 'credit_campaign.created',
+        actorUserId: ctx.auth.userId,
+        meta: { campaignId: id, ...input },
+      });
+      return { id };
+    }),
+
+  /** Cost preview for the review step: how many users the audience resolves to. */
+  previewCreditCampaign: adminProcedure
+    .input(z.object({ audience: z.enum(['everyone', 'lapsed_60d', 'signed_up_never_purchased']) }))
+    .query(({ ctx, input }) => previewCampaignAudience(ctx.sql, input.audience)),
+
+  /**
+   * Fire a campaign: flips draft→sent (the idempotency wall), then grants in a
+   * fire-and-forget loop with progress persisted on the row. Owner-gated —
+   * one click can put real money in thousands of wallets.
+   */
+  sendCreditCampaign: adminProcedure
+    .input(z.object({ campaignId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      await assertOwner(ctx);
+      try {
+        return await sendCreditCampaign(ctx.sql, input.campaignId, ctx.auth.userId);
+      } catch (e) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: e instanceof Error ? e.message : 'Send failed.' });
+      }
+    }),
+
+  /** Discard a draft. Sent campaigns are history and can't be deleted. */
+  deleteCreditCampaign: adminProcedure
+    .input(z.object({ campaignId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        await deleteDraftCampaign(ctx.sql, input.campaignId);
+      } catch (e) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: e instanceof Error ? e.message : 'Delete failed.' });
+      }
+      void writeAudit(ctx.sql, {
+        action: 'credit_campaign.deleted',
+        actorUserId: ctx.auth.userId,
+        meta: { campaignId: input.campaignId },
+      });
+      return { ok: true };
+    }),
+
+  /** One customer's wallet: balance, every lot, every entry. */
+  creditUserLedger: adminProcedure
+    .input(z.object({ userId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const ledger = await getCreditLedgerForUser(ctx.sql, input.userId);
+      if (!ledger) throw new TRPCError({ code: 'NOT_FOUND', message: 'Customer not found.' });
+      return ledger;
+    }),
+
+  /** Manual grant (kind=admin_grant) — pushes + emails the customer. */
+  grantCreditToUser: adminProcedure
+    .input(z.object({
+      userId: z.string().uuid(),
+      amountCents: z.number().int().positive().max(50_000),
+      expiresAfterDays: z.number().int().min(1).max(3650).nullable(),
+      note: z.string().min(3).max(280),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await adminGrantCredit(ctx.sql, { ...input, actorUserId: ctx.auth.userId });
+      } catch (e) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: e instanceof Error ? e.message : 'Grant failed.' });
+      }
+    }),
+
+  /** Zero a lot's remaining value (clawback entry) with a written reason. */
+  revokeCreditLot: adminProcedure
+    .input(z.object({ lotId: z.string().uuid(), reason: z.string().min(3).max(280) }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await revokeCreditLot(ctx.sql, { ...input, actorUserId: ctx.auth.userId });
+      } catch (e) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: e instanceof Error ? e.message : 'Revoke failed.' });
       }
     }),
 

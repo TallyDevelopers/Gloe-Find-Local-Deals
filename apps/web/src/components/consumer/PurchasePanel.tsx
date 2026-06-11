@@ -1,12 +1,19 @@
 'use client';
 
+import { useAuth } from '@clerk/nextjs';
 import type { DealDetail } from '@gloe/api-client';
+import { useState } from 'react';
 
+import { trpc } from '../../lib/trpc';
 import { EmbeddedCheckoutModal } from './EmbeddedCheckoutModal';
-import { discountPct, formatExpiry, formatPrice } from './format';
+import { discountPct, formatCredit, formatExpiry, formatPrice } from './format';
 import { Share } from './icons';
 import { SharePayModal } from './SharePayModal';
 import { useBuy } from './useBuy';
+
+/** Stripe refuses charges under 50¢ — mirror the server's split-tender floor
+ *  so the previewed credit/cash split matches what actually gets charged. */
+const STRIPE_MIN_CHARGE_CENTS = 50;
 
 /**
  * Purchase card for the deal page — variant picker, quantity, price breakdown,
@@ -29,6 +36,9 @@ export function PurchasePanel({
   setQty: (n: number) => void;
 }) {
   const { buy, startShare, shareUrl, closeShare, checkoutSecret, closeCheckout, loading, sharing, error } = useBuy();
+  const { isSignedIn } = useAuth();
+  const balance = trpc.credits.balance.useQuery(undefined, { enabled: !!isSignedIn });
+  const [useCredits, setUseCredits] = useState(true);
   const variant = deal.variants.find((v) => v.id === variantId) ?? deal.variants[0];
   if (!variant) return null;
 
@@ -38,6 +48,20 @@ export function PurchasePanel({
   const spotsLeft = variant.spotsTotal != null ? variant.spotsTotal - variant.spotsClaimed : null;
   const limit = Math.max(1, deal.perCustomerLimit ?? 1);
   const expiry = formatExpiry(deal.expiresAt);
+
+  // Credits preview (GLO-24). The server recomputes authoritatively inside the
+  // checkout transaction — this only mirrors its rules so the button shows the
+  // real cash amount: locked welcome credit counts when this order meets its
+  // first-booking floor; never leave 0 < cash < 50¢ (shave credits instead).
+  const b = balance.data;
+  const unlockedWelcomeCents = b && !b.frozen && b.lockedCents > 0 && totalCents >= b.lockedFloorCents ? b.lockedCents : 0;
+  const spendableCents = b && !b.frozen ? b.availableCents + unlockedWelcomeCents : 0;
+  let creditPreviewCents = Math.min(spendableCents, totalCents);
+  if (totalCents - creditPreviewCents > 0 && totalCents - creditPreviewCents < STRIPE_MIN_CHARGE_CENTS) {
+    creditPreviewCents = Math.max(0, totalCents - STRIPE_MIN_CHARGE_CENTS);
+  }
+  const appliedCents = useCredits ? creditPreviewCents : 0;
+  const cashCents = totalCents - appliedCents;
 
   return (
     <div
@@ -113,11 +137,34 @@ export function PurchasePanel({
         <p style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 14 }}>Limit 1 per customer</p>
       )}
 
+      {/* Credits (GLO-24) — inline in the price math, defaults on. The client
+          only sends the toggle; the server computes the actual amount. */}
+      {spendableCents > 0 ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 18, padding: '12px 14px', background: 'var(--brand-50)', border: '1px solid var(--brand-100)', borderRadius: 'var(--radius-md)' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Use your Gloē credit</div>
+            <div style={{ fontSize: 12.5, color: useCredits ? 'var(--brand-700)' : 'var(--text-tertiary)', fontWeight: 600, marginTop: 2 }}>
+              {useCredits ? `−${formatCredit(appliedCents)} applied` : `${formatCredit(creditPreviewCents)} available`}
+            </div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={useCredits}
+            aria-label="Use your Gloē credit"
+            onClick={() => setUseCredits((v) => !v)}
+            style={{ position: 'relative', width: 44, height: 26, flexShrink: 0, borderRadius: 'var(--radius-pill)', border: 'none', background: useCredits ? 'var(--brand-500)' : 'var(--border-default)', cursor: 'pointer', transition: 'background 0.15s' }}
+          >
+            <span style={{ position: 'absolute', top: 3, left: useCredits ? 21 : 3, width: 20, height: 20, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 3px rgba(43,32,25,0.25)', transition: 'left 0.15s' }} />
+          </button>
+        </div>
+      ) : null}
+
       {/* Buy */}
       <button
         type="button"
         disabled={loading}
-        onClick={() => buy(variant.id, qty)}
+        onClick={() => buy(variant.id, qty, useCredits)}
         style={{
           width: '100%',
           marginTop: 18,
@@ -131,7 +178,13 @@ export function PurchasePanel({
           opacity: loading ? 0.7 : 1,
         }}
       >
-        {loading ? 'Starting secure checkout…' : `Buy now · ${formatPrice(totalCents)}`}
+        {loading
+          ? 'Starting secure checkout…'
+          : appliedCents > 0 && cashCents === 0
+            ? 'Redeem with credit — nothing to pay'
+            : appliedCents > 0
+              ? `Buy now · ${formatCredit(cashCents)}`
+              : `Buy now · ${formatPrice(totalCents)}`}
       </button>
 
       <button

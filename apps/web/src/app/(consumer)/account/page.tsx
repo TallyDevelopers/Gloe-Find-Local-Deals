@@ -5,13 +5,16 @@ import Link from 'next/link';
 import { useState } from 'react';
 
 import { SignInGate } from '../../../components/consumer/SignInGate';
+import { formatCredit } from '../../../components/consumer/format';
 import { Bookmark, ChevronRight, Globe, Sparkles, Wallet } from '../../../components/consumer/icons';
+import { ReferralCard } from '../../../components/consumer/ReferralCard';
 import { trpc } from '../../../lib/trpc';
 
 export default function AccountPage() {
   const { isSignedIn, isLoaded } = useAuth();
   const { signOut } = useClerk();
   const me = trpc.me.whoami.useQuery(undefined, { enabled: !!isSignedIn });
+  const balance = trpc.credits.balance.useQuery(undefined, { enabled: !!isSignedIn });
   const del = trpc.me.deleteAccount.useMutation();
   const [confirming, setConfirming] = useState(false);
 
@@ -56,6 +59,9 @@ export default function AccountPage() {
         <Row href="/business" icon={<Globe size={18} color="var(--brand-600)" />} label="For Businesses" />
       </div>
 
+      {/* Give $20, get $20 (GLO-24) — hides itself when the program is paused. */}
+      <ReferralCard />
+
       <div style={{ marginTop: 20, background: 'var(--surface-elevated)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
         <Row href="/legal/terms" label="Terms of service" />
         <Row href="/legal/privacy" label="Privacy policy" />
@@ -73,7 +79,12 @@ export default function AccountPage() {
 
         {confirming ? (
           <div style={{ padding: 16, border: '1px solid var(--error)', borderRadius: 'var(--radius-md)' }}>
-            <p style={{ fontSize: 14, color: 'var(--text-secondary)' }}>This permanently deletes your account and data. This can’t be undone.</p>
+            <p style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
+              This permanently deletes your account and data. This can’t be undone.
+              {(balance.data?.availableCents ?? 0) + (balance.data?.lockedCents ?? 0) > 0
+                ? ` You’ll also forfeit your ${formatCredit((balance.data?.availableCents ?? 0) + (balance.data?.lockedCents ?? 0))} in Gloē credit.`
+                : ''}
+            </p>
             <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
               <button type="button" onClick={handleDelete} disabled={del.isPending} style={{ background: 'var(--error)', color: '#fff', border: 'none', borderRadius: 'var(--radius-pill)', padding: '10px 18px', fontWeight: 600 }}>
                 {del.isPending ? 'Deleting…' : 'Delete permanently'}

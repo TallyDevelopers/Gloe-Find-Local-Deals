@@ -182,6 +182,22 @@ export const Check = (p: IconProps) => (
   </svg>
 );
 
+export const Gift = (p: IconProps) => (
+  <svg {...svgProps(p)}>
+    <rect x="3" y="8" width="18" height="4" rx="1" />
+    <path d="M12 8v13" />
+    <path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7" />
+    <path d="M7.5 8a2.5 2.5 0 0 1 0-5A4.8 4.8 0 0 1 12 8a4.8 4.8 0 0 1 4.5-5 2.5 2.5 0 0 1 0 5" />
+  </svg>
+);
+
+export const Copy = (p: IconProps) => (
+  <svg {...svgProps(p)}>
+    <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+    <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+  </svg>
+);
+
 export const Globe = (p: IconProps) => (
   <svg {...svgProps(p)}>
     <circle cx="12" cy="12" r="10" />

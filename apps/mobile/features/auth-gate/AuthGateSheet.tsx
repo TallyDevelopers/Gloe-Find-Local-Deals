@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Linking, Pressable, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { setPendingReferralCode } from '../referral/pendingReferralCode';
 import { SocialAuthButtons } from './SocialAuthButtons';
 import { useClerkLegal } from './useClerkLegal';
 import type { AuthGatePrompt } from './types';
@@ -39,12 +40,14 @@ export function AuthGateSheet({ prompt, onClose, onAuthed }: AuthGateSheetProps)
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
+  const [referralCode, setReferralCode] = useState('');
 
   const resetAll = () => {
     setMode('sign-in');
     setEmail('');
     setPassword('');
     setCode('');
+    setReferralCode('');
     signInFlow.reset();
     signUpFlow.reset();
     social.reset();
@@ -78,6 +81,9 @@ export function AuthGateSheet({ prompt, onClose, onAuthed }: AuthGateSheetProps)
   };
 
   const handleCreate = async () => {
+    // Stash the invite code BEFORE the account exists — it rides every request
+    // as a header, and attribution fires when the server first sees the user.
+    setPendingReferralCode(referralCode);
     const result = await signUpFlow.signUp({
       email: email.trim(),
       password,
@@ -95,6 +101,8 @@ export function AuthGateSheet({ prompt, onClose, onAuthed }: AuthGateSheetProps)
   };
 
   const handleSocial = async (provider: Parameters<typeof social.signInWithSocial>[0]) => {
+    // Social auth may JIT-create an account too — carry any typed invite code.
+    if (referralCode.trim()) setPendingReferralCode(referralCode);
     const result = await social.signInWithSocial(provider);
     if (result.success) handleAuthed();
   };
@@ -202,6 +210,22 @@ export function AuthGateSheet({ prompt, onClose, onAuthed }: AuthGateSheetProps)
                     onSubmitEditing={isSignUp ? handleCreate : handleSignIn}
                     helperText={isSignUp ? 'Use at least 8 characters.' : undefined}
                   />
+
+                  {/* Referral code — sign-up only, optional. Attribution happens
+                      server-side at account creation (x-gloe-referral-code header). */}
+                  {isSignUp ? (
+                    <Input
+                      label="Referral code (optional)"
+                      value={referralCode}
+                      onChangeText={(v) => setReferralCode(v.toUpperCase())}
+                      placeholder="From a friend's invite"
+                      autoCapitalize="characters"
+                      autoCorrect={false}
+                      maxLength={12}
+                      returnKeyType="done"
+                      onSubmitEditing={handleCreate}
+                    />
+                  ) : null}
 
                   {/* Forgot password — right-aligned (sign-in only) */}
                   {!isSignUp ? (

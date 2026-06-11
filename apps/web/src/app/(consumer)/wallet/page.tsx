@@ -6,7 +6,9 @@ import { useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
 
 import { Check, ChevronRight, Star } from '../../../components/consumer/icons';
+import { CreditBalanceCard } from '../../../components/consumer/CreditBalanceCard';
 import { formatExpiry, formatPrice } from '../../../components/consumer/format';
+import { ReferralCard } from '../../../components/consumer/ReferralCard';
 import { ReviewModal } from '../../../components/consumer/ReviewModal';
 import { trpc } from '../../../lib/trpc';
 
@@ -34,6 +36,10 @@ function WalletInner() {
           <Check size={18} color="var(--success)" /> Payment complete — your voucher is ready below.
         </div>
       ) : null}
+
+      {/* Credits (GLO-24): balance + invite, above the vouchers. */}
+      <CreditBalanceCard />
+      <ReferralCard />
 
       {claims.isLoading ? (
         <p style={{ color: 'var(--text-tertiary)', marginTop: 24 }}>Loading…</p>

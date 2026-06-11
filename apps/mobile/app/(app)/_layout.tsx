@@ -34,6 +34,7 @@ export default function AppLayout() {
       <Stack.Screen name="vendor/[id]" options={SHEET} />
       <Stack.Screen name="my-deal/[id]" options={SHEET} />
       <Stack.Screen name="checkout" options={SHEET} />
+      <Stack.Screen name="referral" options={SHEET} />
       <Stack.Screen name="search" options={{ presentation: 'modal', gestureEnabled: true }} />
       <Stack.Screen name="map" options={SHEET} />
       <Stack.Screen name="settings/appearance" options={SHEET} />

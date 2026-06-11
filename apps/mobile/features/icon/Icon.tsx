@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Gift,
   Globe,
   Heart,
   Image as ImageIcon,
@@ -50,6 +51,7 @@ const ICONS = {
   share: Share,
   camera: Camera,
   image: ImageIcon,
+  gift: Gift,
 
   // Contact / vendor storefront
   phone: Phone,

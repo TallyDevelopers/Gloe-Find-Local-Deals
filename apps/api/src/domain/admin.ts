@@ -353,6 +353,9 @@ export async function getAdminTransactionDetail(sql: Sql, transactionId: string)
     platform_fee_cents: number;
     vendor_payout_cents: number;
     stripe_fee_cents: number;
+    credits_applied_cents: number;
+    credits_refunded_cents: number;
+    refunded_cents: number;
     stripe_payment_intent_id: string | null;
     stripe_charge_id: string | null;
     stripe_transfer_id: string | null;
@@ -374,6 +377,7 @@ export async function getAdminTransactionDetail(sql: Sql, transactionId: string)
   }[]>`
     SELECT
       t.id, t.status, t.consumer_paid_cents, t.platform_fee_cents, t.vendor_payout_cents, t.stripe_fee_cents,
+      t.credits_applied_cents, t.credits_refunded_cents, t.refunded_cents,
       t.stripe_payment_intent_id, t.stripe_charge_id, t.stripe_transfer_id,
       t.paid_at, t.released_at, t.refunded_at, t.created_at, t.platform_fee_snapshot,
       t.stripe_dispute_id, t.dispute_status, t.dispute_reason, t.disputed_at, t.dispute_resolved_at,
@@ -428,6 +432,9 @@ export async function getAdminTransactionDetail(sql: Sql, transactionId: string)
       platformFeeCents: t.platform_fee_cents,
       vendorPayoutCents: t.vendor_payout_cents,
       stripeFeeCents: t.stripe_fee_cents,
+      creditsAppliedCents: t.credits_applied_cents,
+      creditsRefundedCents: t.credits_refunded_cents,
+      refundedCents: t.refunded_cents,
       stripePaymentIntentId: t.stripe_payment_intent_id,
       stripeChargeId: t.stripe_charge_id,
       stripeTransferId: t.stripe_transfer_id,

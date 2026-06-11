@@ -81,7 +81,7 @@ export default function ProfileScreen() {
           </Text>
 
           {isSignedIn ? (
-            <SignedInBody user={user} />
+            <SignedInBody user={user} onInvite={() => router.push('/(app)/referral')} />
           ) : (
             <AnonymousBody
               onSignIn={() => router.push('/(auth)/login')}
@@ -238,8 +238,10 @@ function AccountActions({
 
 function SignedInBody({
   user,
+  onInvite,
 }: {
   user: ReturnType<typeof useAuth>['user'];
+  onInvite: () => void;
 }) {
   const { color: palette } = useTheme();
   const initials =

@@ -1,3 +1,4 @@
+import { trpc } from '@gloe/api-client';
 import { useAuth } from '@gloe/auth';
 import { Button, Stack, Text, radius, space, useTheme } from '@gloe/ui';
 import * as Haptics from 'expo-haptics';
@@ -7,10 +8,11 @@ import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useClaimedDeals } from '../../../features/claimed/ClaimedDealsProvider';
-import { formatPrice } from '../../../features/discover/format';
 import { Icon } from '../../../features/icon/Icon';
 import { StatusBarBackdrop } from '../../../features/layout/StatusBarBackdrop';
 import { ReviewSheet } from '../../../features/reviews/ReviewSheet';
+import { CreditHistorySheet } from '../../../features/wallet/CreditHistorySheet';
+import { formatCredit, formatCreditDate } from '../../../features/wallet/creditFormat';
 import type { ClaimedDeal } from '../../../features/claimed/types';
 
 /**
@@ -31,6 +33,7 @@ export default function WalletScreen() {
   const { status } = useAuth();
   const { color: palette } = useTheme();
   const { activeClaims, pastClaims, refetch } = useClaimedDeals();
+  const utils = trpc.useUtils();
   const [refreshing, setRefreshing] = useState(false);
   // The claim whose review sheet is open (null = closed). Driven from the
   // "leave a review" nudge on redeemed-and-unreviewed past vouchers.
@@ -44,12 +47,14 @@ export default function WalletScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setRefreshing(true);
     try {
-      await refetch();
+      // Credit balance rides along — a referral landing or expiry should show
+      // up on the same pull that refreshes vouchers.
+      await Promise.all([refetch(), utils.credits.invalidate()]);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } finally {
       setRefreshing(false);
     }
-  }, [refetch]);
+  }, [refetch, utils]);
 
   // Soonest expiring first — the one they probably need right now sits at the top.
   const sortedActive = useMemo(
@@ -171,35 +176,109 @@ export default function WalletScreen() {
 }
 
 /**
- * Credit balance card. Placeholder for now — the credit system isn't built
- * yet, so we render a quiet zero-state that explains what'll go here. When
- * referrals / refunds / gifts land, this card grows up.
+ * Credit balance card + invite promo. The balance card only renders when
+ * there's credit (available or locked) and opens the full ledger history
+ * sheet on tap; the "Give $20, get $20" promo card always shows and routes
+ * to the referral share screen. Brand palette throughout — credit is a
+ * brand moment, not a semantic-success one.
  */
 function CreditSection() {
   const { color: palette } = useTheme();
-  // Hardcoded to 0 until the credit system ships. Once it does, this becomes a
-  // trpc.credits.balance.useQuery().
-  const balanceCents = 0;
-  if (balanceCents === 0) return null;
+  const router = useRouter();
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const balance = trpc.credits.balance.useQuery();
+
+  const b = balance.data;
+  const hasCredit = !!b && (b.availableCents > 0 || b.lockedCents > 0);
+  // Only nag about expiry when it's actually close (30 days out).
+  const expiring =
+    b?.soonestExpiry &&
+    new Date(b.soonestExpiry.expiresAt).getTime() - Date.now() <= 30 * 24 * 60 * 60 * 1000
+      ? b.soonestExpiry
+      : null;
+
   return (
-    <View
-      style={{
-        backgroundColor: palette.brand[50],
-        borderRadius: radius.lg,
-        padding: space[5],
-        borderWidth: 1,
-        borderColor: palette.brand[100],
-      }}
-    >
-      <Stack gap={1}>
-        <Text variant="label" weight="medium" style={{ color: palette.brand[700] }}>
-          GLOĒ CREDIT
-        </Text>
-        <Text variant="display-md" weight="semibold" style={{ color: palette.brand[700] }}>
-          {formatPrice(balanceCents)}
-        </Text>
-      </Stack>
-    </View>
+    <Stack gap={3}>
+      {hasCredit ? (
+        <Pressable
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            setHistoryOpen(true);
+          }}
+          style={{
+            backgroundColor: palette.brand[50],
+            borderRadius: radius.lg,
+            padding: space[5],
+            borderWidth: 1,
+            borderColor: palette.brand[100],
+          }}
+        >
+          <Stack direction="row" align="center" gap={3}>
+            <Stack gap={1} style={{ flex: 1 }}>
+              <Text variant="label" weight="medium" style={{ color: palette.brand[700] }}>
+                GLOĒ CREDIT
+              </Text>
+              <Text variant="display-md" weight="semibold" style={{ color: palette.brand[700] }}>
+                {formatCredit(b.availableCents)}
+              </Text>
+              {b.lockedCents > 0 ? (
+                <Text variant="body-sm" style={{ color: palette.brand[600] }}>
+                  +{formatCredit(b.lockedCents)} unlocks on your first booking
+                  {b.lockedFloorCents > 0 ? ` of ${formatCredit(b.lockedFloorCents)}+` : ''}
+                </Text>
+              ) : null}
+              {expiring ? (
+                <Text variant="body-sm" style={{ color: palette.brand[600] }}>
+                  {formatCredit(expiring.amountCents)} expires {formatCreditDate(expiring.expiresAt)}
+                </Text>
+              ) : null}
+            </Stack>
+            <Icon name="chevronRight" size={18} color={palette.brand[400]} />
+          </Stack>
+        </Pressable>
+      ) : null}
+
+      <Pressable
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          router.push('/(app)/referral');
+        }}
+        style={{
+          backgroundColor: palette.surface.elevated,
+          borderRadius: radius.lg,
+          padding: space[4],
+          borderWidth: 1,
+          borderColor: palette.brand[100],
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: space[3],
+        }}
+      >
+        <View
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: 20,
+            backgroundColor: palette.brand[50],
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Icon name="gift" size={20} color={palette.brand[600]} />
+        </View>
+        <Stack gap={0} style={{ flex: 1 }}>
+          <Text variant="body-md" tone="primary" weight="semibold">
+            Give $20, get $20
+          </Text>
+          <Text variant="body-sm" tone="secondary">
+            Invite friends — you both get Gloē credit
+          </Text>
+        </Stack>
+        <Icon name="chevronRight" size={18} color={palette.text.tertiary} />
+      </Pressable>
+
+      <CreditHistorySheet open={historyOpen} onClose={() => setHistoryOpen(false)} />
+    </Stack>
   );
 }
 

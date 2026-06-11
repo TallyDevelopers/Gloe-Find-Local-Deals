@@ -9,8 +9,11 @@ export interface ReceiptData {
   vendorName: string;
   variantLabel: string;
   quantity: number;
-  /** What the customer actually paid, in cents (total across quantity). */
+  /** Full order value in cents (total across quantity), BEFORE credits. */
   amountPaidCents: number;
+  /** Gloē wallet credit applied at checkout (GLO-24). 0/omitted = cash-only
+   *  receipt; > 0 renders the cash/credit split lines. */
+  creditsAppliedCents?: number;
   /** Voucher redemption code(s) — one per quantity. */
   codes: string[];
   /** Human date the voucher(s) expire. */
@@ -28,6 +31,7 @@ function money(cents: number): string {
 /** Purchase receipt — sent on payment success (payment_intent.succeeded). */
 export function ReceiptEmail(d: ReceiptData) {
   const hi = d.firstName ? `Thanks, ${d.firstName}!` : 'Thanks for your purchase!';
+  const credits = d.creditsAppliedCents ?? 0;
   return (
     <BaseLayout preview={`${d.codes.length > 1 ? `${d.codes.length} voucher codes` : `Code ${d.codes[0]}`} · valid through ${d.expiresAt} · show it at ${d.vendorName}`}>
       <Text style={h1}>{hi}</Text>
@@ -41,7 +45,15 @@ export function ReceiptEmail(d: ReceiptData) {
         <Text style={dealName}>{d.dealTitle}</Text>
         <Text style={sub}>{d.vendorName} · {d.variantLabel}{d.quantity > 1 ? ` × ${d.quantity}` : ''}</Text>
         <Section style={{ marginTop: 12, borderTop: '1px solid #ece6db', paddingTop: 12 }}>
-          <Row label="Paid" value={money(d.amountPaidCents)} bold />
+          {credits > 0 ? (
+            <>
+              <Row label="Order total" value={money(d.amountPaidCents)} />
+              <Row label="Gloē credit" value={`−${money(credits)}`} />
+              <Row label="Charged to card" value={money(d.amountPaidCents - credits)} bold />
+            </>
+          ) : (
+            <Row label="Paid" value={money(d.amountPaidCents)} bold />
+          )}
         </Section>
       </Section>
 
