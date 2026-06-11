@@ -52,7 +52,7 @@ Last consolidated: 2026-05-29. Last updated: 2026-06-01 (search & discovery engi
 
 - **✅ Shipped & working:** the full buy→redeem→get-paid loop, search & discovery, refunds, support, Apple Wallet passes, push, Gloē + Google reviews on deals, the redesigned vendor storefront (profile + "Inside the spa" video reel), cached location maps.
 - **🟡 In progress / planned:** loyalty points (planned — earn + redeem, see Linear GLO-24), Apple Wallet live status updates, search/click logging.
-- **❌ Launch blockers (do before App Store):** Sign in with Apple, ATT prompt, counsel-reviewed Terms/Privacy. (The **dispute/chargeback webhook** is ✅ built — GLO-34 — pending enabling the `charge.dispute.*` events on the live Stripe endpoint. **Provider license verification** is ✅ built — GLO-19 — vendor submits license + doc, admin verifies; see §7/§8.) **The canonical, living backlog now lives in Linear → "Gloē" project** (filter the `launch-blocker` label); §10 is the in-doc snapshot.
+- **❌ Launch blockers (do before App Store):** Sign in with Apple, counsel-reviewed Terms/Privacy. (**ATT prompt** ✅ resolved — GLO-13, 2026-06-11: not needed; the app does zero cross-app tracking, see §10.) (The **dispute/chargeback webhook** is ✅ built — GLO-34 — pending enabling the `charge.dispute.*` events on the live Stripe endpoint. **Provider license verification** is ✅ built — GLO-19 — vendor submits license + doc, admin verifies; see §7/§8.) **The canonical, living backlog now lives in Linear → "Gloē" project** (filter the `launch-blocker` label); §10 is the in-doc snapshot.
 
 > **Where work is tracked:** **Linear** (Gloē project, `GLO-*`) is the roadmap — what's next & why. **This doc** is what *exists* today. When a Linear ticket ships, it gets reflected here.
 
@@ -851,7 +851,7 @@ Ranked. These are what stand between "today" and "your wife's friend can install
 | 2 | **Dispute / chargeback webhook** | Money-loss + integrity. ✅ **Shipped (GLO-34):** `charge.dispute.*` freezes unredeemed vouchers, halts the payout (wall #12), flags already-redeemed orders, and reconciles a lost dispute. **Remaining config:** enable `charge.dispute.created/.updated/.closed` on the live Stripe webhook endpoint. | done | ✅ Built (enable events in Stripe) |
 | 3 | **Transactional receipts (Resend)** | Receipts are the #1 chargeback-preventer. ✅ **Shipped (GLO-37):** Resend wired, `mail.gloe.app` verified, branded receipt fires on `fulfillPurchase`. **Launch step:** flip Resend out of testing mode → production. | done | ✅ Built (toggle Resend to prod at launch) |
 | 4 | **Apple Pay finish** | Code-complete (`merchantIdentifier` set), but needs Stripe Apple Pay cert + live-domain registration + a native device rebuild to actually charge. | ~1h once certs in hand | 🟡 Code-done, config pending |
-| 5 | **ATT prompt** | Apple **rejection** (5.1.2) IF any cross-app analytics ship. `expo-tracking-transparency` not installed. If we launch with zero analytics SDKs we can defer; the moment Mixpanel/Sentry land, this is mandatory. | ~1h | ❌ Not installed (conditionally required) |
+| 5 | **ATT prompt** | ✅ **Resolved — not needed (GLO-13, code-verified 2026-06-11).** The app ships with zero ads/attribution SDKs, no IDFA access, no analytics. Apple's rule: apps that don't track must **not** show the ATT prompt. So: no `expo-tracking-transparency`, no `NSUserTrackingUsageDescription`, App Privacy answer = "Data **not** used to track you." **Revisit trigger:** adding any ads/attribution SDK (Meta/TikTok/Google Ads, AppsFlyer/Adjust/Branch) or anything reading the IDFA. First-party crash/product analytics (Sentry, Mixpanel used first-party only) do **not** trigger ATT by themselves — only cross-company linking/sharing does. | — | ✅ Not needed at launch |
 | 6 | **Universal Links / AASA** | Gift + deal share links (`/deal/*`, `/gift/*`) won't deep-link into the app without the `.well-known/apple-app-site-association` file served by web + `associatedDomains` in `app.json`. Not strictly a rejection, but share/gift flows are broken without it. | ~1h + rebuild | ❌ Not served |
 | 7 | **ToS + Privacy Policy (hosted)** | App Store **requires** a Privacy Policy URL; "marketplace facilitator, not provider" clauses are legal protection for an aesthetic-services marketplace. No `/privacy` or `/terms` page exists. | ~half day (Termly) | ❌ Not hosted |
 | 8 | **Support email** | App Store needs a Support URL; `hello@gloe.app` forwarding must work. (The old "landing page" half of this item is obsolete — GLO-16 canceled; `gloe.app` is now the full consumer marketplace and serves as the ad/App Store destination.) | ~1h | 🟡 Verify forwarding |
@@ -869,7 +869,7 @@ The **infra switches** (Stripe live keys, live webhook, Railway env, EAS build, 
 - **Apple Pay** — code-complete in Stripe PaymentSheet; needs Merchant ID + Stripe cert + native device rebuild. Tonight session.
 - **Apple Wallet live updates** — pass generation ships, but status flips (e.g. "Redeemed") need APNs Pass Web Service spec wiring. Schema for `pass_registrations` is there. Not a launch blocker.
 - ~~**Delete account in-app**~~ — **DONE** (`me.deleteAccount`, anonymize-and-deactivate; see §6).
-- **ATT prompt** — required per Apple 5.1.2 if any cross-app analytics. Add `expo-tracking-transparency`.
+- **ATT prompt** — ✅ resolved (GLO-13): not needed; the app does zero cross-app tracking. Revisit only if an ads/attribution SDK or IDFA use ever ships (see §10 table row 5 for the exact trigger).
 - ~~**Map discovery**~~ — **DONE** (GLO-25; ResortPass-style, reached via the search-bar map button, not a bottom tab — see §6A "Map discovery").
 - **Credit & loyalty system** — stubbed at $0.
 - **Sentry + Mixpanel** — not wired.
@@ -892,7 +892,7 @@ When you say "ready to ship," walk this top to bottom. Every box matters.
 
 1. **Delete account** — add row in profile settings → Clerk `user.delete()` + tRPC mutation. Confirmation dialog. (Apple 5.1.1(v).)
 2. **Sign in with Apple** — ⚠️ NOT BUILT. `SocialAuthButtons.tsx` offers Google/Facebook/TikTok but no Apple provider → guaranteed rejection (Apple 4.8). Enable `oauth_apple` in Clerk, add the Apple button at equal prominence, add the `com.apple.developer.applesignin` entitlement, rebuild. **Blocker #1 — do this first.**
-3. **ATT prompt** — `expo-tracking-transparency`, request on first launch after sign-in, persist answer to Clerk userMetadata. (Apple 5.1.2.)
+3. **ATT** — ✅ resolved (GLO-13): the app does **no** cross-app tracking → show **no** ATT prompt, add **no** `NSUserTrackingUsageDescription`, and answer App Privacy "Data **not** used to track you." Becomes mandatory the day an ads/attribution SDK or IDFA use lands. (Apple 5.1.2.)
 4. **Location asked in context** — move from cold launch to "Near me" filter tap. (Apple 5.1.1.)
 5. **OG meta tags on `gloe.app/deal/[id]`** — title, og:title, og:description, og:image (deal hero), twitter:card. Validate at opengraph.xyz.
 6. **App Review demo account** — `apple-review@gloe.app` with claimed deals + one redeemed voucher + test card. Provide in App Store Connect → App Review Info.
@@ -1173,7 +1173,7 @@ All 4 green = ready to sign first real spa.
 - Reviews (write side; read is shipped).
 - Apple Wallet live status updates (Pass Web Service + APNs trigger).
 - ~~Delete account UI~~ — ✅ shipped (§6).
-- ATT prompt + contextual location ask.
+- Contextual location ask. (ATT prompt only if/when an ads/attribution SDK ships — see §10.)
 - Sentry + Mixpanel.
 
 ### v1.2 — Engagement
