@@ -232,9 +232,11 @@ export async function updateCreditRule(sql: Sql, id: string, input: CreditRuleWr
 
 /** Turn a rule OFF — stops new grants; granted lots keep their value/expiry. */
 export async function deactivateCreditRule(sql: Sql, id: string): Promise<void> {
-  await sql`
+  const rows = await sql<{ id: string }[]>`
     UPDATE public.credit_rules SET active = false, updated_at = now() WHERE id = ${id}
+    RETURNING id
   `;
+  if (!rows[0]) throw new Error('Rule not found.');
 }
 
 /** Turn a rule back ON. Refuses if it would fight another active rule. */
@@ -418,7 +420,7 @@ export async function sendCreditCampaign(
   campaignId: string,
   actorUserId: string,
 ): Promise<{ audienceCount: number }> {
-  const rows = await sql<{
+  const drafts = await sql<{
     id: string;
     name: string;
     amount_cents: number;
@@ -427,15 +429,28 @@ export async function sendCreditCampaign(
     message_title: string;
     message_body: string;
   }[]>`
+    SELECT id, name, amount_cents, expires_after_days, audience, message_title, message_body
+    FROM public.credit_campaigns
+    WHERE id = ${campaignId} AND status = 'draft'
+    LIMIT 1
+  `;
+  const c = drafts[0];
+  if (!c) throw new Error('Campaign not found or already sent.');
+
+  // Resolve BEFORE flipping to sent — an empty audience must not burn the draft.
+  const userIds = await resolveAudience(sql, c.audience);
+  if (userIds.length === 0) {
+    throw new Error('This audience resolves to 0 customers right now — nothing to send.');
+  }
+
+  const flipped = await sql<{ id: string }[]>`
     UPDATE public.credit_campaigns
     SET status = 'sent', sent_at = now()
     WHERE id = ${campaignId} AND status = 'draft'
-    RETURNING id, name, amount_cents, expires_after_days, audience, message_title, message_body
+    RETURNING id
   `;
-  const c = rows[0];
-  if (!c) throw new Error('Campaign not found or already sent.');
+  if (!flipped[0]) throw new Error('Campaign not found or already sent.');
 
-  const userIds = await resolveAudience(sql, c.audience);
   void writeAudit(sql, {
     action: 'credit_campaign.sent',
     actorUserId,

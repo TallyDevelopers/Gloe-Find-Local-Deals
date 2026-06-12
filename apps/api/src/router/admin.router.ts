@@ -107,19 +107,43 @@ import {
 import { adminProcedure, protectedProcedure, router } from './trpc';
 
 /** One earn rule (GLO-24). Shape rules per type are enforced in the domain. */
-const creditRuleInput = z.object({
+export const creditRuleInput = z.object({
   ruleType: z.enum(['purchase_tier', 'referral', 'signup_bonus']),
-  minPurchaseCents: z.number().int().min(0).nullable().optional(),
-  maxPurchaseCents: z.number().int().positive().nullable().optional(),
-  creditCents: z.number().int().positive().max(100_000).nullable().optional(),
-  percentBps: z.number().int().min(1).max(10_000).nullable().optional(),
-  giveCents: z.number().int().positive().max(100_000).nullable().optional(),
-  getCents: z.number().int().positive().max(100_000).nullable().optional(),
-  minFirstPurchaseCents: z.number().int().min(0).nullable().optional(),
-  expiresAfterDays: z.number().int().min(1).max(3650),
-  monthlyUserCapCents: z.number().int().positive().nullable().optional(),
-  monthlyReferralPayoutCap: z.number().int().positive().nullable().optional(),
+  minPurchaseCents: z.number().int().min(0, 'Minimum order can’t be negative.').nullable().optional(),
+  maxPurchaseCents: z.number().int().positive('Max order must be greater than $0.').nullable().optional(),
+  creditCents: z.number().int().positive('Credit amount must be greater than $0.').max(100_000, 'Credit amounts are capped at $1,000.').nullable().optional(),
+  percentBps: z.number().int().min(1, 'Percent must be greater than 0.').max(10_000, 'Percent cannot exceed 100%.').nullable().optional(),
+  giveCents: z.number().int().positive('Give amount must be greater than $0.').max(100_000, 'Give amounts are capped at $1,000.').nullable().optional(),
+  getCents: z.number().int().positive('Get amount must be greater than $0.').max(100_000, 'Get amounts are capped at $1,000.').nullable().optional(),
+  minFirstPurchaseCents: z.number().int().min(0, 'First-booking floor can’t be negative.').nullable().optional(),
+  expiresAfterDays: z.number().int().min(1, 'Credit expiry must be at least 1 day.').max(3650, 'Credit expiry can be at most 3650 days (10 years).'),
+  monthlyUserCapCents: z.number().int().positive('Monthly cap must be greater than $0.').nullable().optional(),
+  monthlyReferralPayoutCap: z.number().int().positive('Monthly payout cap must be at least 1.').nullable().optional(),
   active: z.boolean().optional(),
+});
+
+/** Manual god-mode grant input — messages are full sentences (shown verbatim in the console). */
+export const grantCreditInput = z.object({
+  userId: z.string().uuid(),
+  amountCents: z.number().int().positive('Enter a credit amount greater than $0.').max(50_000, 'Manual grants are capped at $500 — split it if you really need more.'),
+  expiresAfterDays: z.number().int().min(1, 'Expiry must be at least 1 day (or blank for never).').max(3650, 'Expiry can be at most 3650 days (10 years).').nullable(),
+  note: z.string().trim().min(3, 'Add a note (3+ characters) — it’s logged and the customer sees it in their email.').max(280, 'Keep the note under 280 characters.'),
+});
+
+/** Push-credit campaign draft input. */
+export const creditCampaignInput = z.object({
+  name: z.string().trim().min(2, 'Give the campaign an internal name.').max(80, 'Keep the campaign name under 80 characters.'),
+  amountCents: z.number().int().positive('Enter a credit amount per customer.').max(50_000, 'Campaign credits are capped at $500 per customer.'),
+  expiresAfterDays: z.number().int().min(1, 'Expiry must be at least 1 day.').max(3650, 'Expiry can be at most 3650 days (10 years).'),
+  audience: z.enum(['everyone', 'lapsed_60d', 'signed_up_never_purchased']),
+  messageTitle: z.string().trim().min(2, 'Write the push/email title customers will see.').max(120, 'Keep the title under 120 characters.'),
+  messageBody: z.string().trim().min(2, 'Write the message body customers will see.').max(300, 'Keep the message under 300 characters.'),
+});
+
+/** Lot revoke input — the reason lands on the customer’s ledger and the audit log. */
+export const revokeCreditLotInput = z.object({
+  lotId: z.string().uuid(),
+  reason: z.string().trim().min(3, 'Give a reason (3+ characters) — it’s logged on the customer’s ledger.').max(280, 'Keep the reason under 280 characters.'),
 });
 
 /** Throws FORBIDDEN unless the caller is an `owner` (not just an admin). */
@@ -1348,14 +1372,7 @@ export const adminRouter = router({
 
   /** Draft a campaign — nothing is granted until sendCreditCampaign. */
   createCreditCampaign: adminProcedure
-    .input(z.object({
-      name: z.string().min(2).max(80),
-      amountCents: z.number().int().positive().max(50_000),
-      expiresAfterDays: z.number().int().min(1).max(3650),
-      audience: z.enum(['everyone', 'lapsed_60d', 'signed_up_never_purchased']),
-      messageTitle: z.string().min(2).max(120),
-      messageBody: z.string().min(2).max(300),
-    }))
+    .input(creditCampaignInput)
     .mutation(async ({ ctx, input }) => {
       const { id } = await createCreditCampaign(ctx.sql, input, ctx.auth.userId);
       void writeAudit(ctx.sql, {
@@ -1415,12 +1432,7 @@ export const adminRouter = router({
 
   /** Manual grant (kind=admin_grant) — pushes + emails the customer. */
   grantCreditToUser: adminProcedure
-    .input(z.object({
-      userId: z.string().uuid(),
-      amountCents: z.number().int().positive().max(50_000),
-      expiresAfterDays: z.number().int().min(1).max(3650).nullable(),
-      note: z.string().min(3).max(280),
-    }))
+    .input(grantCreditInput)
     .mutation(async ({ ctx, input }) => {
       try {
         return await adminGrantCredit(ctx.sql, { ...input, actorUserId: ctx.auth.userId });
@@ -1431,7 +1443,7 @@ export const adminRouter = router({
 
   /** Zero a lot's remaining value (clawback entry) with a written reason. */
   revokeCreditLot: adminProcedure
-    .input(z.object({ lotId: z.string().uuid(), reason: z.string().min(3).max(280) }))
+    .input(revokeCreditLotInput)
     .mutation(async ({ ctx, input }) => {
       try {
         return await revokeCreditLot(ctx.sql, { ...input, actorUserId: ctx.auth.userId });

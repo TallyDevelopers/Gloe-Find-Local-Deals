@@ -260,8 +260,9 @@ function RulesEditor() {
   // null = closed, 'new' = create form, otherwise the rule id being edited.
   const [editingId, setEditingId] = useState<string | 'new' | null>(null);
   const [form, setForm] = useState<RuleForm>(emptyRuleForm());
+  const [formError, setFormError] = useState<string | null>(null);
 
-  const closeForm = () => { setEditingId(null); setForm(emptyRuleForm()); };
+  const closeForm = () => { setEditingId(null); setForm(emptyRuleForm()); setFormError(null); };
   const openCreate = () => { setEditingId('new'); setForm(emptyRuleForm()); };
   const openEdit = (r: Rule) => { setEditingId(r.id); setForm(ruleToForm(r)); };
 
@@ -271,6 +272,21 @@ function RulesEditor() {
   const dollars = (v: string): number | null => (v.trim() === '' ? null : Math.round(parseFloat(v) * 100));
 
   const submit = () => {
+    const expiresAfterDays = parseInt(form.expiresDays || '90', 10);
+    const problem =
+      !Number.isFinite(expiresAfterDays) || expiresAfterDays < 1 || expiresAfterDays > 3650
+        ? 'Credit expiry must be 1–3650 days.'
+        : form.ruleType === 'purchase_tier' && form.rewardType === 'flat' && !(parseFloat(form.creditDollars) > 0)
+          ? 'Enter the flat credit amount this tier pays.'
+          : form.ruleType === 'purchase_tier' && form.rewardType === 'percent' && !(parseFloat(form.percent) > 0 && parseFloat(form.percent) <= 100)
+            ? 'Percent must be between 0 and 100.'
+            : form.ruleType === 'referral' && !(parseFloat(form.giveDollars) > 0 && parseFloat(form.getDollars) > 0)
+              ? 'Enter both the Give amount (new customer) and the Get amount (referrer).'
+              : form.ruleType === 'signup_bonus' && !(parseFloat(form.creditDollars) > 0)
+                ? 'Enter the signup credit amount.'
+                : null;
+    setFormError(problem);
+    if (problem) return;
     const payload = {
       ruleType: form.ruleType,
       minPurchaseCents: form.ruleType === 'purchase_tier' ? dollars(form.minDollars) ?? 0 : null,
@@ -282,7 +298,7 @@ function RulesEditor() {
       giveCents: form.ruleType === 'referral' ? dollars(form.giveDollars) : null,
       getCents: form.ruleType === 'referral' ? dollars(form.getDollars) : null,
       minFirstPurchaseCents: form.ruleType === 'referral' ? dollars(form.floorDollars) ?? 0 : null,
-      expiresAfterDays: parseInt(form.expiresDays || '90', 10),
+      expiresAfterDays,
       monthlyUserCapCents: form.ruleType === 'purchase_tier' ? null : dollars(form.capDollars),
       monthlyReferralPayoutCap: form.ruleType === 'referral' && form.payoutCap.trim() !== ''
         ? parseInt(form.payoutCap, 10)
@@ -364,8 +380,8 @@ function RulesEditor() {
             ) : null}
           </div>
 
-          {writeMutation.error ? (
-            <div style={{ marginTop: 10, fontSize: 13, color: 'var(--error)' }}>{writeMutation.error.message}</div>
+          {formError ?? writeMutation.error ? (
+            <div style={{ marginTop: 10, fontSize: 13, color: 'var(--error)' }}>{formError ?? writeMutation.error?.message}</div>
           ) : null}
           <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
             <button onClick={closeForm} style={secondaryBtn}>Cancel</button>
@@ -454,21 +470,40 @@ function CampaignsPanel() {
 
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState<CampaignForm>(emptyCampaignForm());
+  const [formError, setFormError] = useState<string | null>(null);
   // The draft currently in the "review cost → send" step.
   const [reviewingId, setReviewingId] = useState<string | null>(null);
 
   const create = trpc.admin.createCreditCampaign.useMutation({
-    onSuccess: () => { void invalidate(); setCreating(false); setForm(emptyCampaignForm()); },
+    onSuccess: () => { void invalidate(); setCreating(false); setForm(emptyCampaignForm()); setFormError(null); },
   });
 
   const campaigns = list.data ?? [];
   const reviewing = campaigns.find((c) => c.id === reviewingId && c.status === 'draft') ?? null;
 
   const submit = () => {
+    const amountCents = Math.round(parseFloat(form.amountDollars) * 100);
+    const days = parseInt(form.expiresDays || '90', 10);
+    const problem =
+      form.name.trim().length < 2
+        ? 'Give the campaign an internal name.'
+        : !Number.isFinite(amountCents) || amountCents <= 0
+          ? 'Enter a credit amount per customer.'
+          : amountCents > 50_000
+            ? 'Campaign credits are capped at $500 per customer.'
+            : !Number.isFinite(days) || days < 1 || days > 3650
+              ? 'Expiry must be 1–3650 days.'
+              : form.messageTitle.trim().length < 2
+                ? 'Write the push/email title customers will see.'
+                : form.messageBody.trim().length < 2
+                  ? 'Write the message body customers will see.'
+                  : null;
+    setFormError(problem);
+    if (problem) return;
     create.mutate({
       name: form.name.trim(),
-      amountCents: Math.round(parseFloat(form.amountDollars || '0') * 100),
-      expiresAfterDays: parseInt(form.expiresDays || '90', 10),
+      amountCents,
+      expiresAfterDays: days,
       audience: form.audience,
       messageTitle: form.messageTitle.trim(),
       messageBody: form.messageBody.trim(),
@@ -508,9 +543,11 @@ function CampaignsPanel() {
             <LabeledInput label="Push / email title (customers see this)" value={form.messageTitle} onChange={(v) => setForm({ ...form, messageTitle: v })} placeholder="A little glow on us 💆" />
             <LabeledInput label="Message body" value={form.messageBody} onChange={(v) => setForm({ ...form, messageBody: v })} placeholder="We added $10 of Gloē credit to your wallet — it applies automatically at checkout." />
           </div>
-          {create.error ? <div style={{ marginTop: 10, fontSize: 13, color: 'var(--error)' }}>{create.error.message}</div> : null}
+          {formError ?? create.error ? (
+            <div style={{ marginTop: 10, fontSize: 13, color: 'var(--error)' }}>{formError ?? create.error?.message}</div>
+          ) : null}
           <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
-            <button onClick={() => { setCreating(false); setForm(emptyCampaignForm()); }} style={secondaryBtn}>Cancel</button>
+            <button onClick={() => { setCreating(false); setForm(emptyCampaignForm()); setFormError(null); }} style={secondaryBtn}>Cancel</button>
             <button onClick={submit} disabled={create.isPending} style={primaryBtn}>
               {create.isPending ? 'Saving…' : 'Save draft'}
             </button>
@@ -707,21 +744,31 @@ export function UserLedger({ userId, onClear }: { userId: string; onClear?: () =
   const [grantDollars, setGrantDollars] = useState('');
   const [grantExpiresDays, setGrantExpiresDays] = useState('90');
   const [grantNote, setGrantNote] = useState('');
+  const [grantFormError, setGrantFormError] = useState<string | null>(null);
 
   const grant = trpc.admin.grantCreditToUser.useMutation({
-    onSuccess: () => { void invalidate(); setGrantOpen(false); setGrantDollars(''); setGrantNote(''); },
+    onSuccess: () => { void invalidate(); setGrantOpen(false); setGrantDollars(''); setGrantNote(''); setGrantFormError(null); },
   });
   const revoke = trpc.admin.revokeCreditLot.useMutation({ onSuccess: () => invalidate() });
 
   const d = q.data;
 
   const submitGrant = () => {
-    grant.mutate({
-      userId,
-      amountCents: Math.round(parseFloat(grantDollars || '0') * 100),
-      expiresAfterDays: grantExpiresDays.trim() === '' ? null : parseInt(grantExpiresDays, 10),
-      note: grantNote.trim(),
-    });
+    const amountCents = Math.round(parseFloat(grantDollars) * 100);
+    const days = grantExpiresDays.trim() === '' ? null : parseInt(grantExpiresDays, 10);
+    const problem =
+      !Number.isFinite(amountCents) || amountCents <= 0
+        ? 'Enter a credit amount greater than $0.'
+        : amountCents > 50_000
+          ? 'Manual grants are capped at $500.'
+          : days !== null && (!Number.isFinite(days) || days < 1 || days > 3650)
+            ? 'Expiry must be 1–3650 days, or blank for never.'
+            : grantNote.trim().length < 3
+              ? 'Add a note (3+ characters) — it’s logged and the customer sees it in their email.'
+              : null;
+    setGrantFormError(problem);
+    if (problem) return;
+    grant.mutate({ userId, amountCents, expiresAfterDays: days, note: grantNote.trim() });
   };
 
   const onRevoke = (lotId: string, remainingCents: number) => {
@@ -776,9 +823,11 @@ export function UserLedger({ userId, onClear }: { userId: string; onClear?: () =
           <div style={{ marginTop: 10 }}>
             <LabeledInput label="Note (logged + shown in the email)" value={grantNote} onChange={setGrantNote} placeholder="Sorry about the mix-up — this one's on us." />
           </div>
-          {grant.error ? <div style={{ marginTop: 10, fontSize: 13, color: 'var(--error)' }}>{grant.error.message}</div> : null}
+          {grantFormError ?? grant.error ? (
+            <div style={{ marginTop: 10, fontSize: 13, color: 'var(--error)' }}>{grantFormError ?? grant.error?.message}</div>
+          ) : null}
           <div style={{ display: 'flex', gap: 8, marginTop: 14, justifyContent: 'flex-end' }}>
-            <button onClick={() => setGrantOpen(false)} style={secondaryBtn}>Cancel</button>
+            <button onClick={() => { setGrantOpen(false); setGrantFormError(null); }} style={secondaryBtn}>Cancel</button>
             <button onClick={submitGrant} disabled={grant.isPending} style={primaryBtn}>
               {grant.isPending ? 'Granting…' : 'Grant credit'}
             </button>
