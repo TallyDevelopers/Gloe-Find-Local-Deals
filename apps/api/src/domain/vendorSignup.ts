@@ -1,6 +1,13 @@
 import type { Sql } from '../db/client';
 import { cacheVendorMap } from './dealMap';
 
+/**
+ * Version of the Vendor Agreement at /legal/vendor-terms (GLO-35). Bump when
+ * the agreement materially changes so we know which version each vendor
+ * accepted.
+ */
+export const VENDOR_TERMS_VERSION = '2026-06-11';
+
 export interface VendorSignupInput {
   /** Null for admin-created (unclaimed) vendors; the spa claims it later. */
   ownerUserId: string | null;
@@ -14,6 +21,8 @@ export interface VendorSignupInput {
   longitude: number;
   googlePlaceId?: string | null;
   categorySlugs: string[];
+  /** True only for owner self-signup, where the agreement checkbox is required. */
+  acceptedTerms?: boolean;
 }
 
 export interface VendorRecord {
@@ -63,12 +72,14 @@ export async function createVendor(sql: Sql, input: VendorSignupInput): Promise<
     INSERT INTO public.vendors (
       owner_user_id, business_name, slug, phone,
       address_line1, city, region, postal_code, country,
-      location, google_place_id, status
+      location, google_place_id, status,
+      terms_accepted_at, terms_version
     ) VALUES (
       ${input.ownerUserId}, ${input.businessName}, ${slug}, ${input.phone},
       ${input.addressLine1}, ${input.city}, ${input.region}, ${input.postalCode}, 'US',
       ST_SetSRID(ST_MakePoint(${input.longitude}, ${input.latitude}), 4326)::geography,
-      ${input.googlePlaceId ?? null}, 'pending_approval'
+      ${input.googlePlaceId ?? null}, 'pending_approval',
+      ${input.acceptedTerms ? new Date() : null}, ${input.acceptedTerms ? VENDOR_TERMS_VERSION : null}
     )
     RETURNING id, business_name, slug, status
   `;

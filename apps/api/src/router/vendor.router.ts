@@ -218,14 +218,23 @@ export const vendorRouter = router({
         longitude: z.number(),
         googlePlaceId: z.string().nullable().optional(),
         categorySlugs: z.array(z.string()).default([]),
+        // GLO-35: the Vendor Agreement checkbox is required, enforced server-side.
+        agreeToTerms: z.boolean(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
+      if (!input.agreeToTerms) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'You must accept the Vendor Agreement to create a business account.',
+        });
+      }
       const existing = await getVendorForOwner(ctx.sql, ctx.auth.userId);
       if (existing) {
         throw new TRPCError({ code: 'CONFLICT', message: 'You already have a business account.' });
       }
-      return createVendor(ctx.sql, { ownerUserId: ctx.auth.userId, ...input });
+      const { agreeToTerms: _agree, ...rest } = input;
+      return createVendor(ctx.sql, { ownerUserId: ctx.auth.userId, ...rest, acceptedTerms: true });
     }),
 
   /** A vendor's own deals (any status) for their dashboard. */

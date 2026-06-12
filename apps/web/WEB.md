@@ -126,7 +126,7 @@ Geolocation + manual city (`geocode.*`) saved to `localStorage` · maps/tel →
 - [ ] NOTE: set `PUBLIC_WEB_ORIGIN=http://localhost:3000` on the API for local success/cancel redirects (defaults to prod `gloe.app`)
 
 ### Phase 4 — Support, SEO, PWA polish ✅ (2026-06-02)
-- [x] legal pages (`/legal/terms`, `/legal/privacy`) — placeholder copy, replace before launch
+- [x] legal pages (`/legal/terms`, `/legal/privacy`, `/legal/vendor-terms`) — full drafts (2026-06-11): consumer ToS covers vouchers/refunds/credits/chargebacks; the Vendor Agreement carries the GLO-35 facilitator + chargeback-liability clauses and is accepted via a required checkbox on the vendor signup form (stamped `terms_accepted_at`/`terms_version`). Counsel review pending (GLO-15)
 - [x] dynamic sitemap (home/search/business/legal/auth + live deal + spa URLs from API); `/robots.txt` + `/sitemap.xml` whitelisted in middleware
 - [x] PWA manifest + icons verified installable
 - [x] support threads (`/support` list+compose, `/support/[id]` thread+reply); linked from account + footer

@@ -45,6 +45,7 @@ export function Footer() {
             <FooterLink href="/support">Concierge</FooterLink>
             <FooterLink href="/legal/terms">Terms</FooterLink>
             <FooterLink href="/legal/privacy">Privacy</FooterLink>
+            <FooterLink href="/legal/vendor-terms">Vendor Agreement</FooterLink>
           </FooterCol>
         </div>
       </div>

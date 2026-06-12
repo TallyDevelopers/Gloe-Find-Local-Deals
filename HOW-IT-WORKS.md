@@ -672,6 +672,13 @@ A spa can sign up in **under a minute** — the form asks only for the essential
 address with Places autocomplete, categories) and creates the vendor in a **`pending_approval`**
 state. That's enough to put a pin on the map.
 
+Signup also requires ticking **"I agree to the Gloē Vendor Agreement"** (`/legal/vendor-terms`) —
+the contract that makes the chargeback claw-back defensible: Gloē is a marketplace facilitator,
+the vendor is the merchant of record, and **dispute liability sits with the vendor**. The
+acceptance is enforced server-side (not just a disabled button) and stamped on the vendor row
+(`terms_accepted_at` + the agreement version), so we can always prove who agreed to what.
+Founder-pre-created listings haven't accepted yet — their stamp is a TODO for the claim flow.
+
 Connecting Stripe happens **later and lazily** — on the first "Connect bank" tap from the dashboard,
 not at signup. (Why: we never create dead Stripe accounts for tire-kickers.) That opens a Stripe-hosted
 onboarding flow, and when Stripe says the account can receive money, a webhook **mirrors that status
