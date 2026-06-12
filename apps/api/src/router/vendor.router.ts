@@ -20,6 +20,7 @@ import {
   redeemClaimByVendor,
   RedemptionError,
 } from '../domain/claims';
+import { computeFee } from '../domain/fees';
 import { getInstantPayoutStatus, InstantPayoutError, triggerInstantPayout } from '../domain/payouts';
 import { createVendor, getSetupStatus, getVendorForOwner, type VendorRecord } from '../domain/vendorSignup';
 import { getLicenseInfo, LicenseSubmitError, submitLicense } from '../domain/vendorLicense';
@@ -235,6 +236,23 @@ export const vendorRouter = router({
       }
       const { agreeToTerms: _agree, ...rest } = input;
       return createVendor(ctx.sql, { ownerUserId: ctx.auth.userId, ...rest, acceptedTerms: true });
+    }),
+
+  /**
+   * What the vendor earns at a given deal price (GLO-35: the Vendor Agreement
+   * promises estimated earnings are shown while pricing a deal). Uses the same
+   * computeFee the checkout snapshots, including any vendor-specific override.
+   */
+  feePreview: protectedProcedure
+    .input(z.object({ priceCents: z.number().int().min(50).max(5_000_000) }))
+    .query(async ({ ctx, input }) => {
+      const vendor = await requireVendor(ctx);
+      const fee = await computeFee(ctx.sql, input.priceCents, vendor.id);
+      return {
+        priceCents: fee.consumerPaidCents,
+        feeCents: fee.platformFeeCents,
+        vendorTakeCents: fee.vendorPayoutCents,
+      };
     }),
 
   /** A vendor's own deals (any status) for their dashboard. */

@@ -13,7 +13,7 @@ export default function VendorTermsPage() {
   return (
     <div className="consumer-container" style={{ maxWidth: 760, paddingTop: 32, paddingBottom: 48 }}>
       <h1 style={{ fontSize: 34 }}>Vendor Agreement</h1>
-      <p style={{ color: 'var(--text-tertiary)', marginTop: 6 }}>Last updated: June 11, 2026 · Version 2026-06-11</p>
+      <p style={{ color: 'var(--text-tertiary)', marginTop: 6 }}>Last updated: June 12, 2026 · Version 2026-06-12</p>
 
       <div style={{ marginTop: 24, color: 'var(--text-secondary)', lineHeight: 1.7, display: 'flex', flexDirection: 'column', gap: 16 }}>
         <p>
@@ -46,10 +46,11 @@ export default function VendorTermsPage() {
         </Section>
 
         <Section title="4. Fees and payouts">
-          Gloē charges a platform fee per transaction; the fee schedule in effect is shown to you when
-          you create a deal and is snapshotted on each sale. Payouts of your share are made through
-          Stripe Connect after a voucher is redeemed. You must maintain a Stripe account in good
-          standing to receive payouts.
+          Gloē charges a platform fee per transaction. Your estimated earnings under the fee
+          schedule in effect are shown to you as you price a deal, and the exact fee applied is
+          snapshotted on each sale — a later fee-schedule change never affects a sale already made.
+          Payouts of your share are made through Stripe Connect after a voucher is redeemed. You
+          must maintain a Stripe account in good standing to receive payouts.
         </Section>
 
         <Section title="5. Customer refunds">
@@ -85,16 +86,30 @@ export default function VendorTermsPage() {
           must have the rights to everything you upload.
         </Section>
 
-        <Section title="9. Suspension and termination">
+        <Section title="9. Indemnification">
+          You will indemnify and hold Gloē harmless from claims, damages, and expenses (including
+          reasonable attorneys&rsquo; fees) arising out of the services you provide or fail to provide,
+          your content, your violation of law or licensing requirements, or your breach of this
+          agreement — except to the extent caused by Gloē&rsquo;s own negligence or misconduct. Gloē
+          facilitates discovery and payment only; claims by your customers about the services
+          themselves are yours to resolve.
+        </Section>
+
+        <Section title="10. Suspension and termination">
           Either party may end this agreement at any time; outstanding vouchers must still be honored
           or refunded. Gloē may pause or suspend your listings immediately for suspected fraud,
           license issues, customer-safety concerns, or repeated failure to honor vouchers. Sections 6
-          (chargeback liability) and 8 survive termination for transactions that occurred before it.
+          (chargeback liability), 8, and 9 survive termination for transactions and events that
+          occurred before it.
         </Section>
 
-        <Section title="10. Changes">
-          We may update this agreement; material changes will be communicated to you, and continuing
-          to list deals after the effective date constitutes acceptance of the updated version.
+        <Section title="11. General">
+          This agreement is governed by the laws of the State of California. If any provision is
+          found unenforceable, the rest remain in effect. It is the entire agreement between you and
+          Gloē about the marketplace and supersedes prior discussions. You may not assign it without
+          Gloē&rsquo;s consent; Gloē may assign it in connection with a merger or sale. We may update this
+          agreement; material changes will be communicated to you, and continuing to list deals
+          after the effective date constitutes acceptance of the updated version.
         </Section>
 
         <p style={{ fontSize: 13.5, color: 'var(--text-tertiary)' }}>
