@@ -6,7 +6,7 @@ import { cacheVendorMap } from './dealMap';
  * the agreement materially changes so we know which version each vendor
  * accepted.
  */
-export const VENDOR_TERMS_VERSION = '2026-06-12';
+export const VENDOR_TERMS_VERSION = '2026-06-12.2';
 
 export interface VendorSignupInput {
   /** Null for admin-created (unclaimed) vendors; the spa claims it later. */
