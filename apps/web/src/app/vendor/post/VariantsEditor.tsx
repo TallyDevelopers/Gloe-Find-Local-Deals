@@ -1,6 +1,7 @@
 'use client';
 
 import { Button, TextInput } from '../../../components/ui';
+import { trpc } from '../../../lib/trpc';
 
 export interface VariantDraft {
   label: string;
@@ -75,9 +76,13 @@ export function VariantsEditor({ variants, onChange, unitBased }: VariantsEditor
               </LabeledMini>
             </div>
 
-            {pctOff !== null ? (
-              <span style={{ fontSize: 13, color: 'var(--success)', fontWeight: 600 }}>{pctOff}% off</span>
-            ) : null}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+              {pctOff !== null ? (
+                <span style={{ fontSize: 13, color: 'var(--success)', fontWeight: 600 }}>{pctOff}% off</span>
+              ) : <span />}
+              {/* GLO-35: the Vendor Agreement promises earnings are shown while pricing. */}
+              {deal > 0 ? <VendorTake dealPriceDollars={deal} /> : null}
+            </div>
           </div>
         );
       })}
@@ -86,6 +91,23 @@ export function VariantsEditor({ variants, onChange, unitBased }: VariantsEditor
         + Add another option
       </Button>
     </div>
+  );
+}
+
+/** Live "you earn" line from the same fee tiers checkout snapshots. */
+function VendorTake({ dealPriceDollars }: { dealPriceDollars: number }) {
+  const priceCents = Math.round(dealPriceDollars * 100);
+  const preview = trpc.vendor.feePreview.useQuery(
+    { priceCents },
+    { enabled: priceCents >= 50, staleTime: 60_000, placeholderData: (prev) => prev },
+  );
+  if (!preview.data) return null;
+  const take = (preview.data.vendorTakeCents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+  const fee = (preview.data.feeCents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+  return (
+    <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+      You earn <strong>{take}</strong> <span style={{ color: 'var(--text-tertiary)' }}>(Gloē fee {fee})</span>
+    </span>
   );
 }
 

@@ -721,7 +721,9 @@ rejecting a license doesn't either (suspension stays a separate, deliberate act)
 
 One form builds the whole listing — categories, title, priced variants, photos/videos, vibes &
 amenities, redemption location, fine print — and submits it either as a **private draft** or as
-**pending review**.
+**pending review**. As the spa types a price, the form shows **"You earn $X (Gloē fee $Y)"** live,
+computed by the same fee engine that snapshots the fee at sale time — so the number a vendor sees
+while pricing is exactly the deal they signed up for (and what the Vendor Agreement promises).
 
 - **Draft** lets a spa build a listing *before* they're fully onboarded (drafts bypass the
   license/Stripe gate).
