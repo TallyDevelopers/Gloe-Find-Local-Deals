@@ -662,6 +662,32 @@ that's paid for but **never redeemed** keeps its payout sitting in the "owed to 
 *indefinitely* — even long past its expiry date. There's no process today that sweeps elapsed-unredeemed
 vouchers, releases that held money, or recognizes the breakage. Flagged in [§15](#15-whats-not-built-yet).
 
+### Deal promos — the "Extra $X off" badge (GLO-44)
+
+Some deals carry a public **promo**: a badge on the card ("Extra $15 off", or a custom label like
+"Summer glow special") and an automatic discount line at checkout. Nobody types a code — if the badge
+is on the deal, everyone gets it. Promo cuts the price first; wallet credits then apply to what's left.
+The card and deal page show the **post-promo price** with the true original struck through, so the
+number on the card is exactly what checkout charges.
+
+Who pays for it is the whole story:
+
+- **Gloē-funded** (placed in god mode → Promos): the customer pays less, but the **vendor is still paid
+  in full on the original price** — the discount comes out of Gloē's fee. Vendors never fund Gloē's
+  marketing; same rule as credits.
+- **Vendor-funded** (the vendor taps **Boost** on their own live deal): the vendor chose to sell cheaper,
+  so the sale is booked at the discounted price — their payout becomes discounted price − fee(discounted
+  price). The dashboard shows the trade plainly per option ("you'll receive $X instead of $Y") before
+  they confirm, and they can end the boost anytime.
+
+One promo per deal, time-boxed, can't take any option below Stripe's 50¢ floor or past a 90% total
+discount (so "extra off" can't make the original price look fake). Pause or suspend the deal and the
+promo goes off-air with it. Refunds give back what was **paid** (cash + credits — the discount was never
+paid, so it never comes back). Receipts show original / promo / credits / charged. God mode lists every
+running promo with its cost-to-date (orders × discount).
+
+*Deeper: `GLOE.md` §4 Deal promos. Code: `promos.ts`, `checkout.ts` (`pricePromoOrder`). Linear: GLO-44.*
+
 ---
 
 ## 9. The vendor side

@@ -368,6 +368,27 @@ payouts:         pending → paid
 11. License on file (GLO-19: admin-verified via the license review flow; enforced at posting time through `canPostDeals`)
 12. No open dispute on the transaction — a `charge.dispute.created` sets the transaction to `disputed`, and wall #4 (`status='paid'`) refuses it. The dispute also freezes the voucher (wall #3 can never reach `redeemed`). See §4 Disputes.
 
+### Deal promos — "Extra $X off" (GLO-44)
+
+A **promo** is a public discount placed ON a deal (not a code, not wallet money): everyone browsing sees the badge — auto copy "Extra $15 off" or a custom label — and the discount applies itself as a line item at checkout, **before** credits. One live promo per deal (DB-enforced), window-bound (`starts_at`/`ends_at`), table `deal_promos`. Distinct from credits (GLO-24): credits follow the *customer*; promos sit on the *deal*.
+
+**Funding decides the payout math** (the part that must not be wrong):
+
+| | Platform-funded (god mode) | Vendor-funded ("Boost this deal") |
+| -- | -- | -- |
+| Customer pays | price − promo | price − promo |
+| Fee computed on | **original price** | **discounted price** |
+| Vendor receives | original − fee(original) — **vendor stays whole** | discounted − fee(discounted) |
+| Who eats it | Gloē (comes out of the platform fee; same balance-funded plumbing as credits) | The vendor (their dashboard shows "you'll receive $X instead of $Y" before they confirm) |
+
+On the transaction row: `deal_promo_id`, `promo_discount_cents`, `promo_funded_by`. For platform-funded promos `consumer_paid_cents` stays the FULL price (the credits pattern — only the Stripe charge shrinks); for vendor-funded ones the sale is booked at the discounted price, so everything downstream (fee snapshot, payout, refunds, disputes) just works.
+
+**Stacking & guards:** promo first, credits on the remainder; earn rules (referral floor) evaluate on the post-promo total. Promo can't push any variant below Stripe's 50¢ floor, can't exceed a 90% total discount vs the original price (FTC pricing-claims hygiene), and never stacks with another promo. Paused/suspended deals take their promo off-air automatically (the lookup requires `deals.status='active'`).
+
+**Refunds:** the customer gets back what they *paid* (cash + credits — never the discount). Vendor-funded → the proportional clawback restores the vendor's discounted share; platform-funded → the platform absorbs its promo share, as it already did at sale time.
+
+**Surfaces:** badge takes the card's top-left slot (promo > Sponsored > "% off" — never stacked) with the post-promo price in the price row on app + web; its own line above credits at checkout; receipts show original / promo / credits / charged. God mode → **Promos** tab (create platform-funded, cost-to-date = orders × recorded discount, end any promo). Vendor dashboard → **Boost** on a live deal (vendor-funded, payout preview, end anytime). Audit: `deal_promo.created` / `deal_promo.ended`.
+
 ---
 
 ## 5. Database schema

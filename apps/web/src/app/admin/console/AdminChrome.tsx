@@ -10,7 +10,7 @@ import { CommandPalette } from './CommandPalette';
 
 export type WorkspaceView =
   | 'pulse' | 'transactions' | 'vendors' | 'customers'
-  | 'payouts' | 'refunds' | 'fees' | 'credits' | 'support' | 'sections' | 'taxonomy' | 'waitlist' | 'audit' | 'admins' | 'settings';
+  | 'payouts' | 'refunds' | 'fees' | 'credits' | 'promos' | 'support' | 'sections' | 'taxonomy' | 'waitlist' | 'audit' | 'admins' | 'settings';
 
 const NAV: { key: WorkspaceView; label: string; badgeFor?: 'failed_payouts' | 'pending_deals' }[] = [
   { key: 'pulse',        label: 'Pulse' },
@@ -21,6 +21,7 @@ const NAV: { key: WorkspaceView; label: string; badgeFor?: 'failed_payouts' | 'p
   { key: 'refunds',      label: 'Refunds' },
   { key: 'fees',         label: 'Fees' },
   { key: 'credits',      label: 'Credits' },
+  { key: 'promos',       label: 'Promos' },
   { key: 'support',      label: 'Support' },
   { key: 'sections',     label: 'Discover' },
   { key: 'taxonomy',     label: 'Treatments' },
@@ -62,6 +63,9 @@ function NavIcon({ name }: { name: WorkspaceView }) {
     case 'credits':
       // Wallet glyph — the customer credit balance program.
       return <svg {...p}><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1" /><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4" /></svg>;
+    case 'promos':
+      // Price-tag glyph — discounts placed on deals.
+      return <svg {...p}><path d="M12.586 2.586A2 2 0 0 0 11.172 2H4a2 2 0 0 0-2 2v7.172a2 2 0 0 0 .586 1.414l8.704 8.704a2.426 2.426 0 0 0 3.42 0l6.58-6.58a2.426 2.426 0 0 0 0-3.42z" /><circle cx="7.5" cy="7.5" r=".5" fill="currentColor" /></svg>;
     case 'support':
       return <svg {...p}><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" /></svg>;
     case 'waitlist':

@@ -6,7 +6,7 @@ import { useState } from 'react';
 
 import { trpc } from '../../lib/trpc';
 import { EmbeddedCheckoutModal } from './EmbeddedCheckoutModal';
-import { discountPct, formatCredit, formatExpiry, formatPrice } from './format';
+import { discountPct, formatCredit, formatExpiry, formatPrice, promoBadgeLabel } from './format';
 import { Share } from './icons';
 import { SharePayModal } from './SharePayModal';
 import { useBuy } from './useBuy';
@@ -43,8 +43,16 @@ export function PurchasePanel({
   if (!variant) return null;
 
   const pct = discountPct(variant.originalPriceCents, variant.dealPriceCents);
-  const saveCents = (variant.originalPriceCents - variant.dealPriceCents) * qty;
   const totalCents = variant.dealPriceCents * qty;
+
+  // Deal promo (GLO-44): cuts the price first (once per order, mirroring the
+  // server's clamp), then credits auto-apply to the remainder.
+  const promo = deal.promo;
+  const promoCents = promo
+    ? Math.max(0, Math.min(promo.amountCents, totalCents - STRIPE_MIN_CHARGE_CENTS))
+    : 0;
+  const chargeBaseCents = totalCents - promoCents;
+  const saveCents = (variant.originalPriceCents - variant.dealPriceCents) * qty + promoCents;
   const spotsLeft = variant.spotsTotal != null ? variant.spotsTotal - variant.spotsClaimed : null;
   const limit = Math.max(1, deal.perCustomerLimit ?? 1);
   const expiry = formatExpiry(deal.expiresAt);
@@ -54,14 +62,14 @@ export function PurchasePanel({
   // real cash amount: locked welcome credit counts when this order meets its
   // first-booking floor; never leave 0 < cash < 50¢ (shave credits instead).
   const b = balance.data;
-  const unlockedWelcomeCents = b && !b.frozen && b.lockedCents > 0 && totalCents >= b.lockedFloorCents ? b.lockedCents : 0;
+  const unlockedWelcomeCents = b && !b.frozen && b.lockedCents > 0 && chargeBaseCents >= b.lockedFloorCents ? b.lockedCents : 0;
   const spendableCents = b && !b.frozen ? b.availableCents + unlockedWelcomeCents : 0;
-  let creditPreviewCents = Math.min(spendableCents, totalCents);
-  if (totalCents - creditPreviewCents > 0 && totalCents - creditPreviewCents < STRIPE_MIN_CHARGE_CENTS) {
-    creditPreviewCents = Math.max(0, totalCents - STRIPE_MIN_CHARGE_CENTS);
+  let creditPreviewCents = Math.min(spendableCents, chargeBaseCents);
+  if (chargeBaseCents - creditPreviewCents > 0 && chargeBaseCents - creditPreviewCents < STRIPE_MIN_CHARGE_CENTS) {
+    creditPreviewCents = Math.max(0, chargeBaseCents - STRIPE_MIN_CHARGE_CENTS);
   }
   const appliedCents = useCredits ? creditPreviewCents : 0;
-  const cashCents = totalCents - appliedCents;
+  const cashCents = chargeBaseCents - appliedCents;
 
   return (
     <div
@@ -73,17 +81,21 @@ export function PurchasePanel({
         boxShadow: '0 8px 30px rgba(43,32,25,0.08)',
       }}
     >
-      {/* Price */}
+      {/* Price — post-promo when a promo is live, struck anchor = true original */}
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
         <span style={{ fontFamily: 'var(--font-display)', fontSize: 34, fontWeight: 600, color: 'var(--text-primary)' }}>
-          {formatPrice(variant.dealPriceCents)}
+          {formatPrice(promo ? Math.max(0, variant.dealPriceCents - promo.amountCents) : variant.dealPriceCents)}
         </span>
-        {pct > 0 ? (
+        {promo || pct > 0 ? (
           <span style={{ fontSize: 17, color: 'var(--text-tertiary)', textDecoration: 'line-through' }}>
             {formatPrice(variant.originalPriceCents)}
           </span>
         ) : null}
-        {pct > 0 ? (
+        {promo ? (
+          <span style={{ marginLeft: 'auto', background: 'var(--brand-600)', color: 'var(--text-inverse)', fontSize: 13, fontWeight: 700, padding: '4px 10px', borderRadius: 'var(--radius-pill)' }}>
+            {promoBadgeLabel(promo)}
+          </span>
+        ) : pct > 0 ? (
           <span style={{ marginLeft: 'auto', background: 'var(--brand-100)', color: 'var(--brand-600)', fontSize: 13, fontWeight: 700, padding: '4px 10px', borderRadius: 'var(--radius-pill)' }}>
             {pct}% off
           </span>
@@ -137,6 +149,17 @@ export function PurchasePanel({
         <p style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 14 }}>Limit 1 per customer</p>
       )}
 
+      {/* Promo line (GLO-44) — its own line above credits, same order as the
+          receipt: order total / promo / credit / charged. */}
+      {promoCents > 0 ? (
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginTop: 18, fontSize: 14 }}>
+          <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>
+            {promo ? promoBadgeLabel(promo) : 'Promo'}
+          </span>
+          <span style={{ color: 'var(--brand-700)', fontWeight: 700 }}>−{formatCredit(promoCents)}</span>
+        </div>
+      ) : null}
+
       {/* Credits (GLO-24) — inline in the price math, defaults on. The client
           only sends the toggle; the server computes the actual amount. */}
       {spendableCents > 0 ? (
@@ -182,7 +205,7 @@ export function PurchasePanel({
           ? 'Starting secure checkout…'
           : appliedCents > 0 && cashCents === 0
             ? 'Redeem with credit — nothing to pay'
-            : appliedCents > 0
+            : appliedCents > 0 || promoCents > 0
               ? `Buy now · ${formatCredit(cashCents)}`
               : `Buy now · ${formatPrice(totalCents)}`}
       </button>

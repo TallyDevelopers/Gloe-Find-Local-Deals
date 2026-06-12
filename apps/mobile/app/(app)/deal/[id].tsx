@@ -19,7 +19,7 @@ import { StickyActionBar } from '../../../features/deal-detail/StickyActionBar';
 import { StickyTopBar } from '../../../features/deal-detail/StickyTopBar';
 import { VariantPicker } from '../../../features/deal-detail/VariantPicker';
 import { formatProximity, milesBetween } from '../../../features/discover/cardMeta';
-import { formatPrice } from '../../../features/discover/format';
+import { formatPrice, promoBadgeLabel, promoPriceCents } from '../../../features/discover/format';
 import { useRecordRecentlyViewed } from '../../../features/discover/useRecentlyViewed';
 import { useSelectedLocation } from '../../../features/discover-header/SelectedLocationProvider';
 import { useSavedDeals } from '../../../features/saved/SavedDealsProvider';
@@ -117,8 +117,12 @@ export default function DealDetailScreen() {
       selectedVariant.originalPriceCents) *
       100,
   );
+  // Deal promo (GLO-44): the detail price row shows the post-promo price and
+  // the savings line counts the promo too. Checkout recomputes server-side.
+  const promo = deal.promo;
+  const effectivePriceCents = promoPriceCents(selectedVariant.dealPriceCents, promo);
   const dollarsSaved =
-    (selectedVariant.originalPriceCents - selectedVariant.dealPriceCents) / 100;
+    (selectedVariant.originalPriceCents - effectivePriceCents) / 100;
   const spotsLeft =
     selectedVariant.spotsTotal !== null
       ? selectedVariant.spotsTotal - selectedVariant.spotsClaimed
@@ -146,6 +150,8 @@ export default function DealDetailScreen() {
         variantLabel: selectedVariant.label,
         originalPriceCents: String(selectedVariant.originalPriceCents),
         dealPriceCents: String(selectedVariant.dealPriceCents),
+        promoAmountCents: promo ? String(promo.amountCents) : '',
+        promoLabel: promo ? promoBadgeLabel(promo) : '',
         discountPct: String(discountPct),
         spotsLeft: spotsLeft != null ? String(spotsLeft) : '',
         expiresAt: deal.expiresAt ?? '',
@@ -237,21 +243,21 @@ export default function DealDetailScreen() {
             >
               <Stack direction="row" align="baseline" gap={3}>
                 <Text variant="display-lg" tone="primary" weight="semibold">
-                  {formatPrice(selectedVariant.dealPriceCents)}
+                  {formatPrice(effectivePriceCents)}
                 </Text>
                 <Text variant="body-lg" tone="tertiary" style={{ textDecorationLine: 'line-through' }}>
                   {formatPrice(selectedVariant.originalPriceCents)}
                 </Text>
                 <View
                   style={{
-                    backgroundColor: palette.brand[500],
+                    backgroundColor: promo ? palette.brand[600] : palette.brand[500],
                     paddingHorizontal: space[3],
                     paddingVertical: space[1],
                     borderRadius: radius.pill,
                   }}
                 >
                   <Text variant="body-sm" tone="inverse" weight="semibold">
-                    {discountPct}% off
+                    {promo ? promoBadgeLabel(promo) : `${discountPct}% off`}
                   </Text>
                 </View>
               </Stack>

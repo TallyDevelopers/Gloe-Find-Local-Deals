@@ -32,6 +32,8 @@ export default function CheckoutScreen() {
     variantLabel: string;
     originalPriceCents: string;
     dealPriceCents: string;
+    promoAmountCents: string;
+    promoLabel: string;
     discountPct: string;
     spotsLeft: string;
     expiresAt: string;
@@ -63,18 +65,27 @@ export default function CheckoutScreen() {
   const totalCents = dealPriceCents * qty;
   const savedCents = (originalPriceCents - dealPriceCents) * qty;
 
+  // Deal promo (GLO-44): cuts the price first, once per order (mirrors the
+  // server's clamp — the post-promo total never drops below Stripe's 50¢
+  // floor); credits then apply to the remainder.
+  const promoAmountCents = Number(params.promoAmountCents) || 0;
+  const promoCents = promoAmountCents > 0
+    ? Math.max(0, Math.min(promoAmountCents, totalCents - 50))
+    : 0;
+  const chargeBaseCents = totalCents - promoCents;
+
   // Display estimate only — the server recomputes inside the purchase
   // transaction and its number is what Stripe charges. Locked referee credit
   // counts when this order clears its first-purchase floor (pre-credit).
   const balance = creditsQuery.data;
   const usableCreditCents = balance
     ? balance.availableCents +
-      (balance.lockedCents > 0 && totalCents >= balance.lockedFloorCents ? balance.lockedCents : 0)
+      (balance.lockedCents > 0 && chargeBaseCents >= balance.lockedFloorCents ? balance.lockedCents : 0)
     : 0;
-  let creditEstimateCents = applyCredits ? Math.min(usableCreditCents, totalCents) : 0;
-  const remainder = totalCents - creditEstimateCents;
-  if (remainder > 0 && remainder < 50) creditEstimateCents = totalCents - 50; // Stripe 50¢ charge floor
-  const cashDueCents = totalCents - creditEstimateCents;
+  let creditEstimateCents = applyCredits ? Math.min(usableCreditCents, chargeBaseCents) : 0;
+  const remainder = chargeBaseCents - creditEstimateCents;
+  if (remainder > 0 && remainder < 50) creditEstimateCents = chargeBaseCents - 50; // Stripe 50¢ charge floor
+  const cashDueCents = chargeBaseCents - creditEstimateCents;
 
   const handleBuy = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -284,6 +295,21 @@ export default function CheckoutScreen() {
                 </Stack>
                 <Text variant="body-md" weight="semibold" style={{ color: palette.semantic.success }}>
                   −{formatPrice(savedCents)}
+                </Text>
+              </Stack>
+            ) : null}
+            {promoCents > 0 ? (
+              <Stack direction="row" justify="space-between" align="center">
+                <Stack direction="row" gap={2} align="center">
+                  <Text variant="body-md" tone="secondary">Promo</Text>
+                  <View style={{ backgroundColor: palette.brand[600], borderRadius: radius.pill, paddingHorizontal: space[2], paddingVertical: 2 }}>
+                    <Text variant="caption" weight="semibold" style={{ color: palette.text.inverse }}>
+                      {params.promoLabel || 'Extra off'}
+                    </Text>
+                  </View>
+                </Stack>
+                <Text variant="body-md" weight="semibold" style={{ color: palette.brand[700] }}>
+                  −{formatPrice(promoCents)}
                 </Text>
               </Stack>
             ) : null}

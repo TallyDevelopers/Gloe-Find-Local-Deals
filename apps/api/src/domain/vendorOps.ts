@@ -44,13 +44,16 @@ export async function refundClaim(
     refunded_cents: number;
     credits_applied_cents: number;
     credits_refunded_cents: number;
+    promo_discount_cents: number;
+    promo_funded_by: 'platform' | 'vendor' | null;
   }[]>`
     SELECT
       c.id AS claim_id, c.status AS claim_status,
       t.id AS tx_id, t.status AS tx_status,
       c.vendor_id, t.stripe_payment_intent_id AS pi_id,
       t.consumer_paid_cents AS amount_cents,
-      t.refunded_cents, t.credits_applied_cents, t.credits_refunded_cents
+      t.refunded_cents, t.credits_applied_cents, t.credits_refunded_cents,
+      t.promo_discount_cents, t.promo_funded_by
     FROM public.claims c
     JOIN public.transactions t ON t.id = c.transaction_id
     WHERE c.id = ${claimId}
@@ -62,8 +65,11 @@ export async function refundClaim(
   if (r.tx_status !== 'paid')      return audit(`transaction is ${r.tx_status}, expected paid`);
 
   // Split-tender (GLO-24): Stripe only ever held the CASH share; the credit
-  // share returns to the wallet as a refund_return lot below.
-  const cashCents = r.amount_cents - r.credits_applied_cents - r.refunded_cents;
+  // share returns to the wallet as a refund_return lot below. A platform-funded
+  // promo (GLO-44) also never reached the card — the customer gets back what
+  // they PAID, not the discount.
+  const platformPromoCents = r.promo_funded_by === 'platform' ? r.promo_discount_cents : 0;
+  const cashCents = r.amount_cents - r.credits_applied_cents - platformPromoCents - r.refunded_cents;
   const creditCents = r.credits_applied_cents - r.credits_refunded_cents;
   if (cashCents > 0 && !r.pi_id) return audit('no Stripe PaymentIntent on this transaction');
 
@@ -194,6 +200,8 @@ export async function refundTransaction(
     refunded_cents: number;
     credits_applied_cents: number;
     credits_refunded_cents: number;
+    promo_discount_cents: number;
+    promo_funded_by: 'platform' | 'vendor' | null;
   }[]>`
     SELECT
       c.id  AS claim_id,
@@ -205,7 +213,9 @@ export async function refundTransaction(
       t.consumer_paid_cents,
       t.refunded_cents,
       t.credits_applied_cents,
-      t.credits_refunded_cents
+      t.credits_refunded_cents,
+      t.promo_discount_cents,
+      t.promo_funded_by
     FROM public.transactions t
     JOIN public.claims c ON c.transaction_id = t.id
     WHERE t.id = ${transactionId}
@@ -223,7 +233,10 @@ export async function refundTransaction(
   // Split-tender order (GLO-24): refunds consume CASH first, then credits.
   // Stripe only ever charged the cash share, so the Stripe refund is capped
   // there; whatever's left of the requested amount returns as wallet credit.
-  const cashRemaining = r.consumer_paid_cents - r.credits_applied_cents - r.refunded_cents;
+  // A platform-funded promo (GLO-44) shrank the cash share too — the customer
+  // is refunded what they paid, never the discount.
+  const platformPromoCents = r.promo_funded_by === 'platform' ? r.promo_discount_cents : 0;
+  const cashRemaining = r.consumer_paid_cents - r.credits_applied_cents - platformPromoCents - r.refunded_cents;
   const creditRemaining = r.credits_applied_cents - r.credits_refunded_cents;
   const remaining = cashRemaining + creditRemaining;
   if (amountCents > remaining) {
@@ -369,13 +382,16 @@ export async function forceRefundRedeemed(
     refunded_cents: number;
     credits_applied_cents: number;
     credits_refunded_cents: number;
+    promo_discount_cents: number;
+    promo_funded_by: 'platform' | 'vendor' | null;
   }[]>`
     SELECT
       c.id AS claim_id, c.status AS claim_status,
       t.id AS tx_id, t.status AS tx_status, c.vendor_id,
       t.stripe_payment_intent_id AS pi_id, t.stripe_transfer_id AS transfer_id,
       t.consumer_paid_cents, t.vendor_payout_cents, t.refunded_cents,
-      t.credits_applied_cents, t.credits_refunded_cents
+      t.credits_applied_cents, t.credits_refunded_cents,
+      t.promo_discount_cents, t.promo_funded_by
     FROM public.transactions t
     JOIN public.claims c ON c.transaction_id = t.id
     WHERE t.id = ${transactionId}
@@ -387,8 +403,10 @@ export async function forceRefundRedeemed(
     return fail(`transaction is ${r.tx_status}, cannot force-refund`, r.vendor_id, r.claim_id, r.tx_id);
   }
   // Split-tender order (GLO-24): cash first, then credits — same as
-  // refundTransaction. Stripe never held the credit share.
-  const cashRemaining = r.consumer_paid_cents - r.credits_applied_cents - r.refunded_cents;
+  // refundTransaction. Stripe never held the credit share, nor the
+  // platform-funded promo share (GLO-44).
+  const platformPromoCents = r.promo_funded_by === 'platform' ? r.promo_discount_cents : 0;
+  const cashRemaining = r.consumer_paid_cents - r.credits_applied_cents - platformPromoCents - r.refunded_cents;
   const creditRemaining = r.credits_applied_cents - r.credits_refunded_cents;
   const remaining = cashRemaining + creditRemaining;
   if (amountCents > remaining) {

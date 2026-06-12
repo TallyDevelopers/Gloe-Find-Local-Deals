@@ -14,6 +14,17 @@ export function formatCredit(cents: number): string {
   return Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`;
 }
 
+/** Promo badge copy (GLO-44): custom label override, else auto "Extra $X off"
+ *  generated from the amount so the badge can't go stale. */
+export function promoBadgeLabel(promo: { amountCents: number; label: string | null }): string {
+  return promo.label?.trim() || `Extra ${formatCredit(promo.amountCents)} off`;
+}
+
+/** Price after the deal promo (GLO-44) — what the buyer actually pays. */
+export function promoPriceCents(dealPriceCents: number, promo: { amountCents: number } | null | undefined): number {
+  return promo ? Math.max(0, dealPriceCents - promo.amountCents) : dealPriceCents;
+}
+
 export function discountPct(originalCents: number, dealCents: number): number {
   if (originalCents <= 0) return 0;
   return Math.round(((originalCents - dealCents) / originalCents) * 100);

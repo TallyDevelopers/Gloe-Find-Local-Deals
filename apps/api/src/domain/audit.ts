@@ -70,6 +70,9 @@ export type AuditAction =
   | 'dispute.reconcile_refused'// the claw-back was blocked (no transfer, etc.)
   // Deal admin
   | 'deal.admin_edited'  // god mode edited deal content (skips re-review)
+  // Deal promos (GLO-44) — "Extra $X off" placed on a deal
+  | 'deal_promo.created' // platform-funded (admin) or vendor-funded (boost)
+  | 'deal_promo.ended'   // ended early / deactivated (natural expiry just lapses)
   // Voucher admin (GLO-29)
   | 'claim.reissued'     // admin replaced an expired voucher with a fresh active one
   // Discover editorial sections (GLO-27)

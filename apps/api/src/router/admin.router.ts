@@ -51,6 +51,7 @@ import {
   TierOverlapError,
   updateTier,
 } from '../domain/fees';
+import { createDealPromo, endDealPromo, listDealPromos } from '../domain/promos';
 import {
   adminGrantCredit,
   createCreditCampaign,
@@ -1185,6 +1186,53 @@ export const adminRouter = router({
         actorUserId: ctx.auth.userId,
         meta: { tierId: input.id },
       });
+      return { ok: true };
+    }),
+
+  /* ─────────────────── Deal promos (GLO-44) ─────────────────── */
+
+  /** Every promo with cost-to-date (orders × recorded discount), newest first. */
+  listDealPromos: adminProcedure
+    .input(z.object({ includeEnded: z.boolean().optional() }).optional())
+    .query(({ ctx, input }) =>
+      listDealPromos(ctx.sql, { includeEnded: input?.includeEnded ?? true })),
+
+  /**
+   * Place a PLATFORM-funded "Extra $X off" on a deal (comes out of the
+   * platform fee; vendor stays whole). Vendor-funded promos are created by
+   * vendors from their own dashboard — clean v1 ownership.
+   */
+  createDealPromo: adminProcedure
+    .input(z.object({
+      dealId: z.string().uuid(),
+      amountCents: z.number().int().positive().max(100_000),
+      label: z.string().trim().max(40).nullish(),
+      endsAt: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await createDealPromo(ctx.sql, {
+          dealId: input.dealId,
+          amountCents: input.amountCents,
+          fundedBy: 'platform',
+          label: input.label ?? null,
+          endsAt: input.endsAt,
+          actorUserId: ctx.auth.userId,
+          actorRole: 'admin',
+        });
+      } catch (e) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: e instanceof Error ? e.message : 'Could not create promo.',
+        });
+      }
+    }),
+
+  /** End any promo early (admin can end vendor-funded ones too). */
+  endDealPromo: adminProcedure
+    .input(z.object({ promoId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      await endDealPromo(ctx.sql, input.promoId, { userId: ctx.auth.userId, role: 'admin' });
       return { ok: true };
     }),
 

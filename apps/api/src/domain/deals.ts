@@ -1,5 +1,6 @@
 import { detectTreatment, expandQuery, type DetectedTreatment } from './aestheticSynonyms';
 import type { Sql } from '../db/client';
+import type { PublicDealPromo } from './promos';
 import { getTrendingConfig, type TrendingConfig } from './platformSettings';
 
 /** Sort modes for the deal list / search. Default = relevance-blended ranking. */
@@ -152,6 +153,9 @@ export interface DealSummary {
   headlineVariant: DealVariant | null;
   /** Auto-computed: enough recent purchases to show the "Trending" ribbon. */
   isTrending: boolean;
+  /** Live deal promo (GLO-44) — "Extra $X off", applied automatically at
+   *  checkout. Null label → clients render the auto copy from amountCents. */
+  promo: PublicDealPromo | null;
 }
 
 export interface DealRedemption {
@@ -362,6 +366,8 @@ export async function listDeals(sql: Sql, params: ListParams = {}): Promise<Deal
         ORDER BY CASE WHEN p.photo_type = 'hero' THEN 0 ELSE 1 END, p.display_order
         LIMIT 1
       ) AS primary_photo_url,
+      pr.id AS promo_id, pr.amount_cents AS promo_amount_cents,
+      pr.label AS promo_label, pr.ends_at AS promo_ends_at,
       ${distanceMilesExpr} AS distance_miles
       ${hasQuery ? sql`, rel.sim AS relevance_sim, rel.hard_match AS hard_match` : sql``}
       ${needsPriceCols ? sql`,
@@ -376,6 +382,8 @@ export async function listDeals(sql: Sql, params: ListParams = {}): Promise<Deal
     JOIN public.vendors v ON v.id = d.vendor_id
     JOIN public.service_categories c ON c.id = d.category_id
     LEFT JOIN public.service_subtypes s ON s.id = d.subtype_id
+    LEFT JOIN public.deal_promos pr ON pr.deal_id = d.id
+      AND pr.active = true AND pr.starts_at <= now() AND pr.ends_at > now()
     ${
       hasQuery
         ? sql`
@@ -476,6 +484,7 @@ export async function listDeals(sql: Sql, params: ListParams = {}): Promise<Deal
       driveSeconds: estimateDriveSeconds(miles),
       headlineVariant: headlineVariants.get(r.id) ?? null,
       isTrending: r.is_trending,
+      promo: mapPromo(r),
     };
   });
 
@@ -938,11 +947,15 @@ export async function getDeal(sql: Sql, dealId: string): Promise<DealDetail | nu
       v.gloe_take     AS vendor_gloe_take,
       v.gloe_perks    AS vendor_gloe_perks,
       ST_Y(v.location::geometry) AS vendor_lat,
-      ST_X(v.location::geometry) AS vendor_lng
+      ST_X(v.location::geometry) AS vendor_lng,
+      pr.id AS promo_id, pr.amount_cents AS promo_amount_cents,
+      pr.label AS promo_label, pr.ends_at AS promo_ends_at
     FROM public.deals d
     JOIN public.vendors v ON v.id = d.vendor_id
     JOIN public.service_categories c ON c.id = d.category_id
     LEFT JOIN public.service_subtypes s ON s.id = d.subtype_id
+    LEFT JOIN public.deal_promos pr ON pr.deal_id = d.id
+      AND pr.active = true AND pr.starts_at <= now() AND pr.ends_at > now()
     WHERE d.id = ${dealId} AND d.status = 'active'
     LIMIT 1
   `;
@@ -1001,6 +1014,7 @@ export async function getDeal(sql: Sql, dealId: string): Promise<DealDetail | nu
     distanceMiles: null,
     driveSeconds: null,
     headlineVariant: variants[0] ? toVariant(variants[0]) : null,
+    promo: mapPromo(deal),
     variants: variants.map(toVariant),
     perCustomerLimit: deal.per_customer_limit,
     photos: photos.map((p) => ({
@@ -1098,6 +1112,22 @@ function resolveRedemption(deal: DealDetailRow) {
   };
 }
 
+/** Promo columns come from the shared LEFT JOIN on live deal_promos rows. */
+function mapPromo(r: {
+  promo_id: string | null;
+  promo_amount_cents: number | null;
+  promo_label: string | null;
+  promo_ends_at: string | null;
+}): PublicDealPromo | null {
+  if (!r.promo_id || !r.promo_amount_cents) return null;
+  return {
+    id: r.promo_id,
+    amountCents: r.promo_amount_cents,
+    label: r.promo_label,
+    endsAt: r.promo_ends_at!,
+  };
+}
+
 function toVariant(r: VariantRow): DealVariant {
   return {
     id: r.id,
@@ -1137,6 +1167,10 @@ interface DealListRow {
   vendor_lat: number | null;
   vendor_lng: number | null;
   primary_photo_url: string | null;
+  promo_id: string | null;
+  promo_amount_cents: number | null;
+  promo_label: string | null;
+  promo_ends_at: string | null;
   distance_miles: string | null;
   is_trending: boolean;
   /** Present only on search queries (q set). */

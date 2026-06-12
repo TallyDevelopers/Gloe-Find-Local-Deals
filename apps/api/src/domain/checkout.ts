@@ -3,7 +3,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import type { Sql } from '../db/client';
 import { writeAudit } from './audit';
 import { computeApplicableCredits, redeemCreditsForTransaction, type RedeemSummary } from './credits';
-import { computeFee } from './fees';
+import { pricePromoOrder } from './promos';
 import { getVoucherValidityDays } from './platformSettings';
 import { createGiftCheckoutSession, createPaymentIntent } from './stripe';
 
@@ -12,9 +12,11 @@ export interface CreatePurchaseResult {
   clientSecret: string | null;
   paymentIntentId: string | null;
   transactionId: string;
-  /** Cash actually charged to Stripe = order total − credits applied. */
+  /** Cash actually charged to Stripe = order total − promo − credits applied. */
   amountCents: number;
   creditsAppliedCents: number;
+  /** Deal-promo discount applied to this order (GLO-44), 0 when none. */
+  promoDiscountCents: number;
   /** True when credits covered the whole order — vouchers are already minted;
    *  the client skips the payment sheet and goes straight to success. */
   paidWithCredits: boolean;
@@ -96,7 +98,12 @@ export async function createPurchase(
   }
 
   const totalCents = v.deal_price_cents * qty;
-  const fee = await computeFee(sql, totalCents, v.vendor_id);
+  // Deal promo (GLO-44) cuts the price first; credits apply to the remainder.
+  // Platform-funded: fee/payout stay on the full total (the credits pattern).
+  // Vendor-funded: the sale is at the discounted price — fee/payout follow.
+  const { fee, promo, chargeBaseCents } = await pricePromoOrder(sql, {
+    dealId: v.deal_id, vendorId: v.vendor_id, baseTotalCents: totalCents,
+  });
 
   // Reserve credits + record the transaction atomically. The FOR UPDATE inside
   // computeApplicableCredits plus this INSERT (the reservation a later checkout
@@ -104,23 +111,25 @@ export async function createPurchase(
   const { transactionId, creditsAppliedCents, cashCents } = await sql.begin(async (tx) => {
     const applied = args.applyCredits === false
       ? 0
-      : await computeApplicableCredits(tx, { userId: args.userId, orderTotalCents: fee.consumerPaidCents });
+      : await computeApplicableCredits(tx, { userId: args.userId, orderTotalCents: chargeBaseCents });
     const txnRows = await tx<{ id: string }[]>`
       INSERT INTO public.transactions (
         vendor_id, user_id, consumer_paid_cents, platform_fee_cents,
         vendor_payout_cents, platform_fee_id, platform_fee_snapshot,
-        credits_applied_cents, status
+        credits_applied_cents, deal_promo_id, promo_discount_cents, promo_funded_by,
+        status
       ) VALUES (
         ${v.vendor_id}, ${args.userId}, ${fee.consumerPaidCents}, ${fee.platformFeeCents},
         ${fee.vendorPayoutCents}, ${fee.platformFeeId}, ${tx.json(fee.snapshot)},
-        ${applied}, 'pending_payment'
+        ${applied}, ${promo?.promoId ?? null}, ${promo?.discountCents ?? 0}, ${promo?.fundedBy ?? null},
+        'pending_payment'
       )
       RETURNING id
     `;
     return {
       transactionId: txnRows[0]!.id,
       creditsAppliedCents: applied,
-      cashCents: fee.consumerPaidCents - applied,
+      cashCents: chargeBaseCents - applied,
     };
   });
 
@@ -142,6 +151,7 @@ export async function createPurchase(
       transactionId,
       amountCents: 0,
       creditsAppliedCents,
+      promoDiscountCents: promo?.discountCents ?? 0,
       paidWithCredits: true,
     };
   }
@@ -157,6 +167,7 @@ export async function createPurchase(
         vendorId: v.vendor_id,
         quantity: String(qty),
         creditsAppliedCents: String(creditsAppliedCents),
+        promoDiscountCents: String(promo?.discountCents ?? 0),
       },
     });
   } catch (e) {
@@ -176,6 +187,7 @@ export async function createPurchase(
     transactionId,
     amountCents: cashCents,
     creditsAppliedCents,
+    promoDiscountCents: promo?.discountCents ?? 0,
     paidWithCredits: false,
   };
 }
@@ -265,16 +277,20 @@ export async function createGiftLink(
   }
 
   const totalCents = v.deal_price_cents * qty;
-  const fee = await computeFee(sql, totalCents, v.vendor_id);
+  // Deal promo (GLO-44): the payer gets the same public discount. No credits
+  // on gift links, so the session amount is just the discounted total.
+  const { fee, promo, chargeBaseCents } = await pricePromoOrder(sql, {
+    dealId: v.deal_id, vendorId: v.vendor_id, baseTotalCents: totalCents,
+  });
 
-  if (fee.consumerPaidCents > GIFT_LINK_MAX_AMOUNT_CENTS) {
+  if (chargeBaseCents > GIFT_LINK_MAX_AMOUNT_CENTS) {
     throw new Error(
       `Share-to-pay is capped at $${(GIFT_LINK_MAX_AMOUNT_CENTS / 100).toFixed(0)} per link. Pay in-app for higher amounts.`,
     );
   }
 
   const session = await createGiftCheckoutSession({
-    amountCents: fee.consumerPaidCents,
+    amountCents: chargeBaseCents,
     productName: v.deal_title,
     productDescription: `${v.vendor_name} · ${v.variant_label}${qty > 1 ? ` × ${qty}` : ''}`,
     productImageUrl: v.deal_photo_url,
@@ -298,10 +314,12 @@ export async function createGiftLink(
     INSERT INTO public.transactions (
       vendor_id, user_id, consumer_paid_cents, platform_fee_cents,
       vendor_payout_cents, platform_fee_id, platform_fee_snapshot,
+      deal_promo_id, promo_discount_cents, promo_funded_by,
       stripe_checkout_session_id, payment_source, status
     ) VALUES (
       ${v.vendor_id}, ${args.redeemerUserId}, ${fee.consumerPaidCents}, ${fee.platformFeeCents},
       ${fee.vendorPayoutCents}, ${fee.platformFeeId}, ${sql.json(fee.snapshot)},
+      ${promo?.promoId ?? null}, ${promo?.discountCents ?? 0}, ${promo?.fundedBy ?? null},
       ${session.sessionId}, 'gift_link', 'pending_payment'
     )
     RETURNING id
@@ -312,7 +330,7 @@ export async function createGiftLink(
     stripeCheckoutUrl: session.url!,
     sessionId: session.sessionId,
     transactionId: txnRows[0]!.id,
-    amountCents: fee.consumerPaidCents,
+    amountCents: chargeBaseCents,
   };
 }
 
@@ -325,9 +343,11 @@ export interface CreateHostedCheckoutResult {
   /** Null on the zero-dollar path (no Stripe session exists). */
   sessionId: string | null;
   transactionId: string;
-  /** Cash for the Stripe session = order total − credits applied. */
+  /** Cash for the Stripe session = order total − promo − credits applied. */
   amountCents: number;
   creditsAppliedCents: number;
+  /** Deal-promo discount applied to this order (GLO-44), 0 when none. */
+  promoDiscountCents: number;
   /** True when credits covered the whole order — no Stripe step; the UI should
    *  treat this as direct success (vouchers are already minted). */
   paidWithCredits: boolean;
@@ -409,29 +429,34 @@ export async function createHostedCheckout(
   }
 
   const totalCents = v.deal_price_cents * qty;
-  const fee = await computeFee(sql, totalCents, v.vendor_id);
+  // Deal promo (GLO-44) first, credits on the remainder — see createPurchase.
+  const { fee, promo, chargeBaseCents } = await pricePromoOrder(sql, {
+    dealId: v.deal_id, vendorId: v.vendor_id, baseTotalCents: totalCents,
+  });
 
   // Same credits reservation pattern as createPurchase — see comments there.
   const { transactionId, creditsAppliedCents, cashCents } = await sql.begin(async (tx) => {
     const applied = args.applyCredits === false
       ? 0
-      : await computeApplicableCredits(tx, { userId: args.userId, orderTotalCents: fee.consumerPaidCents });
+      : await computeApplicableCredits(tx, { userId: args.userId, orderTotalCents: chargeBaseCents });
     const txnRows = await tx<{ id: string }[]>`
       INSERT INTO public.transactions (
         vendor_id, user_id, consumer_paid_cents, platform_fee_cents,
         vendor_payout_cents, platform_fee_id, platform_fee_snapshot,
-        credits_applied_cents, payment_source, status
+        credits_applied_cents, deal_promo_id, promo_discount_cents, promo_funded_by,
+        payment_source, status
       ) VALUES (
         ${v.vendor_id}, ${args.userId}, ${fee.consumerPaidCents}, ${fee.platformFeeCents},
         ${fee.vendorPayoutCents}, ${fee.platformFeeId}, ${tx.json(fee.snapshot)},
-        ${applied}, 'web', 'pending_payment'
+        ${applied}, ${promo?.promoId ?? null}, ${promo?.discountCents ?? 0}, ${promo?.fundedBy ?? null},
+        'web', 'pending_payment'
       )
       RETURNING id
     `;
     return {
       transactionId: txnRows[0]!.id,
       creditsAppliedCents: applied,
-      cashCents: fee.consumerPaidCents - applied,
+      cashCents: chargeBaseCents - applied,
     };
   });
 
@@ -453,6 +478,7 @@ export async function createHostedCheckout(
       transactionId,
       amountCents: 0,
       creditsAppliedCents,
+      promoDiscountCents: promo?.discountCents ?? 0,
       paidWithCredits: true,
     };
   }
@@ -477,6 +503,7 @@ export async function createHostedCheckout(
         quantity: String(qty),
         paymentSource: 'web',
         creditsAppliedCents: String(creditsAppliedCents),
+        promoDiscountCents: String(promo?.discountCents ?? 0),
       },
     });
   } catch (e) {
@@ -496,6 +523,7 @@ export async function createHostedCheckout(
     transactionId,
     amountCents: cashCents,
     creditsAppliedCents,
+    promoDiscountCents: promo?.discountCents ?? 0,
     paidWithCredits: false,
   };
 }
@@ -551,6 +579,7 @@ export async function fulfillPurchase(
   let receipt: ReceiptCore | null = null;
   let fulfilledTxnId: string | null = null;
   let creditsAppliedCents = 0;
+  let promoDiscountCents = 0;
   let redeemed: RedeemSummary | null = null;
 
   await sql.begin(async (tx) => {
@@ -560,21 +589,23 @@ export async function fulfillPurchase(
       user_id: string;
       consumer_paid_cents: number;
       credits_applied_cents: number;
+      promo_discount_cents: number;
+      promo_funded_by: 'platform' | 'vendor' | null;
     };
     const txns = meta.transactionId
       ? await tx<TxnRow[]>`
-          SELECT id, status, user_id, consumer_paid_cents, credits_applied_cents
+          SELECT id, status, user_id, consumer_paid_cents, credits_applied_cents, promo_discount_cents, promo_funded_by
           FROM public.transactions
           WHERE id = ${meta.transactionId} LIMIT 1
         `
       : meta.stripeCheckoutSessionId
         ? await tx<TxnRow[]>`
-            SELECT id, status, user_id, consumer_paid_cents, credits_applied_cents
+            SELECT id, status, user_id, consumer_paid_cents, credits_applied_cents, promo_discount_cents, promo_funded_by
             FROM public.transactions
             WHERE stripe_checkout_session_id = ${meta.stripeCheckoutSessionId} LIMIT 1
           `
         : await tx<TxnRow[]>`
-            SELECT id, status, user_id, consumer_paid_cents, credits_applied_cents
+            SELECT id, status, user_id, consumer_paid_cents, credits_applied_cents, promo_discount_cents, promo_funded_by
             FROM public.transactions
             WHERE stripe_payment_intent_id = ${paymentIntentId} LIMIT 1
           `;
@@ -664,11 +695,15 @@ export async function fulfillPurchase(
         userId: txn.user_id,
         transactionId: txn.id,
         amountCents: txn.credits_applied_cents,
-        orderTotalCents: txn.consumer_paid_cents,
+        // Must match the base the reservation saw: a platform-funded promo
+        // shrank the chargeable total below consumer_paid_cents (GLO-44).
+        orderTotalCents: txn.consumer_paid_cents
+          - (txn.promo_funded_by === 'platform' ? txn.promo_discount_cents : 0),
       });
     }
     fulfilledTxnId = txn.id;
     creditsAppliedCents = txn.credits_applied_cents;
+    promoDiscountCents = txn.promo_discount_cents;
   });
 
   // Receipt — fire-and-forget, post-commit. `receipt` is only set when we
@@ -687,6 +722,7 @@ export async function fulfillPurchase(
       variantLabel: r.variantLabel,
       amountPaidCents: r.amountPaidCents,
       creditsAppliedCents,
+      promoDiscountCents,
       photoUrl: r.photoUrl,
     }).catch((e) => console.error('[receipt] failed:', (e as Error).message));
   }
@@ -727,7 +763,7 @@ async function sendReceiptEmail(
     userId: string; payerEmail: string | null; quantity: number;
     codes: string[]; expiresAt: string;
     dealTitle: string; vendorName: string; variantLabel: string; amountPaidCents: number;
-    creditsAppliedCents: number; photoUrl: string | null;
+    creditsAppliedCents: number; promoDiscountCents: number; photoUrl: string | null;
   },
 ): Promise<void> {
   const userRows = await sql<{ email: string | null; first_name: string | null }[]>`
@@ -752,6 +788,7 @@ async function sendReceiptEmail(
       dealTitle: d.dealTitle, vendorName: d.vendorName, variantLabel: d.variantLabel,
       quantity: d.quantity, amountPaidCents: d.amountPaidCents, codes: d.codes, expiresAt,
       creditsAppliedCents: d.creditsAppliedCents,
+      promoDiscountCents: d.promoDiscountCents,
       photoUrl,
       walletUrl: `${process.env.PUBLIC_WEB_ORIGIN ?? 'https://gloe.app'}/wallet`,
     }),

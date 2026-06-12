@@ -258,12 +258,15 @@ export async function maybePayoutReferrerOnFirstPurchase(
     const txnRows = await sql<{
       user_id: string;
       consumer_paid_cents: number;
+      promo_discount_cents: number;
+      promo_funded_by: 'platform' | 'vendor' | null;
       card_fingerprint: string | null;
       paid_at: string | null;
       referred_by: string | null;
       first_name: string | null;
     }[]>`
       SELECT t.user_id, t.consumer_paid_cents, t.card_fingerprint, t.paid_at,
+             t.promo_discount_cents, t.promo_funded_by,
              u.referred_by, u.first_name
       FROM public.transactions t
       JOIN public.users u ON u.id = t.user_id
@@ -294,9 +297,15 @@ export async function maybePayoutReferrerOnFirstPurchase(
     if (!rule) return refuse('no_active_rule');
 
     // Floor is on the PRE-credit order value — credits applied don't dodge it.
-    if (txn.consumer_paid_cents < rule.min_first_purchase_cents) {
+    // A deal promo (GLO-44) DOES lower it: earn rules evaluate on what the
+    // customer actually committed (consumer_paid already reflects vendor-funded
+    // promos; platform-funded ones are netted off here).
+    const qualifyingCents = txn.consumer_paid_cents
+      - (txn.promo_funded_by === 'platform' ? txn.promo_discount_cents : 0);
+    if (qualifyingCents < rule.min_first_purchase_cents) {
       return refuse('first_purchase_below_floor', {
         consumerPaidCents: txn.consumer_paid_cents,
+        qualifyingCents,
         floorCents: rule.min_first_purchase_cents,
       });
     }
