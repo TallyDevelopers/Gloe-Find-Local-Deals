@@ -1012,6 +1012,10 @@ function InstantPayoutCard() {
         />
       </div>
 
+      {toggle.error ? (
+        <div style={{ fontSize: 13, color: 'var(--error)', marginTop: 8 }}>{toggle.error.message}</div>
+      ) : null}
+
       {optedIn && !eligible ? (
         <div
           style={{

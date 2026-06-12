@@ -52,6 +52,7 @@ export default function SupportThreadScreen() {
   const scrollRef = useRef<ScrollView>(null);
 
   const [draft, setDraft] = useState('');
+  const [sendError, setSendError] = useState<string | null>(null);
   const [attachSheetOpen, setAttachSheetOpen] = useState(false);
   const upload = useSupportUpload();
 
@@ -114,8 +115,11 @@ export default function SupportThreadScreen() {
       );
       return { previous };
     },
-    onError: (_err, _vars, ctx) => {
+    onError: (err, vars, ctx) => {
       if (id && ctx?.previous) utils.support.getCase.setData({ id }, ctx.previous);
+      // Don't let the reply vanish: put the text back and say what happened.
+      setDraft((d) => d || vars.body);
+      setSendError(err.message || 'That reply didn’t send. Please try again.');
     },
     onSettled: () => {
       if (id) void utils.support.getCase.invalidate({ id });
@@ -147,6 +151,7 @@ export default function SupportThreadScreen() {
 
   const onSend = () => {
     if (!canSend || !id) return;
+    setSendError(null);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     reply.mutate({
       ticketId: id,
@@ -313,6 +318,12 @@ export default function SupportThreadScreen() {
                 </View>
               ))}
             </View>
+          ) : null}
+
+          {sendError ? (
+            <Text variant="body-sm" tone="error" style={{ marginBottom: space[2] }}>
+              {sendError}
+            </Text>
           ) : null}
 
           <Stack direction="row" align="flex-end" gap={2}>

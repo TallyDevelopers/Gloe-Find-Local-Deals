@@ -27,7 +27,11 @@ export default function AccountPage() {
   const initial = (u?.firstName?.[0] ?? u?.email?.[0] ?? 'G').toUpperCase();
 
   async function handleDelete() {
-    await del.mutateAsync();
+    try {
+      await del.mutateAsync();
+    } catch {
+      return; // del.error renders inline in the confirm box
+    }
     await signOut({ redirectUrl: '/' });
   }
 
@@ -85,6 +89,9 @@ export default function AccountPage() {
                 ? ` You’ll also forfeit your ${formatCredit((balance.data?.availableCents ?? 0) + (balance.data?.lockedCents ?? 0))} in Gloē credit.`
                 : ''}
             </p>
+            {del.error ? (
+              <p style={{ fontSize: 13, color: 'var(--error)', marginTop: 8 }}>{del.error.message}</p>
+            ) : null}
             <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
               <button type="button" onClick={handleDelete} disabled={del.isPending} style={{ background: 'var(--error)', color: '#fff', border: 'none', borderRadius: 'var(--radius-pill)', padding: '10px 18px', fontWeight: 600 }}>
                 {del.isPending ? 'Deleting…' : 'Delete permanently'}
