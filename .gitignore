@@ -69,3 +69,6 @@ Outfit-SemiBold.ttf
 
 # Next dev dist dir (iCloud-excluded via .nosync suffix)
 .next.nosync/
+
+# Agent skill symlinks (npx skills add) — symlinks break Railway buildkit; reinstall locally with: npx skills add clerk/skills
+.claude/skills/
