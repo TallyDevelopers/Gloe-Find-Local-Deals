@@ -205,6 +205,8 @@ export default function ForBusinessPage() {
         <Link href="/legal/terms" style={{ color: 'var(--text-tertiary)' }}>Terms</Link>
         <span style={{ margin: '0 10px' }}>·</span>
         <Link href="/legal/privacy" style={{ color: 'var(--text-tertiary)' }}>Privacy</Link>
+        <span style={{ margin: '0 10px' }}>·</span>
+        <Link href="/legal/vendor-terms" style={{ color: 'var(--text-tertiary)' }}>Vendor Agreement</Link>
         <div style={{ marginTop: 10 }}>© 2026 Gloē</div>
       </footer>
     </main>

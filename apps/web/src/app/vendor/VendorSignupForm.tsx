@@ -42,6 +42,7 @@ export function VendorSignupForm({
   const [resolved, setResolved] = useState<ResolvedAddress | null>(null);
   const [resolvingPlaceId, setResolvingPlaceId] = useState<string | null>(null);
   const [categories, setCategories] = useState<Set<string>>(new Set());
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // The page is auth-gated with no site chrome, and claiming depends on WHICH
@@ -93,7 +94,7 @@ export function VendorSignupForm({
     });
   };
 
-  const canSubmit = businessName.length >= 2 && phone.length >= 7 && resolved !== null;
+  const canSubmit = businessName.length >= 2 && phone.length >= 7 && resolved !== null && agreedToTerms;
 
   const handleSubmit = () => {
     if (!resolved) return;
@@ -109,6 +110,7 @@ export function VendorSignupForm({
       longitude: resolved.longitude,
       googlePlaceId: resolved.placeId,
       categorySlugs: [...categories],
+      agreeToTerms: agreedToTerms,
     });
   };
 
@@ -238,6 +240,25 @@ export function VendorSignupForm({
                 Pick all that apply — you can change these later.
               </p>
             </div>
+
+            {/* GLO-35: Vendor Agreement acceptance — required, stamped on the vendor row. */}
+            <label
+              style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.5 }}
+            >
+              <input
+                type="checkbox"
+                checked={agreedToTerms}
+                onChange={(e) => setAgreedToTerms(e.target.checked)}
+                style={{ marginTop: 3, width: 16, height: 16, accentColor: 'var(--brand-600)', flexShrink: 0 }}
+              />
+              <span>
+                I agree to the{' '}
+                <Link href="/legal/vendor-terms" target="_blank" style={{ color: 'var(--brand-600)', fontWeight: 600 }}>
+                  Gloē Vendor Agreement
+                </Link>
+                , including its chargeback-liability terms.
+              </span>
+            </label>
 
             {error ? <p style={{ color: 'var(--error)', fontSize: 14 }}>{error}</p> : null}
 
