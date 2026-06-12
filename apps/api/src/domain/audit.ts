@@ -108,6 +108,8 @@ export type AuditAction =
   | 'referral.completed'           // referee's first qualifying purchase paid the referrer
   | 'referral.payout_refused'      // floor/cap/rule blocked the referrer payout
   | 'referral.payout_voided'       // card-fingerprint match — self-funding, referrer gets nothing
+  // Customer 360 (GLO-56)
+  | 'customer.push_sent'   // admin sent a one-off push to a single customer
   // Support tickets
   | 'support.replied'      // agent replied to a support ticket
   | 'support.status_set'   // agent resolved / closed / reopened a ticket

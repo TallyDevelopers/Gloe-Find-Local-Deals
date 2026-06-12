@@ -790,7 +790,7 @@ The founder's cockpit — **one screen to run the entire business:** approve ven
 | Fees | Global tier config (create, update, deactivate). Per-vendor override per row. |
 | Audit | Every mutation. Filter by action / vendor / user / date. |
 | Transactions | Browse + drill into individual transactions. |
-| Customers | Consumer roster + detail. Per-txn inline refund. Refunded-txn badge cross-links → Refunds tab. Issue manual coupon = **stub**. |
+| Customers | Roster → **full-page Customer 360** (`/admin/customer/[id]`, GLO-56 — no drawer): every purchase with its cash/credit/promo split, all vouchers, refund history, embedded credit ledger (grant/revoke), referral picture, ledger freeze/unfreeze, **one-off push** (`admin.sendCustomerPush` → registry type `admin_message`, audited as `customer.push_sent`), duplicate-charge alerts, per-txn full/partial refunds. |
 | **Support** | Concierge tickets. Widened drawer with: chat (photo/video), **boss-view customer profile** (lifetime spend, refund %, auto-flags), **order-context history** (which order the ticket is about + all past orders), **inline refund/partial-refund per order**, and refund-badge cross-link → Refunds tab. Reply + push-on-reply, resolve/close. |
 
 **Cross-tab links:** the "refunded $X ↗" badge anywhere (support drawer, customer drawer) jumps to the Refunds tab and flashes the matching record (targeted by transactionId). Customer names in the Refunds ledger jump to that customer's drawer.

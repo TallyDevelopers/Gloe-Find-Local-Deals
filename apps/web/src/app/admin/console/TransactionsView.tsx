@@ -165,8 +165,9 @@ export function TransactionsView({ onJumpToCustomer, openTransactionId, onOpenCo
             <thead>
               <tr style={{ background: 'var(--surface-secondary)', color: 'var(--text-tertiary)', textAlign: 'left' }}>
                 <Th>Time</Th>
-                <Th>Vendor</Th>
                 <Th>Customer</Th>
+                <Th>Listing</Th>
+                <Th>Vendor</Th>
                 <Th align="right">Paid</Th>
                 <Th align="right">Fee</Th>
                 <Th align="right">Payout</Th>
@@ -186,14 +187,6 @@ export function TransactionsView({ onJumpToCustomer, openTransactionId, onOpenCo
                   }}
                 >
                   <Td>{r.paidAt ? new Date(r.paidAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '—'}</Td>
-                  <Td>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); router.push(`/admin/vendor/${r.vendorId}`); }}
-                      style={inlineLinkBtn}
-                    >
-                      {r.vendorName}
-                    </button>
-                  </Td>
                   <Td style={{ color: r.customerName ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>
                     {r.customerId && onJumpToCustomer ? (
                       <button
@@ -206,7 +199,27 @@ export function TransactionsView({ onJumpToCustomer, openTransactionId, onOpenCo
                       r.customerName ?? r.customerEmail ?? '—'
                     )}
                   </Td>
-                  <Td align="right" mono>{money(r.consumerPaidCents)}</Td>
+                  <Td style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', color: r.dealTitle ? 'var(--text-primary)' : 'var(--text-tertiary)' }}>
+                    {r.dealTitle ?? '—'}
+                  </Td>
+                  <Td>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); router.push(`/admin/vendor/${r.vendorId}`); }}
+                      style={inlineLinkBtn}
+                    >
+                      {r.vendorName}
+                    </button>
+                  </Td>
+                  <Td align="right" mono>
+                    {money(r.consumerPaidCents)}
+                    {(r.creditsAppliedCents > 0 || r.promoDiscountCents > 0) ? (
+                      <div style={{ fontSize: 10, color: 'var(--brand-600)', fontWeight: 600 }}>
+                        {r.promoDiscountCents > 0 ? `promo −${money(r.promoDiscountCents)}` : null}
+                        {r.promoDiscountCents > 0 && r.creditsAppliedCents > 0 ? ' · ' : null}
+                        {r.creditsAppliedCents > 0 ? `credit −${money(r.creditsAppliedCents)}` : null}
+                      </div>
+                    ) : null}
+                  </Td>
                   <Td align="right" mono>{money(r.platformFeeCents)}</Td>
                   <Td align="right" mono>
                     {money(r.vendorPayoutCents)}

@@ -84,9 +84,11 @@ import { getTrendingConfig, setTrendingConfig, getDisputeRiskConfig, setDisputeR
 import { reissueClaim } from '../domain/claims';
 import {
   listNotificationTypes,
+  sendNotification,
   updateNotificationType,
   getQueueStats,
 } from '../domain/notifications';
+import { freezeCreditLedger, unfreezeCreditLedger } from '../domain/credits';
 import {
   listDiscoverSections,
   createDiscoverSection,
@@ -1436,6 +1438,48 @@ export const adminRouter = router({
       } catch (e) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: e instanceof Error ? e.message : 'Revoke failed.' });
       }
+    }),
+
+  /* ─────────────────── Customer 360 (GLO-56) ─────────────────── */
+
+  /**
+   * One-off push to a single customer — through the registry's one door
+   * (`admin_message` type renders admin-typed {{title}}/{{body}}). Audited.
+   */
+  sendCustomerPush: adminProcedure
+    .input(z.object({
+      userId: z.string().uuid(),
+      title: z.string().trim().min(1).max(80),
+      body: z.string().trim().min(1).max(220),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await sendNotification(ctx.sql, 'admin_message', input.userId, {
+        vars: { title: input.title, body: input.body },
+      });
+      void writeAudit(ctx.sql, {
+        action: 'customer.push_sent',
+        actorUserId: ctx.auth.userId,
+        meta: { userId: input.userId, title: input.title, body: input.body, result: result.status },
+      });
+      if (result.status === 'unknown_type' || result.status === 'disabled') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Push type admin_message is disabled or missing.' });
+      }
+      return result;
+    }),
+
+  /** Freeze/unfreeze a customer's credit ledger (fraud work). Audited here. */
+  setCreditFreeze: adminProcedure
+    .input(z.object({ userId: z.string().uuid(), frozen: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const changed = input.frozen
+        ? await freezeCreditLedger(ctx.sql, input.userId)
+        : await unfreezeCreditLedger(ctx.sql, input.userId);
+      void writeAudit(ctx.sql, {
+        action: input.frozen ? 'credit.frozen' : 'credit.unfrozen',
+        actorUserId: ctx.auth.userId,
+        meta: { userId: input.userId, changed, manual: true },
+      });
+      return { ok: true, changed };
     }),
 
   /** Approve or reject a pending deal. */

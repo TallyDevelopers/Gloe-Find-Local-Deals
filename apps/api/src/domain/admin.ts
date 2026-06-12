@@ -285,15 +285,20 @@ export async function listAdminTransactions(sql: Sql, filters: TransactionListFi
     customer_name: string | null;
     customer_email: string | null;
     claim_status: string | null;
+    deal_title: string | null;
+    credits_applied_cents: number;
+    promo_discount_cents: number;
   }[]>`
     SELECT
       t.id, t.status, t.consumer_paid_cents, t.platform_fee_cents, t.vendor_payout_cents,
       t.stripe_payment_intent_id, t.stripe_transfer_id, t.paid_at, t.released_at, t.created_at,
+      t.credits_applied_cents, t.promo_discount_cents,
       v.id AS vendor_id, v.business_name,
       u.id AS customer_id,
       COALESCE(NULLIF(TRIM(CONCAT(u.first_name, ' ', u.last_name)), ''), u.email) AS customer_name,
       u.email AS customer_email,
-      (SELECT c.status FROM public.claims c WHERE c.transaction_id = t.id LIMIT 1) AS claim_status
+      (SELECT c.status FROM public.claims c WHERE c.transaction_id = t.id LIMIT 1) AS claim_status,
+      (SELECT (c.snapshot ->> 'dealTitle') FROM public.claims c WHERE c.transaction_id = t.id LIMIT 1) AS deal_title
     FROM public.transactions t
     JOIN public.vendors v ON v.id = t.vendor_id
     LEFT JOIN public.users u ON u.id = t.user_id
@@ -306,7 +311,9 @@ export async function listAdminTransactions(sql: Sql, filters: TransactionListFi
            OR u.email ILIKE ${queryLike}
            OR u.first_name ILIKE ${queryLike}
            OR u.last_name ILIKE ${queryLike}
-           OR t.stripe_payment_intent_id ILIKE ${queryLike})
+           OR t.stripe_payment_intent_id ILIKE ${queryLike}
+           OR EXISTS (SELECT 1 FROM public.claims c WHERE c.transaction_id = t.id
+                        AND (c.snapshot ->> 'dealTitle') ILIKE ${queryLike}))
     ORDER BY COALESCE(t.paid_at, t.created_at) DESC
     LIMIT ${limit}
   `;
@@ -327,6 +334,9 @@ export async function listAdminTransactions(sql: Sql, filters: TransactionListFi
     customerName: r.customer_name,
     customerEmail: r.customer_email,
     claimStatus: r.claim_status,
+    dealTitle: r.deal_title,
+    creditsAppliedCents: r.credits_applied_cents,
+    promoDiscountCents: r.promo_discount_cents,
   }));
 }
 
@@ -528,8 +538,13 @@ export async function getAdminCustomerDetail(sql: Sql, customerId: string) {
     email: string | null;
     phone: string | null;
     created_at: string;
+    referral_code: string | null;
+    referred_by: string | null;
+    credit_frozen_at: string | null;
+    deleted_at: string | null;
   }[]>`
-    SELECT id, display_id, first_name, last_name, email, phone, created_at
+    SELECT id, display_id, first_name, last_name, email, phone, created_at,
+           referral_code, referred_by, credit_frozen_at, deleted_at
     FROM public.users WHERE id = ${customerId} LIMIT 1
   `;
   const u = rows[0];
@@ -547,9 +562,12 @@ export async function getAdminCustomerDetail(sql: Sql, customerId: string) {
     vendor_name: string;
     claim_status: string | null;
     deal_title: string | null;
+    credits_applied_cents: number;
+    promo_discount_cents: number;
   }[]>`
     SELECT
       t.id, t.display_id, t.status, t.consumer_paid_cents, t.refunded_cents, t.paid_at, t.created_at,
+      t.credits_applied_cents, t.promo_discount_cents,
       t.vendor_id,
       v.business_name AS vendor_name,
       (SELECT c.status FROM public.claims c WHERE c.transaction_id = t.id LIMIT 1) AS claim_status,
@@ -558,7 +576,46 @@ export async function getAdminCustomerDetail(sql: Sql, customerId: string) {
     JOIN public.vendors v ON v.id = t.vendor_id
     WHERE t.user_id = ${customerId}
     ORDER BY COALESCE(t.paid_at, t.created_at) DESC
-    LIMIT 100
+    LIMIT 200
+  `;
+
+  // The voucher shelf — every claim this person has ever held.
+  const claims = await sql<{
+    id: string;
+    status: string;
+    human_code: string;
+    expires_at: string;
+    redeemed_at: string | null;
+    created_at: string;
+    transaction_id: string | null;
+    deal_title: string | null;
+    variant_label: string | null;
+    vendor_name: string;
+  }[]>`
+    SELECT c.id, c.status, c.human_code, c.expires_at, c.redeemed_at, c.created_at,
+           c.transaction_id,
+           (c.snapshot ->> 'dealTitle') AS deal_title,
+           (c.snapshot ->> 'variantLabel') AS variant_label,
+           v.business_name AS vendor_name
+    FROM public.claims c
+    JOIN public.vendors v ON v.id = c.vendor_id
+    WHERE c.user_id = ${customerId}
+    ORDER BY c.created_at DESC
+    LIMIT 200
+  `;
+
+  // Referral picture: who brought them in, who they brought in, wallet balance.
+  const referral = await sql<{
+    referrer_name: string | null;
+    referee_count: number;
+    credit_balance_cents: number;
+  }[]>`
+    SELECT
+      (SELECT COALESCE(NULLIF(TRIM(CONCAT(r.first_name, ' ', r.last_name)), ''), r.email)
+         FROM public.users r WHERE r.id = ${rows[0]!.referred_by}) AS referrer_name,
+      (SELECT COUNT(*)::int FROM public.users x WHERE x.referred_by = ${customerId}) AS referee_count,
+      COALESCE((SELECT SUM(l.remaining_cents)::int FROM public.credit_lots l
+                 WHERE l.user_id = ${customerId}), 0) AS credit_balance_cents
   `;
 
   const totals = await sql<{
@@ -584,14 +641,36 @@ export async function getAdminCustomerDetail(sql: Sql, customerId: string) {
       email: u.email,
       phone: u.phone,
       createdAt: u.created_at,
+      referralCode: u.referral_code,
+      creditFrozen: u.credit_frozen_at !== null,
+      deleted: u.deleted_at !== null,
     },
     totals: totals[0]!,
+    referral: {
+      referrerName: referral[0]?.referrer_name ?? null,
+      refereeCount: referral[0]?.referee_count ?? 0,
+      creditBalanceCents: Math.max(0, referral[0]?.credit_balance_cents ?? 0),
+    },
+    vouchers: claims.map((c) => ({
+      id: c.id,
+      status: c.status,
+      humanCode: c.human_code,
+      expiresAt: c.expires_at,
+      redeemedAt: c.redeemed_at,
+      createdAt: c.created_at,
+      transactionId: c.transaction_id,
+      dealTitle: c.deal_title,
+      variantLabel: c.variant_label,
+      vendorName: c.vendor_name,
+    })),
     transactions: transactions.map((t) => ({
       id: t.id,
       displayId: t.display_id,
       status: t.status,
       consumerPaidCents: t.consumer_paid_cents,
       refundedCents: t.refunded_cents,
+      creditsAppliedCents: t.credits_applied_cents,
+      promoDiscountCents: t.promo_discount_cents,
       paidAt: t.paid_at,
       createdAt: t.created_at,
       vendorId: t.vendor_id,

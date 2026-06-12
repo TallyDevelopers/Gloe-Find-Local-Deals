@@ -946,6 +946,18 @@ owner-only force-refunds and "last owner" guards). Combined with the server-deri
 and the 8 transfer walls from §8, god-mode convenience **never becomes a way to send money to the wrong
 account.**
 
+### One customer, one page (Customers → Customer 360)
+
+Click anyone in the Customers roster and you land on their **full page** (no drawer): every purchase
+with its cash / credit / promo split, every voucher and its code, refund history, their complete credit
+ledger, and their referral picture (their code, who brought them in, who they've brought in). Every
+action lives right there too — full or partial refund per purchase, grant or revoke credit, freeze the
+ledger during fraud work, and **send a one-off push to their phone** (typed by you, delivered through
+the notification registry, written to the audit log like everything else). Duplicate-charge clusters
+("I was charged twice!") are flagged automatically at the top. The Transactions tab is the same story
+zoomed out: the whole marketplace's purchases in time order — customer, listing, vendor, the
+discount/credit split, fee, payout — one row each.
+
 ### The treatment menu is yours to edit (Admin → Treatments)
 
 The master menu of the marketplace — 8 categories and the ~128 treatments under them (every tox

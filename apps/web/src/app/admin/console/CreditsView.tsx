@@ -696,7 +696,9 @@ function UserLedgerPanel() {
   );
 }
 
-function UserLedger({ userId, onClear }: { userId: string; onClear: () => void }) {
+/** Per-user wallet panel — also embedded by the Customer 360 page (GLO-56),
+ *  which passes no onClear (the page IS the customer context). */
+export function UserLedger({ userId, onClear }: { userId: string; onClear?: () => void }) {
   const utils = trpc.useUtils();
   const q = trpc.admin.creditUserLedger.useQuery({ userId });
   const invalidate = () => utils.admin.creditUserLedger.invalidate({ userId });
@@ -758,7 +760,7 @@ function UserLedger({ userId, onClear }: { userId: string; onClear: () => void }
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
           {!grantOpen ? <button onClick={() => setGrantOpen(true)} style={primaryBtn}>+ Grant credit</button> : null}
-          <button onClick={onClear} style={secondaryBtn}>Change customer</button>
+          {onClear ? <button onClick={onClear} style={secondaryBtn}>Change customer</button> : null}
         </div>
       </div>
 
