@@ -10,7 +10,8 @@
  *
  * Set in the Clerk DASHBOARD, not here (appearance only styles): the app name
  * ("Gloē"), the logo (shows above the title), and which SSO providers appear
- * (Apple + Google + TikTok). The "Development mode" badge clears on production.
+ * (Apple + Google — Facebook/TikTok dropped 2026-06-12, fewer prod creds +
+ * less choice paralysis). The "Development mode" badge clears on production.
  */
 const BRAND = {
   rose: '#b8806f', // brand-600

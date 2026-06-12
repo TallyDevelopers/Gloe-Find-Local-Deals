@@ -2,14 +2,16 @@ import type { SocialProvider } from '@gloe/auth';
 import { Text, radius, space, useTheme } from '@gloe/ui';
 import { ActivityIndicator, Pressable, View } from 'react-native';
 
-import { AppleIcon, FacebookIcon, GoogleIcon, TikTokIcon } from './SocialIcons';
+import { AppleIcon, GoogleIcon } from './SocialIcons';
 
 /**
  * Social providers, in display order (ResortPass format = icon-only squares in a
  * row). Apple is required on iOS whenever any social login exists (App Store
- * 4.8). Each must be enabled in the Clerk dashboard.
+ * 4.8). Each must be enabled in the Clerk dashboard. Apple + Google only
+ * (decided 2026-06-12): Facebook/TikTok dropped at launch — fewer prod
+ * credentials, less choice paralysis; revisit post-launch if asked for.
  */
-const PROVIDERS: SocialProvider[] = ['apple', 'google', 'facebook'];
+const PROVIDERS: SocialProvider[] = ['apple', 'google'];
 
 interface Props {
   onPress: (provider: SocialProvider) => void;
@@ -17,7 +19,7 @@ interface Props {
   error: string | null;
 }
 
-/** A row of icon-only social buttons (Apple · Google · Facebook), ResortPass-style. */
+/** A row of icon-only social buttons (Apple · Google), ResortPass-style. */
 export function SocialAuthButtons({ onPress, pending, error }: Props) {
   const { color: palette } = useTheme();
   const mono = palette.text.primary;
@@ -28,10 +30,8 @@ export function SocialAuthButtons({ onPress, pending, error }: Props) {
         return <AppleIcon size={24} color={mono} />;
       case 'google':
         return <GoogleIcon size={24} />;
-      case 'facebook':
-        return <FacebookIcon size={24} />;
-      case 'tiktok':
-        return <TikTokIcon size={24} color={mono} />;
+      default:
+        return null;
     }
   };
 
