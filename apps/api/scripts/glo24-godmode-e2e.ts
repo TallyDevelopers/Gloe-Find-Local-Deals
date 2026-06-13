@@ -22,6 +22,7 @@ import {
   getCreditLedgerForUser,
   getCreditProgramStats,
   listCreditCampaigns,
+  listCustomerCities,
   previewCampaignAudience,
   reactivateCreditRule,
   revokeCreditLot,
@@ -29,6 +30,7 @@ import {
   updateCreditRule,
 } from '../src/domain/creditAdmin';
 import { computeApplicableCredits, freezeCreditLedger, grantCredit, unfreezeCreditLedger } from '../src/domain/credits';
+import { recordUserLocation } from '../src/domain/userLocation';
 import { creditCampaignInput, creditRuleInput, grantCreditInput, revokeCreditLotInput } from '../src/router/admin.router';
 import { friendlyZodMessage } from '../src/router/trpc';
 
@@ -259,6 +261,57 @@ async function main() {
     const stats = await getCreditProgramStats(sql);
     check('stats numbers are all finite', Object.entries(stats).every(([k, v]) => k === 'byKind' || Number.isFinite(v as number)));
     check('outstanding liability ≥ 0', stats.outstandingLiabilityCents >= 0);
+
+    /* ── G. Location capture + city-targeted campaigns ────────────────────── */
+    console.log('\nG. Location capture + city targeting');
+
+    const CITY = 'Testopolis, ZZ';
+    // Seed a known city with a NULL timestamp: the first capture updates the
+    // coords (stale) but keeps the city (move < 10km → no live geocode call).
+    await sql`
+      UPDATE public.users
+      SET last_lat = 32.715, last_lng = -117.161, last_city = ${CITY}, last_location_at = NULL
+      WHERE id = ${userId}
+    `;
+    await recordUserLocation(sql, userId, 32.7157123, -117.1610789);
+    const readLoc = async () => (await sql<{
+      last_lat: number | null; last_lng: number | null; last_city: string | null; last_location_at: string | null;
+    }[]>`
+      SELECT last_lat, last_lng, last_city, last_location_at FROM public.users WHERE id = ${userId}
+    `)[0]!;
+    let loc = await readLoc();
+    check('coords stored rounded to ~3 decimals (city-block)', loc.last_lat === 32.716 && loc.last_lng === -117.161, `(got: ${loc.last_lat}, ${loc.last_lng})`);
+    check('city label kept on a small move (no re-geocode)', loc.last_city === CITY, `(got: ${loc.last_city})`);
+    check('location timestamp set', !!loc.last_location_at);
+
+    await recordUserLocation(sql, userId, 40, -100);
+    loc = await readLoc();
+    check('second write inside 15 min is throttled', loc.last_lat === 32.716, `(got: ${loc.last_lat})`);
+
+    const cities = await listCustomerCities(sql);
+    check('city directory lists the test city w/ headcount', cities.some((c) => c.city === CITY && c.userCount >= 1));
+
+    const inCity = await previewCampaignAudience(sql, 'everyone', CITY);
+    check('city-filtered audience finds the customer', inCity.userCount === 1, `(got: ${inCity.userCount})`);
+    const ghost = await previewCampaignAudience(sql, 'everyone', 'Nowhereville, XX');
+    check('unknown city audience is 0', ghost.userCount === 0, `(got: ${ghost.userCount})`);
+
+    // A draft aimed at a 0-customer city must refuse to send AND stay a draft.
+    const ghostCamp = await createCreditCampaign(sql, {
+      name: 'GLO-24 e2e ghost-city (delete me)', amountCents: 100, expiresAfterDays: 30,
+      audience: 'everyone', audienceCity: 'Nowhereville, XX', messageTitle: 'Test', messageBody: 'Never sent.',
+    }, userId);
+    campaignId = ghostCamp.id;
+    await expectThrow('0-customer city send refused with a friendly message', () =>
+      sendCreditCampaign(sql, ghostCamp.id, userId!), 'nothing to send');
+    const stillDraft = await sql<{ status: string }[]>`
+      SELECT status FROM public.credit_campaigns WHERE id = ${ghostCamp.id}
+    `;
+    check('refused send leaves the draft intact', stillDraft[0]?.status === 'draft', `(got: ${stillDraft[0]?.status})`);
+    const listedGhost = (await listCreditCampaigns(sql)).find((c) => c.id === ghostCamp.id);
+    check('campaign list carries the city', listedGhost?.audienceCity === 'Nowhereville, XX', `(got: ${listedGhost?.audienceCity})`);
+    await deleteDraftCampaign(sql, ghostCamp.id);
+    campaignId = null;
   } finally {
     /* ── Cleanup ──────────────────────────────────────────────────────────── */
     console.log('\nCleanup…');

@@ -69,6 +69,9 @@ export default function CustomerDetailPage() {
                 </h1>
                 <div style={{ color: 'var(--text-tertiary)', fontSize: 14, marginTop: 4 }}>
                   {d.customer.email ?? '—'} · {d.customer.phone ?? 'no phone'} · joined {new Date(d.customer.createdAt).toLocaleDateString()}
+                  {d.customer.lastCity && d.customer.lastLocationAt ? (
+                    <> · last seen near <strong style={{ color: 'var(--text-secondary)' }}>{d.customer.lastCity}</strong> ({new Date(d.customer.lastLocationAt).toLocaleDateString()})</>
+                  ) : null}
                 </div>
                 <div style={{ color: 'var(--text-tertiary)', fontSize: 13, marginTop: 4 }}>
                   Referral code <strong>{d.customer.referralCode ?? '—'}</strong>

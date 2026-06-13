@@ -699,7 +699,9 @@ that's also our dispute evidence.
   $500+ → $25), earned on the cash portion only, flip a row in god mode to turn on.
 - **Signup bonus** *(built, switched OFF)* — $10 campaign knob, ships dark.
 - **Credit campaigns** — god-mode blasts ("$10 to everyone lapsed 60 days") with an audience picker,
-  a cost preview before sending, and a push+email per grant.
+  an optional **city drill-down** ("…but only people in San Diego"), a cost preview before sending,
+  and a push+email per grant. The city chips come from real customer locations, each with a live
+  headcount, so you can see the audience before you spend a dollar.
 - **Refund returns** — the credit share of any refund comes back as credit (cash goes back to the card).
 - **Admin grants** — goodwill, one customer at a time, from the customer's ledger screen.
 
@@ -803,8 +805,8 @@ Money-printing features attract fraud, so every door is guarded:
 
 ### Where you drive it
 
-**God mode → Credits**: rules editor, campaigns (compose, preview audience + cost, send), any
-customer's ledger with manual grant/revoke, the program dashboard. **God mode → Promos**: place a
+**God mode → Credits**: rules editor, campaigns (compose, pick audience + city, preview count + cost,
+send), any customer's ledger with manual grant/revoke, the program dashboard. **God mode → Promos**: place a
 platform-funded promo on any live deal, watch cost-to-date, end anything early. **Vendor dashboard →
 Boost**: vendors run their own promos on their own deals. **Customer side**: wallet balance + history,
 the "Give $20, get $20" referral row, the credit toggle + promo line at checkout, and receipts that
@@ -957,6 +959,14 @@ the notification registry, written to the audit log like everything else). Dupli
 ("I was charged twice!") are flagged automatically at the top. The Transactions tab is the same story
 zoomed out: the whole marketplace's purchases in time order — customer, listing, vendor, the
 discount/credit split, fee, payout — one row each.
+
+**You also see where customers actually are.** The roster has a "Last seen near" column and the
+customer page shows it too — the city where they last browsed, with how long ago. The app already
+sends coordinates with every browse (that's how "1.2 mi away" works); now the last one is kept instead
+of thrown away. Privacy posture, deliberately boring: foreground browsing only (never background
+tracking), rounded to roughly a city block before it's stored, refreshed at most every 15 minutes, and
+disclosed in the privacy policy. This same data feeds the campaign city picker — "everyone in San
+Diego" is a real, countable audience, not a guess.
 
 ### The treatment menu is yours to edit (Admin → Treatments)
 

@@ -3,9 +3,24 @@ import { z } from 'zod';
 
 import { detectSubtypeForText, getCategoryTreatments, getDeal, getDiscoverFeed, getTrendingTreatments, listDeals, suggestSearchTerms } from '../domain/deals';
 import { listActiveDiscoverSections } from '../domain/discoverSections';
+import { recordUserLocation } from '../domain/userLocation';
 import { publicProcedure, router } from './trpc';
 
 const sortEnum = z.enum(['relevance', 'distance', 'price', 'rating', 'discount']);
+
+/**
+ * Opportunistic last-known-location capture: signed-in browse calls already
+ * carry coords for distance ranking — persist them (throttled + rounded in
+ * the domain). Fire-and-forget; never blocks or fails the read path.
+ */
+function captureLocation(
+  ctx: { sql: Parameters<typeof recordUserLocation>[0]; auth: { userId: string } | null },
+  input: { userLat?: number; userLng?: number } | undefined,
+): void {
+  if (ctx.auth && typeof input?.userLat === 'number' && typeof input?.userLng === 'number') {
+    void recordUserLocation(ctx.sql, ctx.auth.userId, input.userLat, input.userLng);
+  }
+}
 
 export const dealsRouter = router({
   list: publicProcedure
@@ -57,6 +72,7 @@ export const dealsRouter = router({
       // device-local anon seed. Both are fine inputs to listDeals — they just
       // produce a deterministic-per-viewer-per-day jitter.
       const viewerSeed = ctx.auth?.userId ?? input?.anonSeed;
+      captureLocation(ctx, input);
       return listDeals(ctx.sql, { ...(input ?? {}), viewerSeed });
     }),
 
@@ -82,6 +98,7 @@ export const dealsRouter = router({
     )
     .query(({ ctx, input }) => {
       const viewerSeed = ctx.auth?.userId ?? input?.anonSeed;
+      captureLocation(ctx, input);
       return getDiscoverFeed(ctx.sql, { ...(input ?? {}), viewerSeed });
     }),
 
@@ -119,6 +136,7 @@ export const dealsRouter = router({
     )
     .query(({ ctx, input }) => {
       const viewerSeed = ctx.auth?.userId ?? input.anonSeed;
+      captureLocation(ctx, input);
       return listDeals(ctx.sql, { ...input, viewerSeed });
     }),
 

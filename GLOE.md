@@ -790,7 +790,7 @@ The founder's cockpit — **one screen to run the entire business:** approve ven
 | Fees | Global tier config (create, update, deactivate). Per-vendor override per row. |
 | Audit | Every mutation. Filter by action / vendor / user / date. |
 | Transactions | Browse + drill into individual transactions. |
-| Customers | Roster → **full-page Customer 360** (`/admin/customer/[id]`, GLO-56 — no drawer): every purchase with its cash/credit/promo split, all vouchers, refund history, embedded credit ledger (grant/revoke), referral picture, ledger freeze/unfreeze, **one-off push** (`admin.sendCustomerPush` → registry type `admin_message`, audited as `customer.push_sent`), duplicate-charge alerts, per-txn full/partial refunds. |
+| Customers | Roster → **full-page Customer 360** (`/admin/customer/[id]`, GLO-56 — no drawer): every purchase with its cash/credit/promo split, all vouchers, refund history, embedded credit ledger (grant/revoke), referral picture, ledger freeze/unfreeze, **one-off push** (`admin.sendCustomerPush` → registry type `admin_message`, audited as `customer.push_sent`), duplicate-charge alerts, per-txn full/partial refunds, last-seen-near city (from browse location). |
 | **Support** | Concierge tickets. Widened drawer with: chat (photo/video), **boss-view customer profile** (lifetime spend, refund %, auto-flags), **order-context history** (which order the ticket is about + all past orders), **inline refund/partial-refund per order**, and refund-badge cross-link → Refunds tab. Reply + push-on-reply, resolve/close. |
 
 **Cross-tab links:** the "refunded $X ↗" badge anywhere (support drawer, customer drawer) jumps to the Refunds tab and flashes the matching record (targeted by transactionId). Customer names in the Refunds ledger jump to that customer's drawer.
@@ -813,7 +813,8 @@ One incentives engine, two levers. **Wallet credits** (GLO-24) are personal doll
 - `credit_entries` — append-only debits pointing at their lot: `redemption | expiry | clawback | forfeiture`.
 - Balance = `SUM(remaining_cents)` across lots; UI floors at $0. Redemption consumes lots FIFO-by-soonest-expiry.
 - `credit_rules` — god-mode-editable program knobs (the `platform_fees` pattern): tier brackets, referral give/get + `min_first_purchase_cents`, `expires_after_days` (default 90), monthly caps.
-- `credit_campaigns` — push-credit blasts; audience ∈ `everyone | lapsed_60d | signed_up_never_purchased`; idempotent per (campaign, user).
+- `credit_campaigns` — push-credit blasts; audience ∈ `everyone | lapsed_60d | signed_up_never_purchased`, optionally **drilled down by city** (`audience_city` matches `users.last_city`); idempotent per (campaign, user).
+- `users.last_lat/last_lng/last_city/last_location_at` — **last-known approximate location**, captured opportunistically from signed-in browse calls (the app already sends coords to `deals.list`/`discoverFeed`/`search` for distance ranking). Foreground-only by construction, rounded to 3 decimals (~city block), throttled to one write / 15 min, city re-geocoded only on a ≥10 km move (`domain/userLocation.ts`). Powers the Customers "Last seen near" column, the Customer 360 header line, and campaign city targeting (`admin.listCustomerCities` feeds the picker). Disclosed in the privacy policy; nutrition label must say Location = collected, linked.
 
 **One door:** `grantCredit()` (`credits.ts`) is the only code path that mints lots. Idempotency walls (partial unique indexes): (kind, transaction_id), (kind, referral_id), (campaign_id, user_id) — webhook retries and double-clicks return `duplicate`, never double money.
 

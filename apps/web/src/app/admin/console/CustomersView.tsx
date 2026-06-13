@@ -13,6 +13,16 @@ function money(cents: number): string {
   return '$' + (cents / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function ago(iso: string): string {
+  const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (min < 60) return min < 1 ? 'now' : `${min}m`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr}h`;
+  const day = Math.round(hr / 24);
+  if (day < 30) return `${day}d`;
+  return new Date(iso).toLocaleDateString();
+}
+
 /**
  * Customers explorer — a searchable roster. Clicking a row opens the
  * full-page Customer 360 (/admin/customer/[id]) with purchases, vouchers,
@@ -53,6 +63,7 @@ export function CustomersView() {
                 <Th>Name</Th>
                 <Th>ID</Th>
                 <Th>Email</Th>
+                <Th>Last seen near</Th>
                 <Th align="right">Purchases</Th>
                 <Th align="right">Lifetime spend</Th>
                 <Th>Last purchase</Th>
@@ -71,6 +82,18 @@ export function CustomersView() {
                     <Td><strong>{name}</strong></Td>
                     <Td style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12, color: 'var(--text-secondary)' }}>{c.displayId}</Td>
                     <Td style={{ color: 'var(--text-secondary)' }}>{c.email ?? '—'}</Td>
+                    <Td>
+                      {c.lastCity ? (
+                        <>
+                          {c.lastCity}
+                          {c.lastLocationAt ? (
+                            <span style={{ color: 'var(--text-tertiary)', fontSize: 11 }}> · {ago(c.lastLocationAt)}</span>
+                          ) : null}
+                        </>
+                      ) : (
+                        <span style={{ color: 'var(--text-tertiary)' }}>—</span>
+                      )}
+                    </Td>
                     <Td align="right" mono>{c.purchaseCount}</Td>
                     <Td align="right" mono>{money(c.lifetimePaidCents)}</Td>
                     <Td>{c.lastPaidAt ? new Date(c.lastPaidAt).toLocaleDateString() : '—'}</Td>

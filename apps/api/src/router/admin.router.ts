@@ -61,6 +61,7 @@ import {
   deleteDraftCampaign,
   getCreditLedgerForUser,
   getCreditProgramStats,
+  listCustomerCities,
   listCreditCampaigns,
   listCreditRules,
   previewCampaignAudience,
@@ -136,6 +137,8 @@ export const creditCampaignInput = z.object({
   amountCents: z.number().int().positive('Enter a credit amount per customer.').max(50_000, 'Campaign credits are capped at $500 per customer.'),
   expiresAfterDays: z.number().int().min(1, 'Expiry must be at least 1 day.').max(3650, 'Expiry can be at most 3650 days (10 years).'),
   audience: z.enum(['everyone', 'lapsed_60d', 'signed_up_never_purchased']),
+  /** Optional city drill-down (must match a users.last_city value). Null = anywhere. */
+  audienceCity: z.string().trim().min(2).max(120).nullable().optional(),
   messageTitle: z.string().trim().min(2, 'Write the push/email title customers will see.').max(120, 'Keep the title under 120 characters.'),
   messageBody: z.string().trim().min(2, 'Write the message body customers will see.').max(300, 'Keep the message under 300 characters.'),
 });
@@ -1385,8 +1388,14 @@ export const adminRouter = router({
 
   /** Cost preview for the review step: how many users the audience resolves to. */
   previewCreditCampaign: adminProcedure
-    .input(z.object({ audience: z.enum(['everyone', 'lapsed_60d', 'signed_up_never_purchased']) }))
-    .query(({ ctx, input }) => previewCampaignAudience(ctx.sql, input.audience)),
+    .input(z.object({
+      audience: z.enum(['everyone', 'lapsed_60d', 'signed_up_never_purchased']),
+      audienceCity: z.string().trim().min(2).max(120).nullable().optional(),
+    }))
+    .query(({ ctx, input }) => previewCampaignAudience(ctx.sql, input.audience, input.audienceCity ?? null)),
+
+  /** Cities with customer headcount (from last-known browse location) — the targeting picker. */
+  listCustomerCities: adminProcedure.query(({ ctx }) => listCustomerCities(ctx.sql)),
 
   /**
    * Fire a campaign: flips draft→sent (the idempotency wall), then grants in a

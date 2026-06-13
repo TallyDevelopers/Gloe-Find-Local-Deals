@@ -454,12 +454,14 @@ interface CampaignForm {
   amountDollars: string;
   expiresDays: string;
   audience: Campaign['audience'];
+  /** null = anywhere; otherwise a users.last_city value from the picker. */
+  audienceCity: string | null;
   messageTitle: string;
   messageBody: string;
 }
 
 function emptyCampaignForm(): CampaignForm {
-  return { name: '', amountDollars: '', expiresDays: '90', audience: 'everyone', messageTitle: '', messageBody: '' };
+  return { name: '', amountDollars: '', expiresDays: '90', audience: 'everyone', audienceCity: null, messageTitle: '', messageBody: '' };
 }
 
 function CampaignsPanel() {
@@ -505,6 +507,7 @@ function CampaignsPanel() {
       amountCents,
       expiresAfterDays: days,
       audience: form.audience,
+      audienceCity: form.audienceCity,
       messageTitle: form.messageTitle.trim(),
       messageBody: form.messageBody.trim(),
     });
@@ -539,6 +542,7 @@ function CampaignsPanel() {
               </TypeChip>
             ))}
           </div>
+          <CityPicker value={form.audienceCity} onChange={(city) => setForm({ ...form, audienceCity: city })} />
           <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
             <LabeledInput label="Push / email title (customers see this)" value={form.messageTitle} onChange={(v) => setForm({ ...form, messageTitle: v })} placeholder="A little glow on us 💆" />
             <LabeledInput label="Message body" value={form.messageBody} onChange={(v) => setForm({ ...form, messageBody: v })} placeholder="We added $10 of Gloē credit to your wallet — it applies automatically at checkout." />
@@ -592,7 +596,10 @@ function CampaignsPanel() {
                     {new Date(c.createdAt).toLocaleDateString()}{c.createdByEmail ? ` · ${c.createdByEmail}` : ''}
                   </div>
                 </Td>
-                <Td>{AUDIENCE_LABEL[c.audience]}</Td>
+                <Td>
+                  {AUDIENCE_LABEL[c.audience]}
+                  {c.audienceCity ? <div style={{ fontSize: 11, color: 'var(--brand-600)', fontWeight: 600 }}>{c.audienceCity}</div> : null}
+                </Td>
                 <Td align="right" mono>{money(c.amountCents)}</Td>
                 <Td align="right" mono>
                   {c.status === 'sent' ? <>{money(c.grantedCents)}<div style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{c.grantedCount} wallets</div></> : '—'}
@@ -624,9 +631,34 @@ function CampaignsPanel() {
   );
 }
 
+/**
+ * City drill-down for campaign targeting — chips fed by users.last_city
+ * (captured from signed-in browsing). "Anywhere" = no city filter. Hidden
+ * entirely until at least one customer has a known city.
+ */
+function CityPicker({ value, onChange }: { value: string | null; onChange: (city: string | null) => void }) {
+  const cities = trpc.admin.listCustomerCities.useQuery();
+  if (!cities.data || cities.data.length === 0) return null;
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div style={{ fontSize: 12, color: 'var(--text-tertiary)', fontWeight: 600, marginBottom: 6 }}>
+        City (last-known browsing location)
+      </div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <TypeChip on={value == null} onClick={() => onChange(null)}>Anywhere</TypeChip>
+        {cities.data.map((c) => (
+          <TypeChip key={c.city} on={value === c.city} onClick={() => onChange(c.city)}>
+            {c.city} · {c.userCount.toLocaleString()}
+          </TypeChip>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /** The "are you sure" step: live audience count → total cost → owner-gated send. */
 function CampaignReview({ campaign, onClose, onDone }: { campaign: Campaign; onClose: () => void; onDone: () => void }) {
-  const preview = trpc.admin.previewCreditCampaign.useQuery({ audience: campaign.audience });
+  const preview = trpc.admin.previewCreditCampaign.useQuery({ audience: campaign.audience, audienceCity: campaign.audienceCity });
   const send = trpc.admin.sendCreditCampaign.useMutation({ onSuccess: onDone });
   const remove = trpc.admin.deleteCreditCampaign.useMutation({ onSuccess: onDone });
 
@@ -644,7 +676,7 @@ function CampaignReview({ campaign, onClose, onDone }: { campaign: Campaign; onC
           'Counting the audience…'
         ) : (
           <>
-            <strong>{AUDIENCE_LABEL[campaign.audience]}</strong> resolves to <strong>{userCount.toLocaleString()}</strong> customers ×{' '}
+            <strong>{AUDIENCE_LABEL[campaign.audience]}{campaign.audienceCity ? ` in ${campaign.audienceCity}` : ''}</strong> resolves to <strong>{userCount.toLocaleString()}</strong> customers ×{' '}
             {money(campaign.amountCents)} = <strong>{money(totalCents!)}</strong> max liability (expires after {campaign.expiresAfterDays} days).
             Each gets a push + email: “{campaign.messageTitle}”.
           </>

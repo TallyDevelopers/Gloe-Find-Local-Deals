@@ -186,6 +186,33 @@ export async function resolvePlace(placeId: string): Promise<ResolvedPlace | nul
   };
 }
 
+interface ReverseGeocodeResponse {
+  status: string;
+  error_message?: string;
+  results: { address_components: AddressComponent[] }[];
+}
+
+/**
+ * Coords → "San Diego, CA" (city + region short code). Null when nothing
+ * resolves or maps is unconfigured — callers store coords without a label.
+ */
+export async function reverseGeocodeCity(lat: number, lng: number): Promise<string | null> {
+  if (!GOOGLE_KEY) return null;
+  const url = new URL(`${BASE}/geocode/json`);
+  url.searchParams.set('latlng', `${lat},${lng}`);
+  url.searchParams.set('result_type', 'locality|administrative_area_level_2');
+  url.searchParams.set('key', key());
+
+  const res = await fetch(url);
+  const data = (await res.json()) as ReverseGeocodeResponse;
+  if (data.status !== 'OK' || !data.results[0]) return null;
+  const c = data.results[0].address_components;
+  const city = pick(c, 'locality') || pick(c, 'administrative_area_level_2');
+  const region = pick(c, 'administrative_area_level_1', true);
+  if (!city) return null;
+  return region ? `${city}, ${region}` : city;
+}
+
 export interface StaticMapOptions {
   lat: number;
   lng: number;

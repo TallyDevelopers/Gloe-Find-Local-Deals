@@ -268,6 +268,8 @@ export interface CreditCampaignRow {
   amountCents: number;
   expiresAfterDays: number;
   audience: CampaignAudience;
+  /** Optional city drill-down (matches users.last_city). Null = anywhere. */
+  audienceCity: string | null;
   messageTitle: string;
   messageBody: string;
   status: 'draft' | 'sent';
@@ -288,6 +290,7 @@ export async function listCreditCampaigns(sql: Sql): Promise<CreditCampaignRow[]
     amount_cents: number;
     expires_after_days: number;
     audience: CampaignAudience;
+    audience_city: string | null;
     message_title: string;
     message_body: string;
     status: 'draft' | 'sent';
@@ -300,7 +303,7 @@ export async function listCreditCampaigns(sql: Sql): Promise<CreditCampaignRow[]
     created_by_email: string | null;
   }[]>`
     SELECT
-      c.id, c.name, c.amount_cents, c.expires_after_days, c.audience,
+      c.id, c.name, c.amount_cents, c.expires_after_days, c.audience, c.audience_city,
       c.message_title, c.message_body, c.status, c.sent_at,
       c.granted_count, c.granted_cents, c.created_at,
       u.email AS created_by_email,
@@ -321,6 +324,7 @@ export async function listCreditCampaigns(sql: Sql): Promise<CreditCampaignRow[]
     amountCents: r.amount_cents,
     expiresAfterDays: r.expires_after_days,
     audience: r.audience,
+    audienceCity: r.audience_city,
     messageTitle: r.message_title,
     messageBody: r.message_body,
     status: r.status,
@@ -341,6 +345,7 @@ export async function createCreditCampaign(
     amountCents: number;
     expiresAfterDays: number;
     audience: CampaignAudience;
+    audienceCity?: string | null;
     messageTitle: string;
     messageBody: string;
   },
@@ -348,10 +353,11 @@ export async function createCreditCampaign(
 ): Promise<{ id: string }> {
   const rows = await sql<{ id: string }[]>`
     INSERT INTO public.credit_campaigns (
-      name, amount_cents, expires_after_days, audience, message_title, message_body, created_by
+      name, amount_cents, expires_after_days, audience, audience_city,
+      message_title, message_body, created_by
     ) VALUES (
       ${input.name}, ${input.amountCents}, ${input.expiresAfterDays}, ${input.audience},
-      ${input.messageTitle}, ${input.messageBody}, ${createdBy}
+      ${input.audienceCity ?? null}, ${input.messageTitle}, ${input.messageBody}, ${createdBy}
     )
     RETURNING id
   `;
@@ -368,17 +374,28 @@ export async function deleteDraftCampaign(sql: Sql, campaignId: string): Promise
   if (!rows[0]) throw new Error('Campaign not found or already sent.');
 }
 
-async function resolveAudience(sql: Sql, audience: CampaignAudience): Promise<string[]> {
+async function resolveAudience(
+  sql: Sql,
+  audience: CampaignAudience,
+  city: string | null = null,
+): Promise<string[]> {
+  // City drill-down composes with every base audience: when set, only users
+  // whose last-known browsing city matches are included (NULL city users are
+  // out — we genuinely don't know where they are).
+  const cityFilter = city
+    ? sql`AND u.last_city = ${city}`
+    : sql``;
   if (audience === 'everyone') {
     const rows = await sql<{ id: string }[]>`
-      SELECT id FROM public.users WHERE deleted_at IS NULL
+      SELECT u.id FROM public.users u
+      WHERE u.deleted_at IS NULL ${cityFilter}
     `;
     return rows.map((r) => r.id);
   }
   if (audience === 'lapsed_60d') {
     const rows = await sql<{ id: string }[]>`
       SELECT u.id FROM public.users u
-      WHERE u.deleted_at IS NULL
+      WHERE u.deleted_at IS NULL ${cityFilter}
         AND EXISTS (SELECT 1 FROM public.transactions t
                     WHERE t.user_id = u.id AND t.paid_at IS NOT NULL)
         AND NOT EXISTS (SELECT 1 FROM public.transactions t
@@ -388,7 +405,7 @@ async function resolveAudience(sql: Sql, audience: CampaignAudience): Promise<st
   }
   const rows = await sql<{ id: string }[]>`
     SELECT u.id FROM public.users u
-    WHERE u.deleted_at IS NULL
+    WHERE u.deleted_at IS NULL ${cityFilter}
       AND NOT EXISTS (SELECT 1 FROM public.transactions t
                       WHERE t.user_id = u.id AND t.paid_at IS NOT NULL)
   `;
@@ -399,9 +416,28 @@ async function resolveAudience(sql: Sql, audience: CampaignAudience): Promise<st
 export async function previewCampaignAudience(
   sql: Sql,
   audience: CampaignAudience,
+  city: string | null = null,
 ): Promise<{ userCount: number }> {
-  const ids = await resolveAudience(sql, audience);
+  const ids = await resolveAudience(sql, audience, city);
   return { userCount: ids.length };
+}
+
+/**
+ * Cities we actually have customers in (from last-known browse location),
+ * with headcount — the drill-down picker for campaign targeting.
+ */
+export async function listCustomerCities(
+  sql: Sql,
+): Promise<Array<{ city: string; userCount: number }>> {
+  const rows = await sql<{ city: string; user_count: number }[]>`
+    SELECT last_city AS city, COUNT(*)::int AS user_count
+    FROM public.users
+    WHERE deleted_at IS NULL AND last_city IS NOT NULL
+    GROUP BY last_city
+    ORDER BY user_count DESC, last_city ASC
+    LIMIT 100
+  `;
+  return rows.map((r) => ({ city: r.city, userCount: r.user_count }));
 }
 
 function money(cents: number): string {
@@ -426,10 +462,12 @@ export async function sendCreditCampaign(
     amount_cents: number;
     expires_after_days: number;
     audience: CampaignAudience;
+    audience_city: string | null;
     message_title: string;
     message_body: string;
   }[]>`
-    SELECT id, name, amount_cents, expires_after_days, audience, message_title, message_body
+    SELECT id, name, amount_cents, expires_after_days, audience, audience_city,
+           message_title, message_body
     FROM public.credit_campaigns
     WHERE id = ${campaignId} AND status = 'draft'
     LIMIT 1
@@ -438,9 +476,13 @@ export async function sendCreditCampaign(
   if (!c) throw new Error('Campaign not found or already sent.');
 
   // Resolve BEFORE flipping to sent — an empty audience must not burn the draft.
-  const userIds = await resolveAudience(sql, c.audience);
+  const userIds = await resolveAudience(sql, c.audience, c.audience_city);
   if (userIds.length === 0) {
-    throw new Error('This audience resolves to 0 customers right now — nothing to send.');
+    throw new Error(
+      c.audience_city
+        ? `No customers with a last-known location in ${c.audience_city} right now — nothing to send.`
+        : 'This audience resolves to 0 customers right now — nothing to send.',
+    );
   }
 
   const flipped = await sql<{ id: string }[]>`
@@ -458,6 +500,7 @@ export async function sendCreditCampaign(
       campaignId: c.id,
       name: c.name,
       audience: c.audience,
+      audienceCity: c.audience_city,
       audienceCount: userIds.length,
       amountCents: c.amount_cents,
       totalCostCents: c.amount_cents * userIds.length,

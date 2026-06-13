@@ -495,12 +495,15 @@ export async function listAdminCustomers(sql: Sql, query: string | undefined) {
     email: string | null;
     phone: string | null;
     created_at: string;
+    last_city: string | null;
+    last_location_at: string | null;
     purchase_count: number;
     lifetime_paid_cents: number;
     last_paid_at: string | null;
   }[]>`
     SELECT
       u.id, u.display_id, u.first_name, u.last_name, u.email, u.phone, u.created_at,
+      u.last_city, u.last_location_at,
       COALESCE((SELECT COUNT(*) FROM public.transactions t
                 WHERE t.user_id = u.id AND t.status IN ('paid','released','partially_refunded')), 0)::int AS purchase_count,
       COALESCE((SELECT SUM(consumer_paid_cents) FROM public.transactions t
@@ -523,6 +526,8 @@ export async function listAdminCustomers(sql: Sql, query: string | undefined) {
     email: r.email,
     phone: r.phone,
     createdAt: r.created_at,
+    lastCity: r.last_city,
+    lastLocationAt: r.last_location_at,
     purchaseCount: r.purchase_count,
     lifetimePaidCents: r.lifetime_paid_cents,
     lastPaidAt: r.last_paid_at,
@@ -542,9 +547,14 @@ export async function getAdminCustomerDetail(sql: Sql, customerId: string) {
     referred_by: string | null;
     credit_frozen_at: string | null;
     deleted_at: string | null;
+    last_city: string | null;
+    last_lat: number | null;
+    last_lng: number | null;
+    last_location_at: string | null;
   }[]>`
     SELECT id, display_id, first_name, last_name, email, phone, created_at,
-           referral_code, referred_by, credit_frozen_at, deleted_at
+           referral_code, referred_by, credit_frozen_at, deleted_at,
+           last_city, last_lat, last_lng, last_location_at
     FROM public.users WHERE id = ${customerId} LIMIT 1
   `;
   const u = rows[0];
@@ -644,6 +654,10 @@ export async function getAdminCustomerDetail(sql: Sql, customerId: string) {
       referralCode: u.referral_code,
       creditFrozen: u.credit_frozen_at !== null,
       deleted: u.deleted_at !== null,
+      lastCity: u.last_city,
+      lastLat: u.last_lat,
+      lastLng: u.last_lng,
+      lastLocationAt: u.last_location_at,
     },
     totals: totals[0]!,
     referral: {
