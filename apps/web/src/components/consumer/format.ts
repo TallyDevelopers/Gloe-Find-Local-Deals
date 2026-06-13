@@ -7,6 +7,24 @@ export function formatPrice(cents: number): string {
   return `$${(cents / 100).toFixed(0)}`;
 }
 
+/** Exact money for credit amounts — "$20", or "$19.50" when the Stripe 50¢
+ *  floor shaves the applied credit. Never rounds (formatPrice does). */
+export function formatCredit(cents: number): string {
+  const dollars = cents / 100;
+  return Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`;
+}
+
+/** Promo badge copy (GLO-44): custom label override, else auto "Extra $X off"
+ *  generated from the amount so the badge can't go stale. */
+export function promoBadgeLabel(promo: { amountCents: number; label: string | null }): string {
+  return promo.label?.trim() || `Extra ${formatCredit(promo.amountCents)} off`;
+}
+
+/** Price after the deal promo (GLO-44) — what the buyer actually pays. */
+export function promoPriceCents(dealPriceCents: number, promo: { amountCents: number } | null | undefined): number {
+  return promo ? Math.max(0, dealPriceCents - promo.amountCents) : dealPriceCents;
+}
+
 export function discountPct(originalCents: number, dealCents: number): number {
   if (originalCents <= 0) return 0;
   return Math.round(((originalCents - dealCents) / originalCents) * 100);

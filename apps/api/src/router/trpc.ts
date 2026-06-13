@@ -1,9 +1,51 @@
 import { initTRPC, TRPCError } from '@trpc/server';
+import { ZodError } from 'zod';
 
 import type { RequestContext } from '../context/context';
 import { isAdmin } from '../domain/admin';
 
-const t = initTRPC.context<RequestContext>().create();
+/** "amountCents" → "Amount", "messageTitle" → "Message title". */
+function humanizeField(path: (string | number)[]): string | null {
+  const last = [...path].reverse().find((p): p is string => typeof p === 'string');
+  if (!last) return null;
+  const words = last
+    .replace(/Cents$/, '')
+    .replace(/Bps$/, ' percent')
+    .replace(/([A-Z])/g, ' $1')
+    .toLowerCase()
+    .trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : null;
+}
+
+const ZOD_DEFAULT_MESSAGE = /^(String must|Number must|Expected |Invalid|Required$|Array must|Value must)/;
+
+/**
+ * One human sentence from a ZodError instead of the raw JSON issue dump.
+ * Custom messages written in the routers are full sentences — pass them
+ * through untouched; only zod's stock phrasing gets a field-name prefix.
+ */
+export function friendlyZodMessage(error: ZodError): string {
+  const issue = error.issues[0];
+  if (!issue) return 'That input isn’t valid.';
+  if (!ZOD_DEFAULT_MESSAGE.test(issue.message)) return issue.message;
+  const label = humanizeField(issue.path);
+  if (issue.code === 'invalid_type' && (issue.received === 'undefined' || issue.received === 'null')) {
+    return label ? `${label} is required.` : 'A required field is missing.';
+  }
+  if (issue.code === 'invalid_type' && issue.received === 'nan') {
+    return label ? `${label} must be a valid number.` : 'Enter a valid number.';
+  }
+  return label ? `${label}: ${issue.message.toLowerCase()}` : issue.message;
+}
+
+const t = initTRPC.context<RequestContext>().create({
+  errorFormatter({ shape, error }) {
+    if (error.cause instanceof ZodError) {
+      return { ...shape, message: friendlyZodMessage(error.cause) };
+    }
+    return shape;
+  },
+});
 
 export const router = t.router;
 export const publicProcedure = t.procedure;

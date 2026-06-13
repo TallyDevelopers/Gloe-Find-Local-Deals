@@ -21,6 +21,7 @@ import {
   RedemptionError,
 } from '../domain/claims';
 import { computeFee } from '../domain/fees';
+import { createDealPromo, endDealPromo, listDealPromos, previewVendorBoost } from '../domain/promos';
 import { getInstantPayoutStatus, InstantPayoutError, triggerInstantPayout } from '../domain/payouts';
 import { createVendor, getSetupStatus, getVendorForOwner, type VendorRecord } from '../domain/vendorSignup';
 import { getLicenseInfo, LicenseSubmitError, submitLicense } from '../domain/vendorLicense';
@@ -260,6 +261,78 @@ export const vendorRouter = router({
     const vendor = await requireVendor(ctx);
     return listVendorDeals(ctx.sql, vendor.id);
   }),
+
+  /* ─────────────── Deal promos / "Boost this deal" (GLO-44) ─────────────── */
+
+  /** The vendor's own promos (live + past) with cost-to-date. */
+  listPromos: protectedProcedure.query(async ({ ctx }) => {
+    const vendor = await requireVendor(ctx);
+    return listDealPromos(ctx.sql, { vendorId: vendor.id, includeEnded: true });
+  }),
+
+  /** Per-variant "you'll receive $X instead of $Y" before they confirm. */
+  boostPreview: protectedProcedure
+    .input(z.object({
+      dealId: z.string().uuid(),
+      amountCents: z.number().int().positive().max(100_000),
+    }))
+    .query(async ({ ctx, input }) => {
+      const vendor = await requireVendor(ctx);
+      return previewVendorBoost(ctx.sql, {
+        dealId: input.dealId, vendorId: vendor.id, amountCents: input.amountCents,
+      });
+    }),
+
+  /**
+   * Place a VENDOR-funded "Extra $X off" on one of their own deals. The
+   * vendor eats the discount: payout = discounted price − fee(discounted).
+   */
+  createBoost: protectedProcedure
+    .input(z.object({
+      dealId: z.string().uuid(),
+      amountCents: z.number().int().positive().max(100_000),
+      label: z.string().trim().max(40).nullish(),
+      endsAt: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const vendor = await requireVendor(ctx);
+      const owned = await ctx.sql<{ one: number }[]>`
+        SELECT 1 AS one FROM public.deals
+        WHERE id = ${input.dealId} AND vendor_id = ${vendor.id} LIMIT 1
+      `;
+      if (!owned[0]) throw new TRPCError({ code: 'FORBIDDEN', message: 'Not your deal.' });
+      try {
+        return await createDealPromo(ctx.sql, {
+          dealId: input.dealId,
+          amountCents: input.amountCents,
+          fundedBy: 'vendor',
+          label: input.label ?? null,
+          endsAt: input.endsAt,
+          actorUserId: ctx.auth.userId,
+          actorRole: 'vendor',
+        });
+      } catch (e) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: e instanceof Error ? e.message : 'Could not create boost.',
+        });
+      }
+    }),
+
+  /** End one of their own promos early. */
+  endBoost: protectedProcedure
+    .input(z.object({ promoId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const vendor = await requireVendor(ctx);
+      const owned = await ctx.sql<{ one: number }[]>`
+        SELECT 1 AS one FROM public.deal_promos p
+        JOIN public.deals d ON d.id = p.deal_id
+        WHERE p.id = ${input.promoId} AND d.vendor_id = ${vendor.id} LIMIT 1
+      `;
+      if (!owned[0]) throw new TRPCError({ code: 'FORBIDDEN', message: 'Not your promo.' });
+      await endDealPromo(ctx.sql, input.promoId, { userId: ctx.auth.userId, role: 'vendor' });
+      return { ok: true };
+    }),
 
   /** The current vendor's amenities. */
   amenities: protectedProcedure.query(async ({ ctx }) => {

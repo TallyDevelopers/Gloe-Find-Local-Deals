@@ -70,6 +70,9 @@ export type AuditAction =
   | 'dispute.reconcile_refused'// the claw-back was blocked (no transfer, etc.)
   // Deal admin
   | 'deal.admin_edited'  // god mode edited deal content (skips re-review)
+  // Deal promos (GLO-44) — "Extra $X off" placed on a deal
+  | 'deal_promo.created' // platform-funded (admin) or vendor-funded (boost)
+  | 'deal_promo.ended'   // ended early / deactivated (natural expiry just lapses)
   // Voucher admin (GLO-29)
   | 'claim.reissued'     // admin replaced an expired voucher with a fresh active one
   // Discover editorial sections (GLO-27)
@@ -81,6 +84,32 @@ export type AuditAction =
   | 'taxonomy.subtype_updated'
   | 'taxonomy.subtype_deleted'
   | 'taxonomy.category_updated'
+  // Wallet credits (GLO-24) — every lot/entry mutation leaves one of these
+  | 'credit.granted'       // a credit lot was minted (grantCredit — the one door)
+  | 'credit.redeemed'      // lots consumed FIFO to pay (part of) a purchase
+  | 'credit.returned'      // credit share of a refund returned as a refund_return lot
+  | 'credit.clawed_back'   // earned lot reversed after refund/lost dispute (may go negative)
+  | 'credit.expired'       // daily sweep zeroed an overdue lot remainder
+  | 'credit.forfeited'     // account deletion zeroed all positive lots
+  | 'credit.frozen'        // dispute opened — user's ledger refuses redemption
+  | 'credit.unfrozen'      // dispute won — ledger usable again
+  | 'credit.revoked'       // god mode zeroed a lot's remaining value (with reason)
+  // Credit rules + campaigns (GLO-24 god-mode policy levers)
+  | 'credit_rule.created'
+  | 'credit_rule.updated'
+  | 'credit_rule.deactivated'
+  | 'credit_rule.reactivated'
+  | 'credit_campaign.created'
+  | 'credit_campaign.sent'     // the money lever — meta carries audience size + total cost
+  | 'credit_campaign.deleted'  // draft discarded before send
+  // Referrals (GLO-24)
+  | 'referral.attributed'          // referee linked to referrer; give-side lot granted
+  | 'referral.attribution_refused' // code invalid / self-referral / deleted-account hash / cap
+  | 'referral.completed'           // referee's first qualifying purchase paid the referrer
+  | 'referral.payout_refused'      // floor/cap/rule blocked the referrer payout
+  | 'referral.payout_voided'       // card-fingerprint match — self-funding, referrer gets nothing
+  // Customer 360 (GLO-56)
+  | 'customer.push_sent'   // admin sent a one-off push to a single customer
   // Support tickets
   | 'support.replied'      // agent replied to a support ticket
   | 'support.status_set'   // agent resolved / closed / reopened a ticket

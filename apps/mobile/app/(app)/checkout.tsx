@@ -32,6 +32,8 @@ export default function CheckoutScreen() {
     variantLabel: string;
     originalPriceCents: string;
     dealPriceCents: string;
+    promoAmountCents: string;
+    promoLabel: string;
     discountPct: string;
     spotsLeft: string;
     expiresAt: string;
@@ -48,6 +50,9 @@ export default function CheckoutScreen() {
   const [busy, setBusy] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [applyCredits, setApplyCredits] = useState(true);
+
+  const creditsQuery = trpc.credits.balance.useQuery();
 
   const originalPriceCents = Number(params.originalPriceCents);
   const dealPriceCents = Number(params.dealPriceCents);
@@ -60,13 +65,48 @@ export default function CheckoutScreen() {
   const totalCents = dealPriceCents * qty;
   const savedCents = (originalPriceCents - dealPriceCents) * qty;
 
+  // Deal promo (GLO-44): cuts the price first, once per order (mirrors the
+  // server's clamp — the post-promo total never drops below Stripe's 50¢
+  // floor); credits then apply to the remainder.
+  const promoAmountCents = Number(params.promoAmountCents) || 0;
+  const promoCents = promoAmountCents > 0
+    ? Math.max(0, Math.min(promoAmountCents, totalCents - 50))
+    : 0;
+  const chargeBaseCents = totalCents - promoCents;
+
+  // Display estimate only — the server recomputes inside the purchase
+  // transaction and its number is what Stripe charges. Locked referee credit
+  // counts when this order clears its first-purchase floor (pre-credit).
+  const balance = creditsQuery.data;
+  const usableCreditCents = balance
+    ? balance.availableCents +
+      (balance.lockedCents > 0 && chargeBaseCents >= balance.lockedFloorCents ? balance.lockedCents : 0)
+    : 0;
+  let creditEstimateCents = applyCredits ? Math.min(usableCreditCents, chargeBaseCents) : 0;
+  const remainder = chargeBaseCents - creditEstimateCents;
+  if (remainder > 0 && remainder < 50) creditEstimateCents = chargeBaseCents - 50; // Stripe 50¢ charge floor
+  const cashDueCents = chargeBaseCents - creditEstimateCents;
+
   const handleBuy = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setError(null);
     setBusy(true);
     try {
-      // 1. Server creates the PaymentIntent + pending transaction.
-      const res = await createPurchase.mutateAsync({ variantId: params.variantId, quantity: qty });
+      // 1. Server creates the PaymentIntent + pending transaction. The server
+      //    computes the credit amount itself — we only send the toggle.
+      const res = await createPurchase.mutateAsync({
+        variantId: params.variantId,
+        quantity: qty,
+        applyCredits,
+      });
+      // 1b. Credits covered the whole order — vouchers are already minted
+      //     server-side, there is no Stripe step. Straight to success.
+      if (res.paidWithCredits || !res.clientSecret) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        void utils.invalidate();
+        router.replace('/(app)/(tabs)/saved');
+        return;
+      }
       // 2. Init Stripe's PaymentSheet (all dashboard-enabled methods).
       const init = await initPaymentSheet({
         merchantDisplayName: 'Gloē',
@@ -258,10 +298,58 @@ export default function CheckoutScreen() {
                 </Text>
               </Stack>
             ) : null}
+            {promoCents > 0 ? (
+              <Stack direction="row" justify="space-between" align="center">
+                <Stack direction="row" gap={2} align="center">
+                  <Text variant="body-md" tone="secondary">Promo</Text>
+                  <View style={{ backgroundColor: palette.brand[600], borderRadius: radius.pill, paddingHorizontal: space[2], paddingVertical: 2 }}>
+                    <Text variant="caption" weight="semibold" style={{ color: palette.text.inverse }}>
+                      {params.promoLabel || 'Extra off'}
+                    </Text>
+                  </View>
+                </Stack>
+                <Text variant="body-md" weight="semibold" style={{ color: palette.brand[700] }}>
+                  −{formatPrice(promoCents)}
+                </Text>
+              </Stack>
+            ) : null}
+            {usableCreditCents > 0 ? (
+              <Stack direction="row" justify="space-between" align="center">
+                <Stack direction="row" gap={2} align="center">
+                  <Text variant="body-md" tone="secondary">Gloē credits</Text>
+                  <Pressable
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setApplyCredits((v) => !v);
+                    }}
+                    hitSlop={8}
+                    style={{
+                      backgroundColor: applyCredits ? palette.brand[100] : palette.surface.secondary,
+                      borderWidth: 1,
+                      borderColor: applyCredits ? palette.brand[300] : palette.border.subtle,
+                      borderRadius: radius.pill,
+                      paddingHorizontal: space[2],
+                      paddingVertical: 2,
+                    }}
+                  >
+                    <Text variant="caption" weight="semibold" tone={applyCredits ? 'primary' : 'tertiary'}>
+                      {applyCredits ? 'Applied' : 'Off'}
+                    </Text>
+                  </Pressable>
+                </Stack>
+                <Text
+                  variant="body-md"
+                  weight="semibold"
+                  style={{ color: applyCredits ? palette.brand[700] : palette.text.tertiary }}
+                >
+                  {applyCredits ? `−${formatPrice(creditEstimateCents)}` : formatPrice(0)}
+                </Text>
+              </Stack>
+            ) : null}
             <View style={{ height: 1, backgroundColor: palette.border.subtle }} />
             <Stack direction="row" justify="space-between" align="baseline">
               <Text variant="body-lg" tone="primary" weight="semibold">Total</Text>
-              <Text variant="display-sm" tone="primary" weight="semibold">{formatPrice(totalCents)}</Text>
+              <Text variant="display-sm" tone="primary" weight="semibold">{formatPrice(cashDueCents)}</Text>
             </Stack>
           </View>
 
@@ -299,7 +387,7 @@ export default function CheckoutScreen() {
         }}
       >
         <Button
-          label={busy ? 'Processing…' : `Pay ${formatPrice(totalCents)}`}
+          label={busy ? 'Processing…' : cashDueCents === 0 ? 'Redeem with credits' : `Pay ${formatPrice(cashDueCents)}`}
           size="lg"
           fullWidth
           onPress={handleBuy}

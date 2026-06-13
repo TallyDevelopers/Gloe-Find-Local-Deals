@@ -1,14 +1,16 @@
 'use client';
 
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { AdminChrome, type WorkspaceView } from './AdminChrome';
 import { AdminsView } from './AdminsView';
 import { AuditView } from './AuditView';
+import { CreditsView } from './CreditsView';
 import { CustomersView } from './CustomersView';
 import { FeesView } from './FeesView';
 import { PayoutsView } from './PayoutsView';
+import { PromosView } from './PromosView';
 import { PulseView } from './PulseView';
 import { RefundsView } from './RefundsView';
 import { SectionsView } from './SectionsView';
@@ -21,15 +23,13 @@ import { WaitlistView } from './WaitlistView';
 
 const TABS: readonly WorkspaceView[] = [
   'pulse', 'transactions', 'vendors', 'customers', 'payouts', 'refunds',
-  'fees', 'support', 'sections', 'taxonomy', 'waitlist', 'audit', 'admins', 'settings',
+  'fees', 'credits', 'promos', 'support', 'sections', 'taxonomy', 'waitlist', 'audit', 'admins', 'settings',
 ];
 
 export function AdminShell() {
+  const router = useRouter();
   const params = useSearchParams();
   const [view, setView] = useState<WorkspaceView>('pulse');
-  // When TransactionsView wants to jump to a specific customer, it sets this
-  // and we switch tabs. CustomersView opens the drawer for the matching id.
-  const [preselectedCustomerId, setPreselectedCustomerId] = useState<string | null>(null);
   // When the support drawer / a customer record links to a specific refund, we
   // jump to the Refunds tab and flash the matching row. Callers usually only
   // know the transactionId (not the audit-row id), so we target by that.
@@ -44,21 +44,25 @@ export function AdminShell() {
   const customerParam = params.get('customer');
   const txParam = params.get('tx');
 
+  // ?refundTxn= rides along with ?tab=refunds so the full-page Customer 360
+  // can deep-link a specific refund record (GLO-56).
+  const refundTxnParam = params.get('refundTxn');
+
   useEffect(() => {
     if (customerParam) {
-      setPreselectedCustomerId(customerParam);
-      setView('customers');
+      // Customer deep links open the full-page Customer 360 (no drawer).
+      router.replace(`/admin/customer/${customerParam}`);
     } else if (txParam) {
       setOpenTransactionId(txParam);
       setView('transactions');
     } else if (tabParam && (TABS as readonly string[]).includes(tabParam)) {
+      if (tabParam === 'refunds' && refundTxnParam) setPreselectedRefundTxnId(refundTxnParam);
       setView(tabParam as WorkspaceView);
     }
-  }, [tabParam, customerParam, txParam]);
+  }, [tabParam, customerParam, txParam, refundTxnParam, router]);
 
   const jumpToCustomer = (customerId: string) => {
-    setPreselectedCustomerId(customerId);
-    setView('customers');
+    router.push(`/admin/customer/${customerId}`);
   };
 
   const jumpToRefundByTxn = (transactionId: string) => {
@@ -71,10 +75,12 @@ export function AdminShell() {
       {view === 'pulse'        ? <PulseView onNavigate={(v) => setView(v)} /> : null}
       {view === 'transactions' ? <TransactionsView onJumpToCustomer={jumpToCustomer} openTransactionId={openTransactionId} onOpenConsumed={() => setOpenTransactionId(null)} /> : null}
       {view === 'vendors'      ? <VendorsView /> : null}
-      {view === 'customers'    ? <CustomersView preselectedId={preselectedCustomerId} onPreselectionConsumed={() => setPreselectedCustomerId(null)} onJumpToRefundByTxn={jumpToRefundByTxn} /> : null}
+      {view === 'customers'    ? <CustomersView /> : null}
       {view === 'payouts'      ? <PayoutsView /> : null}
       {view === 'refunds'      ? <RefundsView highlightTransactionId={preselectedRefundTxnId} onHighlightConsumed={() => setPreselectedRefundTxnId(null)} onJumpToCustomer={jumpToCustomer} /> : null}
       {view === 'fees'         ? <FeesView /> : null}
+      {view === 'credits'      ? <CreditsView /> : null}
+      {view === 'promos'       ? <PromosView /> : null}
       {view === 'support'      ? <SupportView onJumpToRefundByTxn={jumpToRefundByTxn} /> : null}
       {view === 'sections'     ? <SectionsView /> : null}
       {view === 'taxonomy'     ? <TaxonomyView /> : null}

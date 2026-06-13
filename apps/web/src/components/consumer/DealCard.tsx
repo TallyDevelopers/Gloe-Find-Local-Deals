@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { BlurImage } from './BlurImage';
 import { SaveButton } from './SaveButton';
 import { BadgeCheck, Clock, MapPin, Star } from './icons';
-import { discountPct, formatDistance, formatDriveTime, formatPrice, formatRating } from './format';
+import { discountPct, formatDistance, formatDriveTime, formatPrice, formatRating, promoBadgeLabel, promoPriceCents } from './format';
 
 /**
  * Image-dominant deal card — the unit of the marketplace. Fills its grid column,
@@ -16,6 +16,11 @@ export function DealCard({ deal, width }: { deal: DealSummary; width?: number })
   const variant = deal.headlineVariant;
   if (!variant) return null;
 
+  // Deal promo (GLO-44): the badge takes the top-left slot over "% off", and
+  // the price row shows the post-promo price so what's on the card is what
+  // checkout charges. The struck anchor stays the true original price.
+  const promo = deal.promo;
+  const effectivePriceCents = promoPriceCents(variant.dealPriceCents, promo);
   const pct = discountPct(variant.originalPriceCents, variant.dealPriceCents);
   const rating = formatRating(deal.vendor);
   const drive = formatDriveTime(deal.driveSeconds);
@@ -40,13 +45,13 @@ export function DealCard({ deal, width }: { deal: DealSummary; width?: number })
           />
         ) : null}
 
-        {pct > 0 ? (
+        {promo || pct > 0 ? (
           <span
             style={{
               position: 'absolute',
               top: 10,
               left: 10,
-              background: 'var(--brand-500)',
+              background: promo ? 'var(--brand-600)' : 'var(--brand-500)',
               color: 'var(--text-inverse)',
               fontSize: 12,
               fontWeight: 700,
@@ -55,7 +60,7 @@ export function DealCard({ deal, width }: { deal: DealSummary; width?: number })
               borderRadius: 'var(--radius-pill)',
             }}
           >
-            {pct}% off
+            {promo ? promoBadgeLabel(promo) : `${pct}% off`}
           </span>
         ) : null}
 
@@ -121,9 +126,9 @@ export function DealCard({ deal, width }: { deal: DealSummary; width?: number })
 
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
           <span style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 600, letterSpacing: '-0.01em', color: 'var(--text-primary)' }}>
-            {formatPrice(variant.dealPriceCents)}
+            {formatPrice(effectivePriceCents)}
           </span>
-          {pct > 0 ? (
+          {promo || pct > 0 ? (
             <span style={{ fontSize: 14, color: 'var(--text-tertiary)', textDecoration: 'line-through' }}>
               {formatPrice(variant.originalPriceCents)}
             </span>

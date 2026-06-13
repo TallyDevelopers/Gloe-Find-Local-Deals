@@ -35,7 +35,10 @@ export default function PrivacyPage() {
           information</b> — Deals you save, buy, gift, and redeem; Vouchers; Credits and referrals;
           refunds, disputes, and receipts (from your activity). <b>Geolocation</b> — approximate or
           precise location, only while you grant it, used to show nearby Deals and drive times (from
-          your device). <b>Content</b> — reviews, photos, and support messages you submit.
+          your device). When you browse while signed in, we retain your most recent approximate
+          location (rounded to roughly city-block precision, with a city label) to operate the
+          service — for example, support context and showing offers relevant to your area. We never
+          track location in the background. <b>Content</b> — reviews, photos, and support messages you submit.
           <b> Device and usage data</b> — push notification tokens (only if you enable
           notifications), IP address, and service logs needed for reliability, security, and fraud
           prevention (collected automatically). <b>What we never collect:</b> payment card numbers —

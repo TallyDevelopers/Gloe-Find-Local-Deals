@@ -51,6 +51,25 @@ import {
   TierOverlapError,
   updateTier,
 } from '../domain/fees';
+import { createDealPromo, endDealPromo, listDealPromos } from '../domain/promos';
+import {
+  adminGrantCredit,
+  createCreditCampaign,
+  createCreditRule,
+  CreditRuleConflictError,
+  deactivateCreditRule,
+  deleteDraftCampaign,
+  getCreditLedgerForUser,
+  getCreditProgramStats,
+  listCustomerCities,
+  listCreditCampaigns,
+  listCreditRules,
+  previewCampaignAudience,
+  reactivateCreditRule,
+  revokeCreditLot,
+  sendCreditCampaign,
+  updateCreditRule,
+} from '../domain/creditAdmin';
 import {
   reconcileVendorTransfers,
   releaseTransferForClaim,
@@ -66,9 +85,11 @@ import { getTrendingConfig, setTrendingConfig, getDisputeRiskConfig, setDisputeR
 import { reissueClaim } from '../domain/claims';
 import {
   listNotificationTypes,
+  sendNotification,
   updateNotificationType,
   getQueueStats,
 } from '../domain/notifications';
+import { freezeCreditLedger, unfreezeCreditLedger } from '../domain/credits';
 import {
   listDiscoverSections,
   createDiscoverSection,
@@ -85,6 +106,48 @@ import {
   updateCategory,
 } from '../domain/taxonomy';
 import { adminProcedure, protectedProcedure, router } from './trpc';
+
+/** One earn rule (GLO-24). Shape rules per type are enforced in the domain. */
+export const creditRuleInput = z.object({
+  ruleType: z.enum(['purchase_tier', 'referral', 'signup_bonus']),
+  minPurchaseCents: z.number().int().min(0, 'Minimum order can’t be negative.').nullable().optional(),
+  maxPurchaseCents: z.number().int().positive('Max order must be greater than $0.').nullable().optional(),
+  creditCents: z.number().int().positive('Credit amount must be greater than $0.').max(100_000, 'Credit amounts are capped at $1,000.').nullable().optional(),
+  percentBps: z.number().int().min(1, 'Percent must be greater than 0.').max(10_000, 'Percent cannot exceed 100%.').nullable().optional(),
+  giveCents: z.number().int().positive('Give amount must be greater than $0.').max(100_000, 'Give amounts are capped at $1,000.').nullable().optional(),
+  getCents: z.number().int().positive('Get amount must be greater than $0.').max(100_000, 'Get amounts are capped at $1,000.').nullable().optional(),
+  minFirstPurchaseCents: z.number().int().min(0, 'First-booking floor can’t be negative.').nullable().optional(),
+  expiresAfterDays: z.number().int().min(1, 'Credit expiry must be at least 1 day.').max(3650, 'Credit expiry can be at most 3650 days (10 years).'),
+  monthlyUserCapCents: z.number().int().positive('Monthly cap must be greater than $0.').nullable().optional(),
+  monthlyReferralPayoutCap: z.number().int().positive('Monthly payout cap must be at least 1.').nullable().optional(),
+  active: z.boolean().optional(),
+});
+
+/** Manual god-mode grant input — messages are full sentences (shown verbatim in the console). */
+export const grantCreditInput = z.object({
+  userId: z.string().uuid(),
+  amountCents: z.number().int().positive('Enter a credit amount greater than $0.').max(50_000, 'Manual grants are capped at $500 — split it if you really need more.'),
+  expiresAfterDays: z.number().int().min(1, 'Expiry must be at least 1 day (or blank for never).').max(3650, 'Expiry can be at most 3650 days (10 years).').nullable(),
+  note: z.string().trim().min(3, 'Add a note (3+ characters) — it’s logged and the customer sees it in their email.').max(280, 'Keep the note under 280 characters.'),
+});
+
+/** Push-credit campaign draft input. */
+export const creditCampaignInput = z.object({
+  name: z.string().trim().min(2, 'Give the campaign an internal name.').max(80, 'Keep the campaign name under 80 characters.'),
+  amountCents: z.number().int().positive('Enter a credit amount per customer.').max(50_000, 'Campaign credits are capped at $500 per customer.'),
+  expiresAfterDays: z.number().int().min(1, 'Expiry must be at least 1 day.').max(3650, 'Expiry can be at most 3650 days (10 years).'),
+  audience: z.enum(['everyone', 'lapsed_60d', 'signed_up_never_purchased']),
+  /** Optional city drill-down (must match a users.last_city value). Null = anywhere. */
+  audienceCity: z.string().trim().min(2).max(120).nullable().optional(),
+  messageTitle: z.string().trim().min(2, 'Write the push/email title customers will see.').max(120, 'Keep the title under 120 characters.'),
+  messageBody: z.string().trim().min(2, 'Write the message body customers will see.').max(300, 'Keep the message under 300 characters.'),
+});
+
+/** Lot revoke input — the reason lands on the customer’s ledger and the audit log. */
+export const revokeCreditLotInput = z.object({
+  lotId: z.string().uuid(),
+  reason: z.string().trim().min(3, 'Give a reason (3+ characters) — it’s logged on the customer’s ledger.').max(280, 'Keep the reason under 280 characters.'),
+});
 
 /** Throws FORBIDDEN unless the caller is an `owner` (not just an admin). */
 async function assertOwner(ctx: { sql: Parameters<typeof getAdminRole>[0]; auth: { userId: string } }) {
@@ -1155,6 +1218,53 @@ export const adminRouter = router({
       return { ok: true };
     }),
 
+  /* ─────────────────── Deal promos (GLO-44) ─────────────────── */
+
+  /** Every promo with cost-to-date (orders × recorded discount), newest first. */
+  listDealPromos: adminProcedure
+    .input(z.object({ includeEnded: z.boolean().optional() }).optional())
+    .query(({ ctx, input }) =>
+      listDealPromos(ctx.sql, { includeEnded: input?.includeEnded ?? true })),
+
+  /**
+   * Place a PLATFORM-funded "Extra $X off" on a deal (comes out of the
+   * platform fee; vendor stays whole). Vendor-funded promos are created by
+   * vendors from their own dashboard — clean v1 ownership.
+   */
+  createDealPromo: adminProcedure
+    .input(z.object({
+      dealId: z.string().uuid(),
+      amountCents: z.number().int().positive().max(100_000),
+      label: z.string().trim().max(40).nullish(),
+      endsAt: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await createDealPromo(ctx.sql, {
+          dealId: input.dealId,
+          amountCents: input.amountCents,
+          fundedBy: 'platform',
+          label: input.label ?? null,
+          endsAt: input.endsAt,
+          actorUserId: ctx.auth.userId,
+          actorRole: 'admin',
+        });
+      } catch (e) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: e instanceof Error ? e.message : 'Could not create promo.',
+        });
+      }
+    }),
+
+  /** End any promo early (admin can end vendor-funded ones too). */
+  endDealPromo: adminProcedure
+    .input(z.object({ promoId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      await endDealPromo(ctx.sql, input.promoId, { userId: ctx.auth.userId, role: 'admin' });
+      return { ok: true };
+    }),
+
   /** Re-activate a previously-deactivated tier. Refuses if it would overlap. */
   reactivateFeeTier: adminProcedure
     .input(z.object({ id: z.string().uuid() }))
@@ -1176,6 +1286,221 @@ export const adminRouter = router({
           message: e instanceof Error ? e.message : 'Could not reactivate tier.',
         });
       }
+    }),
+
+  /* ---------- Wallet credits (GLO-24) ---------- */
+
+  /** Every earn rule (active + inactive) for the Credits rules editor. */
+  listCreditRules: adminProcedure.query(({ ctx }) => listCreditRules(ctx.sql)),
+
+  /** Author a new earn rule. Refuses configs that fight an active rule. */
+  createCreditRule: adminProcedure
+    .input(creditRuleInput)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const rule = await createCreditRule(ctx.sql, input);
+        void writeAudit(ctx.sql, {
+          action: 'credit_rule.created',
+          actorUserId: ctx.auth.userId,
+          meta: { ruleId: rule.id, ...input },
+        });
+        return rule;
+      } catch (e) {
+        if (e instanceof CreditRuleConflictError) {
+          throw new TRPCError({ code: 'CONFLICT', message: e.message });
+        }
+        throw new TRPCError({ code: 'BAD_REQUEST', message: e instanceof Error ? e.message : 'Could not create rule.' });
+      }
+    }),
+
+  /** Edit a rule in place. Past grants keep their own amounts/expiries. */
+  updateCreditRule: adminProcedure
+    .input(creditRuleInput.extend({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const { id, ...patch } = input;
+      try {
+        const rule = await updateCreditRule(ctx.sql, id, patch);
+        void writeAudit(ctx.sql, {
+          action: 'credit_rule.updated',
+          actorUserId: ctx.auth.userId,
+          meta: { ruleId: id, ...patch },
+        });
+        return rule;
+      } catch (e) {
+        if (e instanceof CreditRuleConflictError) {
+          throw new TRPCError({ code: 'CONFLICT', message: e.message });
+        }
+        throw new TRPCError({ code: 'BAD_REQUEST', message: e instanceof Error ? e.message : 'Could not update rule.' });
+      }
+    }),
+
+  /** Turn a rule OFF (soft-delete — never DELETE a policy row). */
+  deactivateCreditRule: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      await deactivateCreditRule(ctx.sql, input.id);
+      void writeAudit(ctx.sql, {
+        action: 'credit_rule.deactivated',
+        actorUserId: ctx.auth.userId,
+        meta: { ruleId: input.id },
+      });
+      return { ok: true };
+    }),
+
+  /** Turn a rule back ON. Refuses if it would fight another active rule. */
+  reactivateCreditRule: adminProcedure
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        await reactivateCreditRule(ctx.sql, input.id);
+        void writeAudit(ctx.sql, {
+          action: 'credit_rule.reactivated',
+          actorUserId: ctx.auth.userId,
+          meta: { ruleId: input.id },
+        });
+        return { ok: true };
+      } catch (e) {
+        if (e instanceof CreditRuleConflictError) {
+          throw new TRPCError({ code: 'CONFLICT', message: e.message });
+        }
+        throw new TRPCError({ code: 'BAD_REQUEST', message: e instanceof Error ? e.message : 'Could not reactivate rule.' });
+      }
+    }),
+
+  /** Program dashboard: issued/redeemed/clawed/expired/forfeited + liability. */
+  creditProgramStats: adminProcedure.query(({ ctx }) => getCreditProgramStats(ctx.sql)),
+
+  /** Push-credit campaigns, newest first, with live cost columns. */
+  listCreditCampaigns: adminProcedure.query(({ ctx }) => listCreditCampaigns(ctx.sql)),
+
+  /** Draft a campaign — nothing is granted until sendCreditCampaign. */
+  createCreditCampaign: adminProcedure
+    .input(creditCampaignInput)
+    .mutation(async ({ ctx, input }) => {
+      const { id } = await createCreditCampaign(ctx.sql, input, ctx.auth.userId);
+      void writeAudit(ctx.sql, {
+        action: 'credit_campaign.created',
+        actorUserId: ctx.auth.userId,
+        meta: { campaignId: id, ...input },
+      });
+      return { id };
+    }),
+
+  /** Cost preview for the review step: how many users the audience resolves to. */
+  previewCreditCampaign: adminProcedure
+    .input(z.object({
+      audience: z.enum(['everyone', 'lapsed_60d', 'signed_up_never_purchased']),
+      audienceCity: z.string().trim().min(2).max(120).nullable().optional(),
+    }))
+    .query(({ ctx, input }) => previewCampaignAudience(ctx.sql, input.audience, input.audienceCity ?? null)),
+
+  /** Cities with customer headcount (from last-known browse location) — the targeting picker. */
+  listCustomerCities: adminProcedure.query(({ ctx }) => listCustomerCities(ctx.sql)),
+
+  /**
+   * Fire a campaign: flips draft→sent (the idempotency wall), then grants in a
+   * fire-and-forget loop with progress persisted on the row. Owner-gated —
+   * one click can put real money in thousands of wallets.
+   */
+  sendCreditCampaign: adminProcedure
+    .input(z.object({ campaignId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      await assertOwner(ctx);
+      try {
+        return await sendCreditCampaign(ctx.sql, input.campaignId, ctx.auth.userId);
+      } catch (e) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: e instanceof Error ? e.message : 'Send failed.' });
+      }
+    }),
+
+  /** Discard a draft. Sent campaigns are history and can't be deleted. */
+  deleteCreditCampaign: adminProcedure
+    .input(z.object({ campaignId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        await deleteDraftCampaign(ctx.sql, input.campaignId);
+      } catch (e) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: e instanceof Error ? e.message : 'Delete failed.' });
+      }
+      void writeAudit(ctx.sql, {
+        action: 'credit_campaign.deleted',
+        actorUserId: ctx.auth.userId,
+        meta: { campaignId: input.campaignId },
+      });
+      return { ok: true };
+    }),
+
+  /** One customer's wallet: balance, every lot, every entry. */
+  creditUserLedger: adminProcedure
+    .input(z.object({ userId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const ledger = await getCreditLedgerForUser(ctx.sql, input.userId);
+      if (!ledger) throw new TRPCError({ code: 'NOT_FOUND', message: 'Customer not found.' });
+      return ledger;
+    }),
+
+  /** Manual grant (kind=admin_grant) — pushes + emails the customer. */
+  grantCreditToUser: adminProcedure
+    .input(grantCreditInput)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await adminGrantCredit(ctx.sql, { ...input, actorUserId: ctx.auth.userId });
+      } catch (e) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: e instanceof Error ? e.message : 'Grant failed.' });
+      }
+    }),
+
+  /** Zero a lot's remaining value (clawback entry) with a written reason. */
+  revokeCreditLot: adminProcedure
+    .input(revokeCreditLotInput)
+    .mutation(async ({ ctx, input }) => {
+      try {
+        return await revokeCreditLot(ctx.sql, { ...input, actorUserId: ctx.auth.userId });
+      } catch (e) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: e instanceof Error ? e.message : 'Revoke failed.' });
+      }
+    }),
+
+  /* ─────────────────── Customer 360 (GLO-56) ─────────────────── */
+
+  /**
+   * One-off push to a single customer — through the registry's one door
+   * (`admin_message` type renders admin-typed {{title}}/{{body}}). Audited.
+   */
+  sendCustomerPush: adminProcedure
+    .input(z.object({
+      userId: z.string().uuid(),
+      title: z.string().trim().min(1).max(80),
+      body: z.string().trim().min(1).max(220),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await sendNotification(ctx.sql, 'admin_message', input.userId, {
+        vars: { title: input.title, body: input.body },
+      });
+      void writeAudit(ctx.sql, {
+        action: 'customer.push_sent',
+        actorUserId: ctx.auth.userId,
+        meta: { userId: input.userId, title: input.title, body: input.body, result: result.status },
+      });
+      if (result.status === 'unknown_type' || result.status === 'disabled') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Push type admin_message is disabled or missing.' });
+      }
+      return result;
+    }),
+
+  /** Freeze/unfreeze a customer's credit ledger (fraud work). Audited here. */
+  setCreditFreeze: adminProcedure
+    .input(z.object({ userId: z.string().uuid(), frozen: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const changed = input.frozen
+        ? await freezeCreditLedger(ctx.sql, input.userId)
+        : await unfreezeCreditLedger(ctx.sql, input.userId);
+      void writeAudit(ctx.sql, {
+        action: input.frozen ? 'credit.frozen' : 'credit.unfrozen',
+        actorUserId: ctx.auth.userId,
+        meta: { userId: input.userId, changed, manual: true },
+      });
+      return { ok: true, changed };
     }),
 
   /** Approve or reject a pending deal. */

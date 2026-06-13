@@ -1,5 +1,6 @@
 import type { Sql } from '../db/client';
 import { type AuditAction, writeAudit } from './audit';
+import { freezeCreditLedger, unfreezeCreditLedger, unwindCreditsForTransaction } from './credits';
 import type { StripeWebhookEvent } from './stripe';
 
 /**
@@ -60,12 +61,13 @@ export async function handleStripeDisputeWebhook(
   // fulfillPurchase); fall back to charge id if we ever backfilled it.
   const txnRows = await sql<{
     id: string;
+    user_id: string;
     vendor_id: string;
     status: string;
     stripe_transfer_id: string | null;
     auto_clawback: boolean;
   }[]>`
-    SELECT t.id, t.vendor_id, t.status, t.stripe_transfer_id,
+    SELECT t.id, t.user_id, t.vendor_id, t.status, t.stripe_transfer_id,
            v.auto_clawback_on_dispute_lost AS auto_clawback
     FROM public.transactions t
     JOIN public.vendors v ON v.id = t.vendor_id
@@ -115,6 +117,17 @@ export async function handleStripeDisputeWebhook(
         WHERE id = ${txn.id}
       `;
 
+      // Freeze the disputer's credit ledger (GLO-24) — a chargeback filer
+      // can't keep spending wallet credit while the money is in question.
+      const froze = await freezeCreditLedger(tx, txn.user_id);
+      if (froze) {
+        void writeAudit(sql, {
+          action: 'credit.frozen',
+          transactionId: txn.id,
+          meta: { userId: txn.user_id, stripeDisputeId: dispute.id, reason: 'dispute_opened' },
+        });
+      }
+
       void writeAudit(sql, {
         action: redeemedRows.length > 0 ? 'dispute.opened_redeemed' : 'dispute.opened',
         vendorId: txn.vendor_id,
@@ -155,6 +168,15 @@ export async function handleStripeDisputeWebhook(
             updated_at          = now()
         WHERE id = ${txn.id} AND status = 'disputed'
       `;
+      // Won → thaw the customer's credit ledger (GLO-24).
+      const thawed = await unfreezeCreditLedger(tx, txn.user_id);
+      if (thawed) {
+        void writeAudit(sql, {
+          action: 'credit.unfrozen',
+          transactionId: txn.id,
+          meta: { userId: txn.user_id, stripeDisputeId: dispute.id, reason: 'dispute_won' },
+        });
+      }
       void writeAudit(sql, {
         action: 'dispute.won',
         vendorId: txn.vendor_id,
@@ -211,6 +233,18 @@ export async function handleStripeDisputeWebhook(
       meta: { stripeDisputeId: dispute.id, disputeStatus: status, disputeReason: reason },
     });
   });
+
+  // Lost dispute (post-commit): claw back any credits this transaction EARNED
+  // (purchase tier / referral, both sides — same unwind as refunds). The
+  // ledger freeze STANDS on a loss — a successful chargeback is a fraud
+  // signal; an admin can unfreeze manually. Idempotent + audited inside.
+  if (isClosed && !isWon) {
+    try {
+      await unwindCreditsForTransaction(sql, txn.id, 'dispute_lost', null);
+    } catch (e) {
+      console.error('[dispute webhook] credit unwind failed:', (e as Error).message);
+    }
+  }
 
   // Auto-clawback (post-commit). On a LOST dispute where the vendor was already
   // paid AND their auto-clawback flag is on, reverse their transfer now so the

@@ -25,13 +25,14 @@
 6. [Looking at a deal & a spa](#6-looking-at-a-deal--a-spa)
 7. [Buying, the voucher, and redeeming](#7-buying-the-voucher-and-redeeming)
 8. [How the money moves](#8-how-the-money-moves)
-9. [The vendor side](#9-the-vendor-side)
-10. [Behind the glass (admin god-mode)](#10-behind-the-glass-admin-god-mode)
-11. [Accounts & login](#11-accounts--login)
-12. [Emails & notifications](#12-emails--notifications)
-13. [Support / Concierge](#13-support--concierge)
-14. [The website (gloe.app)](#14-the-website-gloeapp)
-15. [What's NOT built yet](#15-whats-not-built-yet)
+9. [Credits, promos & referrals (the incentives engine)](#9-credits-promos--referrals-the-incentives-engine)
+10. [The vendor side](#10-the-vendor-side)
+11. [Behind the glass (admin god-mode)](#11-behind-the-glass-admin-god-mode)
+12. [Accounts & login](#12-accounts--login)
+13. [Emails & notifications](#13-emails--notifications)
+14. [Support / Concierge](#14-support--concierge)
+15. [The website (gloe.app)](#15-the-website-gloeapp)
+16. [What's NOT built yet](#16-whats-not-built-yet)
 
 ---
 
@@ -128,7 +129,7 @@ during the split-second of locating you (the app starts on the San Diego fallbac
 deals, so there's no empty flicker).
 
 > ⚠️ When someone joins this waitlist, **no email goes out yet** — it's pure demand collection for
-> now. (See [§15](#15-whats-not-built-yet).)
+> now. (See [§16](#16-whats-not-built-yet).)
 
 *Deeper: `GLOE.md` §6 "Out-of-area gate". Code: `ComingSoon.tsx`, `waitlist.router.ts`, `deals.ts`.*
 
@@ -267,7 +268,7 @@ missing, it safely falls back to 3-in-7. (Internally the admin call clamps the v
 so you can't set a nonsensical 0.)
 
 > One thing to know: this ribbon currently renders on the **website only**. Mobile receives the
-> data but doesn't yet draw the ribbon — a UI gap, not a data gap. (See [§15](#15-whats-not-built-yet).)
+> data but doesn't yet draw the ribbon — a UI gap, not a data gap. (See [§16](#16-whats-not-built-yet).)
 
 **2. "Popular near you" treatment chips** (in search) are *not* purchase-based at all. They rank
 treatments by **how many live deals exist nearby** — pure inventory count. That's deliberate: with
@@ -457,7 +458,7 @@ and it will **never retroactively change the economics of a past sale.**
 
 > ⚠️ One thing the audit flagged: there's **no cleanup job** for abandoned "pending payment" rows
 > (a canceled checkout leaves a harmless orphan record). And there's a brief window where two buyers
-> could both pass the "spots left" check before either pays. Both noted in [§15](#15-whats-not-built-yet).
+> could both pass the "spots left" check before either pays. Both noted in [§16](#16-whats-not-built-yet).
 
 *Deeper: `GLOE.md` §4 "Money pipeline". Code: `checkout.ts` (`createPurchase`, `fulfillPurchase`), `stripe.ts`, `index.ts` (webhooks).*
 
@@ -531,7 +532,7 @@ And **that redemption is what releases the vendor's money** (next section).
 
 The receipt email lands seconds after the purchase, and a reminder goes out if a voucher is about to
 expire unused. Every automated email — what triggers it, who gets it, exactly when it sends — lives in
-one table in [§12](#12-emails--notifications), so this section stays about the voucher itself.
+one table in [§13](#13-emails--notifications), so this section stays about the voucher itself.
 
 ---
 
@@ -660,11 +661,163 @@ watch-list (GLO-36).
 Because expiry is lazy and **nothing ever flips an unredeemed voucher to a terminal state**, a voucher
 that's paid for but **never redeemed** keeps its payout sitting in the "owed to vendor" bucket
 *indefinitely* — even long past its expiry date. There's no process today that sweeps elapsed-unredeemed
-vouchers, releases that held money, or recognizes the breakage. Flagged in [§15](#15-whats-not-built-yet).
+vouchers, releases that held money, or recognizes the breakage. Flagged in [§16](#16-whats-not-built-yet).
+
+### Discounts & wallet credit at checkout
+
+Promos ("Extra $X off" on a deal) and wallet credits both ride this same pipeline — the promo
+shrinks the price, credits shrink the cash charge, and the funding rules decide whose pocket it
+comes from. They get their own full chapter: [§9](#9-credits-promos--referrals-the-incentives-engine).
 
 ---
 
-## 9. The vendor side
+## 9. Credits, promos & referrals (the incentives engine)
+
+This is the growth machinery: every dollar of "free money" a customer ever sees — wallet credit,
+a referral reward, an "Extra $15 off" badge — runs through one system with one governing rule:
+**incentives are platform-funded unless a vendor explicitly opts in to fund their own.** The vendor's
+payout is sacred; Gloē's marketing comes out of Gloē's margin, never theirs.
+
+### The two levers, side by side
+
+| | **Wallet credits** (GLO-24) | **Deal promos** (GLO-44) |
+| -- | -- | -- |
+| What it is | Personal money that follows the *customer* | A public discount sitting on a *deal* |
+| Who sees it | Just that customer, in their wallet | Everyone browsing — badge on the card |
+| How it applies | Auto-applies at checkout (toggle to skip) | Applies itself; nothing to enter |
+| Funded by | Gloē, always | Gloē (god mode) **or** the vendor ("Boost") |
+| Liability tail | Yes — tracked, expiring, audited | None — instant discount, no balance |
+
+Order of operations at checkout, always: **promo cuts the price first, credits cover the remainder,
+the card covers the rest.** Receipts show all four lines (original / promo / credits / charged) —
+that's also our dispute evidence.
+
+### Wallet credits — how a customer earns
+
+- **Referrals** *(ON at launch)* — give $20, get $20. Details below.
+- **Purchase rewards** *(built, switched OFF)* — tier ladder seeded ($100–250 → $10, $250–500 → $20,
+  $500+ → $25), earned on the cash portion only, flip a row in god mode to turn on.
+- **Signup bonus** *(built, switched OFF)* — $10 campaign knob, ships dark.
+- **Credit campaigns** — god-mode blasts ("$10 to everyone lapsed 60 days") with an audience picker,
+  an optional **city drill-down** ("…but only people in San Diego"), a cost preview before sending,
+  and a push+email per grant. The city chips come from real customer locations, each with a live
+  headcount, so you can see the audience before you spend a dollar.
+- **Refund returns** — the credit share of any refund comes back as credit (cash goes back to the card).
+- **Admin grants** — goodwill, one customer at a time, from the customer's ledger screen.
+
+### How spending works
+
+Credits auto-apply at checkout with a visible "−$X credits" line and a toggle to save them. The server
+recomputes the amount inside the purchase transaction — the client only ever sends the on/off toggle,
+so a tampered app can't invent balance. Credits can cover up to **100%** of an order: a fully-covered
+order skips Stripe entirely and still mints vouchers + receipt through the same fulfillment core. One
+Stripe quirk handled for you: a card can't be charged less than 50¢, so if credits would leave a 1–49¢
+sliver, we shave the applied credit to leave exactly 50¢ instead.
+
+### The ledger underneath (why the balance is always right)
+
+Every grant is a **lot** — an amount, a remaining balance, and its own expiry date. Every spend is an
+append-only **entry** pointing at the lot it drew from; spending consumes lots
+soonest-expiry-first. Nothing is ever edited or deleted: the wallet balance is just the sum of what's
+remaining across lots, and the full history is replayable for any dispute, audit, or "where did my $20
+go" support ticket. Clawbacks can push a lot negative — the customer sees $0, and the negative quietly
+nets against whatever they earn next.
+
+Expiry is per-rule (default 90 days). A daily sweep zeroes overdue remainders, and the customer gets a
+push + email nudge **7 days and 1 day** before money dies — both through the notification registry, so
+you can tune or kill the nudges like any other notification type.
+
+### Referrals — give $20, get $20
+
+Every user has a speakable personal code (e.g. `RYAN20`) and a share link. When a friend signs up with
+it, the friend's $20 lands immediately but stays **locked until their first booking of $50+** — it
+applies automatically at that checkout. The moment that first booking fulfills, the referrer's $20
+lands too, with a push. Both amounts, the $50 floor, expiry, and the monthly caps are god-mode fields
+on the referral rule — change the program without a deploy.
+
+### Deal promos — the "Extra $X off" badge (GLO-44)
+
+Some deals carry a public **promo**: a badge on the card ("Extra $15 off", or a custom label like
+"Summer glow special") and an automatic discount line at checkout. Nobody types a code — if the badge
+is on the deal, everyone gets it. Promo cuts the price first; wallet credits then apply to what's left.
+The card and deal page show the **post-promo price** with the true original struck through, so the
+number on the card is exactly what checkout charges.
+
+Who pays for it is the whole story:
+
+- **Gloē-funded** (placed in god mode → Promos): the customer pays less, but the **vendor is still paid
+  in full on the original price** — the discount comes out of Gloē's fee. Vendors never fund Gloē's
+  marketing; same rule as credits.
+- **Vendor-funded** (the vendor taps **Boost** on their own live deal): the vendor chose to sell cheaper,
+  so the sale is booked at the discounted price — their payout becomes discounted price − fee(discounted
+  price). The dashboard shows the trade plainly per option ("you'll receive $X instead of $Y") before
+  they confirm, and they can end the boost anytime.
+
+One promo per deal, time-boxed, can't take any option below Stripe's 50¢ floor or past a 90% total
+discount (so "extra off" can't make the original price look fake). Pause or suspend the deal and the
+promo goes off-air with it. Refunds give back what was **paid** (cash + credits — the discount was never
+paid, so it never comes back). Receipts show original / promo / credits / charged. God mode lists every
+running promo with its cost-to-date (orders × discount).
+
+*Deeper: `GLOE.md` §4 Deal promos + §9. Code: `promos.ts`, `checkout.ts` (`pricePromoOrder`). Linear: GLO-44.*
+
+
+### How we're safe (the abuse inventory)
+
+Money-printing features attract fraud, so every door is guarded:
+
+1. **One door for granting.** Nothing mints credit except `grantCredit()`, and it's idempotent —
+   unique walls on (kind + transaction), (kind + referral), (campaign + user) mean a retried webhook
+   or a double-click returns "duplicate" instead of double money.
+2. **No double-spend.** Redemption locks the user's lots (`SELECT … FOR UPDATE`) and pending checkouts
+   reserve their credit, so two simultaneous purchases can't spend the same $20.
+3. **Refunds can't leak.** Split-tender math returns cash to the card and credit to the wallet — and
+   DB CHECK constraints make over-refunding (including refunding a promo discount the customer never
+   paid) impossible at the database level, not just the code level.
+4. **Earned money unwinds.** Refund or lose a dispute and whatever that purchase *earned* (purchase
+   reward, both sides of a referral) is clawed back from its specific lot — negative balances allowed.
+5. **Dispute freeze.** A chargeback freezes the customer's ledger until the dispute resolves; frozen
+   wallets can't spend.
+6. **Referral fraud is boxed in:** no self-referral; a **card-fingerprint match** between referrer and
+   referee voids the payout (same physical card on both sides = self-funding); deleted accounts leave a
+   **salted email hash** behind so delete-and-resignup never reads as a "new user"; monthly caps bound
+   referral + signup earnings; the $50 first-booking floor makes farming uneconomical.
+7. **Promos can't lie or stack:** one live promo per deal (database-enforced), capped so the final
+   price never crosses Stripe's 50¢ floor or a 90% total discount vs the original price (FTC
+   reference-price hygiene), and badge copy is auto-generated from the amount so it can't go stale.
+8. **Everything is audited.** Every grant, redemption, clawback, freeze, campaign send, promo create/end
+   writes an audit row. The ledger itself is append-only — there is no "edit history" because there are
+   no edits.
+
+### Why it scales
+
+- **Every knob is a database row** — credit rules, campaign audiences, promo amounts, fee tiers. Changing
+  the referral amount or launching a purchase-reward ladder is a god-mode edit, not a deploy.
+- **No per-user machinery.** One daily sweep handles all expiry; the 60-second notification queue handles
+  all nudges; balance is a SUM, not a maintained counter that can drift.
+- **The economics are visible.** God mode shows the credit cost on every transaction (price → vendor
+  payout → fee → credit cost → platform net), a program dashboard (issued / redeemed / clawed back /
+  expired / forfeited / **outstanding liability**), and promo cost-to-date per promo — so you always
+  know what the machine is spending before the bank statement tells you.
+- **Platform Stripe balance vs. exposure:** credit-covered orders are funded from Gloē's own Stripe
+  balance at payout time, so god mode surfaces balance-vs-liability — the number to watch as the
+  program grows.
+
+### Where you drive it
+
+**God mode → Credits**: rules editor, campaigns (compose, pick audience + city, preview count + cost,
+send), any customer's ledger with manual grant/revoke, the program dashboard. **God mode → Promos**: place a
+platform-funded promo on any live deal, watch cost-to-date, end anything early. **Vendor dashboard →
+Boost**: vendors run their own promos on their own deals. **Customer side**: wallet balance + history,
+the "Give $20, get $20" referral row, the credit toggle + promo line at checkout, and receipts that
+show every discount line.
+
+*Deeper: `GLOE.md` §9 (spec) and §4 (promo payout math). Code: `credits.ts`, `referrals.ts`,
+`promos.ts`, `creditAdmin.ts`. Linear: GLO-24, GLO-44.*
+
+---
+
+## 10. The vendor side
 
 ### Signing up & connecting a bank
 
@@ -778,7 +931,7 @@ redemption that hasn't moved to their bank yet.
 
 ---
 
-## 10. Behind the glass (admin god-mode)
+## 11. Behind the glass (admin god-mode)
 
 `/admin` is the founder's single-screen cockpit for running the whole marketplace — gated by an
 admin-users table with two roles (**owner** and **moderator**).
@@ -794,6 +947,26 @@ day-to-day review and support but **can't** drain a vendor's balance or lock the
 owner-only force-refunds and "last owner" guards). Combined with the server-derived Stripe destinations
 and the 8 transfer walls from §8, god-mode convenience **never becomes a way to send money to the wrong
 account.**
+
+### One customer, one page (Customers → Customer 360)
+
+Click anyone in the Customers roster and you land on their **full page** (no drawer): every purchase
+with its cash / credit / promo split, every voucher and its code, refund history, their complete credit
+ledger, and their referral picture (their code, who brought them in, who they've brought in). Every
+action lives right there too — full or partial refund per purchase, grant or revoke credit, freeze the
+ledger during fraud work, and **send a one-off push to their phone** (typed by you, delivered through
+the notification registry, written to the audit log like everything else). Duplicate-charge clusters
+("I was charged twice!") are flagged automatically at the top. The Transactions tab is the same story
+zoomed out: the whole marketplace's purchases in time order — customer, listing, vendor, the
+discount/credit split, fee, payout — one row each.
+
+**You also see where customers actually are.** The roster has a "Last seen near" column and the
+customer page shows it too — the city where they last browsed, with how long ago. The app already
+sends coordinates with every browse (that's how "1.2 mi away" works); now the last one is kept instead
+of thrown away. Privacy posture, deliberately boring: foreground browsing only (never background
+tracking), rounded to roughly a city block before it's stored, refreshed at most every 15 minutes, and
+disclosed in the privacy policy. This same data feeds the campaign city picker — "everyone in San
+Diego" is a real, countable audience, not a guess.
 
 ### The treatment menu is yours to edit (Admin → Treatments)
 
@@ -839,7 +1012,7 @@ their **text reply is the single place a consumer push fires.**
 
 ---
 
-## 11. Accounts & login
+## 12. Accounts & login
 
 ### Why web and mobile login look different
 
@@ -888,7 +1061,7 @@ into). It's a muted text link behind two confirmations — a rare, irreversible 
 
 ---
 
-## 12. Emails & notifications
+## 13. Emails & notifications
 
 Everything Gloē sends automatically — no human pressing "send" — in one place: the emails first, then
 the phone pushes.
@@ -911,7 +1084,7 @@ Three fine-print notes: emails go to the customer's account email (for a gift li
 is the fallback); each send is keyed so retries can't double-send; and the password/verification emails come
 from Clerk separately, branded in the Clerk dashboard.
 
-> Still missing: a gift-confirmation email. (See [§15](#15-whats-not-built-yet).)
+> Still missing: a gift-confirmation email. (See [§16](#16-whats-not-built-yet).)
 
 *Deeper: `GLOE.md` §4 "Transactional email". Code: `domain/email.ts` (`sendEmail`), `emails/` (React Email templates), `transactionalEmails.ts`, `checkout.ts` (receipt), `vendorOps.ts` (refund), `payouts.ts` (payout notice), `admin.ts` (support reply), `index.ts` (expiry sweep), `context/auth.ts` (welcome).*
 
@@ -945,7 +1118,7 @@ lever, but now with the controls in place to turn them on safely. (Tracked: GLO-
 
 ---
 
-## 13. Support / Concierge
+## 14. Support / Concierge
 
 A 1:1 customer↔Gloē help-ticket system that **reads like Messages.** Your sent message appears
 instantly (dimmed until confirmed), the unread dot clears the moment you focus the thread, and a
@@ -964,7 +1137,7 @@ attach to a stranger's order. The single place a push fires is when an agent rep
 
 ---
 
-## 14. The website (gloe.app)
+## 15. The website (gloe.app)
 
 The shopper site is a real **premium website**, not a stretched app. It's server-rendered for SEO —
 every deal, spa, and treatment page ships **metadata + structured data** so Google can index them with
@@ -981,7 +1154,7 @@ machinery.
 
 ---
 
-## 15. What's NOT built yet
+## 16. What's NOT built yet
 
 An honest inventory of gaps the audit surfaced — things a user might reasonably expect that aren't
 built. Each is either tracked in Linear or worth a ticket.

@@ -1,6 +1,7 @@
 'use client';
 
 import { useAuth } from '@clerk/nextjs';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 import { trpc } from '../../lib/trpc';
@@ -12,10 +13,17 @@ import { useSignInModal } from './useSignInModal';
  * (<EmbeddedCheckoutModal/>) so the buyer never leaves gloe.app. "Share to pay"
  * generates a gift link and opens the <SharePayModal/>. Signed-out shoppers are
  * routed to sign-in with a return path.
+ *
+ * Credits (GLO-24): the client only sends the `applyCredits` toggle — the
+ * server computes the amount. When credits cover the whole order the server
+ * fulfills inline and returns `paidWithCredits` instead of a clientSecret;
+ * we route straight to the wallet like a card success (no Stripe form).
  */
 export function useBuy() {
   const { isSignedIn } = useAuth();
   const openSignIn = useSignInModal();
+  const router = useRouter();
+  const utils = trpc.useUtils();
   const embedded = trpc.checkout.createEmbeddedCheckout.useMutation();
   const gift = trpc.checkout.createGiftLink.useMutation();
   const [shareUrl, setShareUrl] = useState<string | null>(null);
@@ -27,9 +35,16 @@ export function useBuy() {
     return false;
   }
 
-  async function buy(variantId: string, quantity: number) {
+  async function buy(variantId: string, quantity: number, applyCredits = true) {
     if (!requireAuth()) return;
-    const res = await embedded.mutateAsync({ variantId, quantity });
+    const res = await embedded.mutateAsync({ variantId, quantity, applyCredits });
+    if (res.paidWithCredits) {
+      // Vouchers are already minted — refresh wallet data and land there.
+      void utils.claims.list.invalidate();
+      void utils.credits.balance.invalidate();
+      router.push('/wallet?purchased=1');
+      return;
+    }
     if (res.clientSecret) setClientSecret(res.clientSecret);
   }
 

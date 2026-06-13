@@ -22,7 +22,9 @@ app.use(
   cors({
     origin: '*', // tighten before launch
     allowMethods: ['GET', 'POST', 'OPTIONS'],
-    allowHeaders: ['Content-Type', 'Authorization'],
+    // X-Gloe-Referral-Code: clients send a pending invite code on every request
+    // until their first authenticated request JIT-creates the user (GLO-24).
+    allowHeaders: ['Content-Type', 'Authorization', 'X-Gloe-Referral-Code'],
     exposeHeaders: ['Content-Length'],
     maxAge: 600,
   }),
@@ -106,7 +108,10 @@ app.post('/webhooks/stripe', async (c) => {
     if (session.payment_status === 'paid' && m?.userId && m?.variantId && m?.dealId && m?.vendorId) {
       // The PI fee isn't on the session itself — pull the same expanded
       // payment_intent.latest_charge.balance_transaction we use for in-app.
+      // The expanded charge also carries the card fingerprint (referral
+      // self-funding guard) — best-effort, like the fee.
       let stripeFeeCents = 0;
+      let cardFingerprint: string | null = null;
       const piId = typeof session.payment_intent === 'string' ? session.payment_intent : '';
       if (piId) {
         try {
@@ -123,6 +128,7 @@ app.post('/webhooks/stripe', async (c) => {
               if (bt && typeof bt !== 'string' && typeof bt.fee === 'number') {
                 stripeFeeCents = bt.fee;
               }
+              cardFingerprint = charge.payment_method_details?.card?.fingerprint ?? null;
             }
           }
         } catch (e) {
@@ -130,13 +136,14 @@ app.post('/webhooks/stripe', async (c) => {
         }
       }
       try {
-        await fulfillPurchase(sql, piId, {
+        await fulfillPurchase(sql, piId || null, {
           userId: m.userId,
           variantId: m.variantId,
           dealId: m.dealId,
           vendorId: m.vendorId,
           quantity: Number(m.quantity || '1'),
           stripeFeeCents,
+          cardFingerprint,
           payerEmail: session.customer_details?.email ?? null,
           payerName: session.customer_details?.name ?? null,
           stripeCheckoutSessionId: session.id,
@@ -166,8 +173,11 @@ app.post('/webhooks/stripe', async (c) => {
     };
     const m = pi.metadata;
     // Stripe's actual processing fee lives on the charge's balance_transaction.
-    // Pull it so we can persist real fee data instead of a guess.
+    // Pull it so we can persist real fee data instead of a guess. The same
+    // expanded charge carries payment_method_details.card.fingerprint — stored
+    // on the transaction for the referral self-funding guard (best-effort).
     let stripeFeeCents = 0;
+    let cardFingerprint: string | null = null;
     try {
       const Stripe = (await import('stripe')).default;
       const stripeKey = process.env.STRIPE_SECRET_KEY;
@@ -182,6 +192,7 @@ app.post('/webhooks/stripe', async (c) => {
           if (bt && typeof bt !== 'string' && typeof bt.fee === 'number') {
             stripeFeeCents = bt.fee;
           }
+          cardFingerprint = charge.payment_method_details?.card?.fingerprint ?? null;
         }
       }
     } catch (e) {
@@ -197,6 +208,7 @@ app.post('/webhooks/stripe', async (c) => {
           vendorId: m.vendorId,
           quantity: Number(m.quantity || '1'),
           stripeFeeCents,
+          cardFingerprint,
         });
       } catch (e) {
         console.error('Failed to fulfill purchase:', (e as Error).message);
@@ -296,6 +308,17 @@ setInterval(() => {
       if (r.sent || r.skipped) console.log(`[expiry reminders] sent=${r.sent} skipped=${r.skipped}`);
     } catch (e) {
       console.error('[expiry reminders] sweep failed:', (e as Error).message);
+    }
+    // Wallet credits (GLO-24): zero overdue lot remainders, then queue the
+    // 7d/1d expiry nudges (dedup'd per lot+window via the registry queue).
+    try {
+      const { expireOverdueLots, sendCreditExpiryNudges } = await import('./domain/credits');
+      const ex = await expireOverdueLots(sql);
+      if (ex.expiredLots) console.log(`[credit expiry] expired=${ex.expiredLots} cents=${ex.expiredCents}`);
+      const nudge = await sendCreditExpiryNudges(sql);
+      if (nudge.queued) console.log(`[credit expiry] nudges queued=${nudge.queued}`);
+    } catch (e) {
+      console.error('[credit expiry] sweep failed:', (e as Error).message);
     }
   })();
 }, EXPIRY_SWEEP_MS).unref();

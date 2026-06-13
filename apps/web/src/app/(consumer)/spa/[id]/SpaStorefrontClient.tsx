@@ -392,7 +392,9 @@ function SaveVendorButton({ vendorId }: { vendorId: string }) {
       }}
     >
       <Heart size={19} color={saved ? 'var(--accent-500)' : 'var(--text-primary)'} fill={saved ? 'var(--accent-500)' : 'none'} strokeWidth={2.25} />
-      <span className="spa-save-label">{saved ? 'Saved' : 'Save'}</span>
+      <span className="spa-save-label" style={toggle.isError ? { color: 'var(--error)' } : undefined}>
+        {toggle.isError ? 'Couldn’t save — tap again' : saved ? 'Saved' : 'Save'}
+      </span>
     </button>
   );
 }

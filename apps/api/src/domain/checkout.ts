@@ -1,15 +1,25 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 
 import type { Sql } from '../db/client';
-import { computeFee } from './fees';
+import { writeAudit } from './audit';
+import { computeApplicableCredits, redeemCreditsForTransaction, type RedeemSummary } from './credits';
+import { pricePromoOrder } from './promos';
 import { getVoucherValidityDays } from './platformSettings';
 import { createGiftCheckoutSession, createPaymentIntent } from './stripe';
 
 export interface CreatePurchaseResult {
-  clientSecret: string;
-  paymentIntentId: string;
+  /** Null on the zero-dollar path — credits covered everything, no Stripe step. */
+  clientSecret: string | null;
+  paymentIntentId: string | null;
   transactionId: string;
+  /** Cash actually charged to Stripe = order total − promo − credits applied. */
   amountCents: number;
+  creditsAppliedCents: number;
+  /** Deal-promo discount applied to this order (GLO-44), 0 when none. */
+  promoDiscountCents: number;
+  /** True when credits covered the whole order — vouchers are already minted;
+   *  the client skips the payment sheet and goes straight to success. */
+  paidWithCredits: boolean;
 }
 
 const MAX_QTY = 10;
@@ -26,10 +36,16 @@ const GIFT_LINK_MAX_AMOUNT_CENTS = 50_000; // $500
  * Computes the fee on the total, creates a held PaymentIntent, and records a
  * `pending_payment` transaction. Vouchers (claims) are created on payment
  * success — one per quantity — so an unpaid order never yields a live voucher.
+ *
+ * Credits (GLO-24): unless `applyCredits` is false, the user's wallet balance
+ * is auto-applied (server-computed inside the txn — the client only sends the
+ * toggle). `consumer_paid_cents` stays the FULL order value so the fee
+ * snapshot and vendor payout never change; only the Stripe charge shrinks.
+ * If credits cover everything, we skip Stripe entirely and fulfill inline.
  */
 export async function createPurchase(
   sql: Sql,
-  args: { userId: string; variantId: string; quantity: number },
+  args: { userId: string; variantId: string; quantity: number; applyCredits?: boolean },
 ): Promise<CreatePurchaseResult> {
   const qty = Math.max(1, Math.min(MAX_QTY, Math.floor(args.quantity)));
 
@@ -82,37 +98,97 @@ export async function createPurchase(
   }
 
   const totalCents = v.deal_price_cents * qty;
-  const fee = await computeFee(sql, totalCents, v.vendor_id);
+  // Deal promo (GLO-44) cuts the price first; credits apply to the remainder.
+  // Platform-funded: fee/payout stay on the full total (the credits pattern).
+  // Vendor-funded: the sale is at the discounted price — fee/payout follow.
+  const { fee, promo, chargeBaseCents } = await pricePromoOrder(sql, {
+    dealId: v.deal_id, vendorId: v.vendor_id, baseTotalCents: totalCents,
+  });
 
-  const pi = await createPaymentIntent({
-    amountCents: fee.consumerPaidCents,
-    metadata: {
+  // Reserve credits + record the transaction atomically. The FOR UPDATE inside
+  // computeApplicableCredits plus this INSERT (the reservation a later checkout
+  // subtracts) prevents the same balance funding two concurrent purchases.
+  const { transactionId, creditsAppliedCents, cashCents } = await sql.begin(async (tx) => {
+    const applied = args.applyCredits === false
+      ? 0
+      : await computeApplicableCredits(tx, { userId: args.userId, orderTotalCents: chargeBaseCents });
+    const txnRows = await tx<{ id: string }[]>`
+      INSERT INTO public.transactions (
+        vendor_id, user_id, consumer_paid_cents, platform_fee_cents,
+        vendor_payout_cents, platform_fee_id, platform_fee_snapshot,
+        credits_applied_cents, deal_promo_id, promo_discount_cents, promo_funded_by,
+        status
+      ) VALUES (
+        ${v.vendor_id}, ${args.userId}, ${fee.consumerPaidCents}, ${fee.platformFeeCents},
+        ${fee.vendorPayoutCents}, ${fee.platformFeeId}, ${tx.json(fee.snapshot)},
+        ${applied}, ${promo?.promoId ?? null}, ${promo?.discountCents ?? 0}, ${promo?.fundedBy ?? null},
+        'pending_payment'
+      )
+      RETURNING id
+    `;
+    return {
+      transactionId: txnRows[0]!.id,
+      creditsAppliedCents: applied,
+      cashCents: chargeBaseCents - applied,
+    };
+  });
+
+  // Zero-dollar path: balance covers the whole order. No PaymentIntent, no
+  // webhook — fulfill inline through the same core (claims + credit drawdown
+  // + receipt), with the txn flipping straight to paid.
+  if (cashCents === 0) {
+    await fulfillPurchase(sql, null, {
       userId: args.userId,
       variantId: v.variant_id,
       dealId: v.deal_id,
       vendorId: v.vendor_id,
-      quantity: String(qty),
-    },
-  });
+      quantity: qty,
+      transactionId,
+    });
+    return {
+      clientSecret: null,
+      paymentIntentId: null,
+      transactionId,
+      amountCents: 0,
+      creditsAppliedCents,
+      promoDiscountCents: promo?.discountCents ?? 0,
+      paidWithCredits: true,
+    };
+  }
 
-  const txnRows = await sql<{ id: string }[]>`
-    INSERT INTO public.transactions (
-      vendor_id, user_id, consumer_paid_cents, platform_fee_cents,
-      vendor_payout_cents, platform_fee_id, platform_fee_snapshot,
-      stripe_payment_intent_id, status
-    ) VALUES (
-      ${v.vendor_id}, ${args.userId}, ${fee.consumerPaidCents}, ${fee.platformFeeCents},
-      ${fee.vendorPayoutCents}, ${fee.platformFeeId}, ${sql.json(fee.snapshot)},
-      ${pi.paymentIntentId}, 'pending_payment'
-    )
-    RETURNING id
+  let pi;
+  try {
+    pi = await createPaymentIntent({
+      amountCents: cashCents,
+      metadata: {
+        userId: args.userId,
+        variantId: v.variant_id,
+        dealId: v.deal_id,
+        vendorId: v.vendor_id,
+        quantity: String(qty),
+        creditsAppliedCents: String(creditsAppliedCents),
+        promoDiscountCents: String(promo?.discountCents ?? 0),
+      },
+    });
+  } catch (e) {
+    // Void the reservation so the credits aren't held hostage by a Stripe error.
+    await sql`UPDATE public.transactions SET status = 'failed', updated_at = now() WHERE id = ${transactionId}`;
+    throw e;
+  }
+  await sql`
+    UPDATE public.transactions
+    SET stripe_payment_intent_id = ${pi.paymentIntentId}, updated_at = now()
+    WHERE id = ${transactionId}
   `;
 
   return {
     clientSecret: pi.clientSecret,
     paymentIntentId: pi.paymentIntentId,
-    transactionId: txnRows[0]!.id,
-    amountCents: fee.consumerPaidCents,
+    transactionId,
+    amountCents: cashCents,
+    creditsAppliedCents,
+    promoDiscountCents: promo?.discountCents ?? 0,
+    paidWithCredits: false,
   };
 }
 
@@ -201,16 +277,20 @@ export async function createGiftLink(
   }
 
   const totalCents = v.deal_price_cents * qty;
-  const fee = await computeFee(sql, totalCents, v.vendor_id);
+  // Deal promo (GLO-44): the payer gets the same public discount. No credits
+  // on gift links, so the session amount is just the discounted total.
+  const { fee, promo, chargeBaseCents } = await pricePromoOrder(sql, {
+    dealId: v.deal_id, vendorId: v.vendor_id, baseTotalCents: totalCents,
+  });
 
-  if (fee.consumerPaidCents > GIFT_LINK_MAX_AMOUNT_CENTS) {
+  if (chargeBaseCents > GIFT_LINK_MAX_AMOUNT_CENTS) {
     throw new Error(
       `Share-to-pay is capped at $${(GIFT_LINK_MAX_AMOUNT_CENTS / 100).toFixed(0)} per link. Pay in-app for higher amounts.`,
     );
   }
 
   const session = await createGiftCheckoutSession({
-    amountCents: fee.consumerPaidCents,
+    amountCents: chargeBaseCents,
     productName: v.deal_title,
     productDescription: `${v.vendor_name} · ${v.variant_label}${qty > 1 ? ` × ${qty}` : ''}`,
     productImageUrl: v.deal_photo_url,
@@ -234,10 +314,12 @@ export async function createGiftLink(
     INSERT INTO public.transactions (
       vendor_id, user_id, consumer_paid_cents, platform_fee_cents,
       vendor_payout_cents, platform_fee_id, platform_fee_snapshot,
+      deal_promo_id, promo_discount_cents, promo_funded_by,
       stripe_checkout_session_id, payment_source, status
     ) VALUES (
       ${v.vendor_id}, ${args.redeemerUserId}, ${fee.consumerPaidCents}, ${fee.platformFeeCents},
       ${fee.vendorPayoutCents}, ${fee.platformFeeId}, ${sql.json(fee.snapshot)},
+      ${promo?.promoId ?? null}, ${promo?.discountCents ?? 0}, ${promo?.fundedBy ?? null},
       ${session.sessionId}, 'gift_link', 'pending_payment'
     )
     RETURNING id
@@ -248,18 +330,27 @@ export async function createGiftLink(
     stripeCheckoutUrl: session.url!,
     sessionId: session.sessionId,
     transactionId: txnRows[0]!.id,
-    amountCents: fee.consumerPaidCents,
+    amountCents: chargeBaseCents,
   };
 }
 
 export interface CreateHostedCheckoutResult {
-  /** Hosted-mode redirect URL (null in embedded mode). */
+  /** Hosted-mode redirect URL (null in embedded mode and on the zero-dollar path). */
   checkoutUrl: string | null;
-  /** Embedded-mode client secret for Stripe's <EmbeddedCheckout> (null in hosted mode). */
+  /** Embedded-mode client secret for Stripe's <EmbeddedCheckout> (null in hosted
+   *  mode and on the zero-dollar path — paidWithCredits is the success marker). */
   clientSecret: string | null;
-  sessionId: string;
+  /** Null on the zero-dollar path (no Stripe session exists). */
+  sessionId: string | null;
   transactionId: string;
+  /** Cash for the Stripe session = order total − promo − credits applied. */
   amountCents: number;
+  creditsAppliedCents: number;
+  /** Deal-promo discount applied to this order (GLO-44), 0 when none. */
+  promoDiscountCents: number;
+  /** True when credits covered the whole order — no Stripe step; the UI should
+   *  treat this as direct success (vouchers are already minted). */
+  paidWithCredits: boolean;
 }
 
 /**
@@ -272,7 +363,14 @@ export interface CreateHostedCheckoutResult {
  */
 export async function createHostedCheckout(
   sql: Sql,
-  args: { userId: string; variantId: string; quantity: number; publicOrigin: string; embedded?: boolean },
+  args: {
+    userId: string;
+    variantId: string;
+    quantity: number;
+    publicOrigin: string;
+    embedded?: boolean;
+    applyCredits?: boolean;
+  },
 ): Promise<CreateHostedCheckoutResult> {
   const qty = Math.max(1, Math.min(MAX_QTY, Math.floor(args.quantity)));
 
@@ -331,47 +429,102 @@ export async function createHostedCheckout(
   }
 
   const totalCents = v.deal_price_cents * qty;
-  const fee = await computeFee(sql, totalCents, v.vendor_id);
+  // Deal promo (GLO-44) first, credits on the remainder — see createPurchase.
+  const { fee, promo, chargeBaseCents } = await pricePromoOrder(sql, {
+    dealId: v.deal_id, vendorId: v.vendor_id, baseTotalCents: totalCents,
+  });
 
-  const session = await createGiftCheckoutSession({
-    amountCents: fee.consumerPaidCents,
-    productName: v.deal_title,
-    productDescription: `${v.vendor_name} · ${v.variant_label}${qty > 1 ? ` × ${qty}` : ''}`,
-    productImageUrl: v.deal_photo_url,
-    // Embedded: Stripe renders the form on gloe.app and returns the payer to
-    // /wallet after success. Hosted (legacy): redirect + back-out URLs.
-    ...(args.embedded
-      ? { uiMode: 'embedded' as const, returnUrl: `${args.publicOrigin}/wallet?purchased=1&session_id={CHECKOUT_SESSION_ID}` }
-      : { successUrl: `${args.publicOrigin}/wallet?purchased=1`, cancelUrl: `${args.publicOrigin}/deals/${v.deal_id}` }),
-    metadata: {
+  // Same credits reservation pattern as createPurchase — see comments there.
+  const { transactionId, creditsAppliedCents, cashCents } = await sql.begin(async (tx) => {
+    const applied = args.applyCredits === false
+      ? 0
+      : await computeApplicableCredits(tx, { userId: args.userId, orderTotalCents: chargeBaseCents });
+    const txnRows = await tx<{ id: string }[]>`
+      INSERT INTO public.transactions (
+        vendor_id, user_id, consumer_paid_cents, platform_fee_cents,
+        vendor_payout_cents, platform_fee_id, platform_fee_snapshot,
+        credits_applied_cents, deal_promo_id, promo_discount_cents, promo_funded_by,
+        payment_source, status
+      ) VALUES (
+        ${v.vendor_id}, ${args.userId}, ${fee.consumerPaidCents}, ${fee.platformFeeCents},
+        ${fee.vendorPayoutCents}, ${fee.platformFeeId}, ${tx.json(fee.snapshot)},
+        ${applied}, ${promo?.promoId ?? null}, ${promo?.discountCents ?? 0}, ${promo?.fundedBy ?? null},
+        'web', 'pending_payment'
+      )
+      RETURNING id
+    `;
+    return {
+      transactionId: txnRows[0]!.id,
+      creditsAppliedCents: applied,
+      cashCents: chargeBaseCents - applied,
+    };
+  });
+
+  // Zero-dollar path: no Stripe session at all — fulfill inline and hand the
+  // UI a direct-success marker instead of a clientSecret.
+  if (cashCents === 0) {
+    await fulfillPurchase(sql, null, {
       userId: args.userId,
       variantId: v.variant_id,
       dealId: v.deal_id,
       vendorId: v.vendor_id,
-      quantity: String(qty),
-      paymentSource: 'web',
-    },
-  });
+      quantity: qty,
+      transactionId,
+    });
+    return {
+      checkoutUrl: null,
+      clientSecret: null,
+      sessionId: null,
+      transactionId,
+      amountCents: 0,
+      creditsAppliedCents,
+      promoDiscountCents: promo?.discountCents ?? 0,
+      paidWithCredits: true,
+    };
+  }
 
-  const txnRows = await sql<{ id: string }[]>`
-    INSERT INTO public.transactions (
-      vendor_id, user_id, consumer_paid_cents, platform_fee_cents,
-      vendor_payout_cents, platform_fee_id, platform_fee_snapshot,
-      stripe_checkout_session_id, payment_source, status
-    ) VALUES (
-      ${v.vendor_id}, ${args.userId}, ${fee.consumerPaidCents}, ${fee.platformFeeCents},
-      ${fee.vendorPayoutCents}, ${fee.platformFeeId}, ${sql.json(fee.snapshot)},
-      ${session.sessionId}, 'web', 'pending_payment'
-    )
-    RETURNING id
+  let session;
+  try {
+    session = await createGiftCheckoutSession({
+      amountCents: cashCents,
+      productName: v.deal_title,
+      productDescription: `${v.vendor_name} · ${v.variant_label}${qty > 1 ? ` × ${qty}` : ''}`,
+      productImageUrl: v.deal_photo_url,
+      // Embedded: Stripe renders the form on gloe.app and returns the payer to
+      // /wallet after success. Hosted (legacy): redirect + back-out URLs.
+      ...(args.embedded
+        ? { uiMode: 'embedded' as const, returnUrl: `${args.publicOrigin}/wallet?purchased=1&session_id={CHECKOUT_SESSION_ID}` }
+        : { successUrl: `${args.publicOrigin}/wallet?purchased=1`, cancelUrl: `${args.publicOrigin}/deals/${v.deal_id}` }),
+      metadata: {
+        userId: args.userId,
+        variantId: v.variant_id,
+        dealId: v.deal_id,
+        vendorId: v.vendor_id,
+        quantity: String(qty),
+        paymentSource: 'web',
+        creditsAppliedCents: String(creditsAppliedCents),
+        promoDiscountCents: String(promo?.discountCents ?? 0),
+      },
+    });
+  } catch (e) {
+    await sql`UPDATE public.transactions SET status = 'failed', updated_at = now() WHERE id = ${transactionId}`;
+    throw e;
+  }
+  await sql`
+    UPDATE public.transactions
+    SET stripe_checkout_session_id = ${session.sessionId}, updated_at = now()
+    WHERE id = ${transactionId}
   `;
 
   return {
     checkoutUrl: session.url ?? null,
     clientSecret: session.clientSecret ?? null,
     sessionId: session.sessionId,
-    transactionId: txnRows[0]!.id,
-    amountCents: fee.consumerPaidCents,
+    transactionId,
+    amountCents: cashCents,
+    creditsAppliedCents,
+    promoDiscountCents: promo?.discountCents ?? 0,
+    paidWithCredits: false,
   };
 }
 
@@ -390,23 +543,32 @@ export interface PaymentMeta {
   /** If the webhook arrived from checkout.session.completed (not the PI event),
    *  the caller passes the session ID so we can find the txn that way. */
   stripeCheckoutSessionId?: string;
+  /** Zero-dollar inline path: no Stripe ids exist, so the caller passes the
+   *  transaction id directly. */
+  transactionId?: string;
+  /** charge.payment_method_details.card.fingerprint from the webhook's expanded
+   *  PaymentIntent — persisted for the referral self-funding guard. Best-effort. */
+  cardFingerprint?: string | null;
 }
 
 /**
- * Called from payment_intent.succeeded OR checkout.session.completed. Marks
- * the transaction paid, creates one active claim (voucher + QR) PER quantity,
- * and bumps spots_claimed. Atomic + idempotent — re-running for the same
- * txn is a no-op once already paid, so Stripe firing both events for a gift
- * link won't double-fulfill.
+ * THE fulfillment core — called from payment_intent.succeeded,
+ * checkout.session.completed, AND inline for zero-dollar (all-credits) orders.
+ * Marks the transaction paid, creates one active claim (voucher + QR) PER
+ * quantity, bumps spots_claimed, and consumes any reserved credits in the
+ * SAME transaction (lots drawn down exactly once — idempotent on the txn).
+ * Atomic + idempotent — re-running for the same txn is a no-op once already
+ * paid, so Stripe firing both events for a gift link won't double-fulfill.
  *
  * Lookup: for in-app the caller passes a PaymentIntent ID. For gift links the
  * webhook fires checkout.session.completed first; the caller passes the
  * Checkout Session ID via meta.stripeCheckoutSessionId and we resolve the txn
- * that way (we also backfill the PI id from the session at that point).
+ * that way (we also backfill the PI id from the session at that point). The
+ * zero-dollar path passes meta.transactionId (there are no Stripe ids).
  */
 export async function fulfillPurchase(
   sql: Sql,
-  paymentIntentId: string,
+  paymentIntentId: string | null,
   meta: PaymentMeta,
 ): Promise<void> {
   // Captured inside the txn, used to fire the receipt AFTER it commits (a
@@ -415,17 +577,38 @@ export async function fulfillPurchase(
   let receiptExpiresAt = '';
   type ReceiptCore = { dealTitle: string; vendorName: string; variantLabel: string; amountPaidCents: number; photoUrl: string | null };
   let receipt: ReceiptCore | null = null;
+  let fulfilledTxnId: string | null = null;
+  let creditsAppliedCents = 0;
+  let promoDiscountCents = 0;
+  let redeemed: RedeemSummary | null = null;
 
   await sql.begin(async (tx) => {
-    const txns = meta.stripeCheckoutSessionId
-      ? await tx<{ id: string; status: string }[]>`
-          SELECT id, status FROM public.transactions
-          WHERE stripe_checkout_session_id = ${meta.stripeCheckoutSessionId} LIMIT 1
+    type TxnRow = {
+      id: string;
+      status: string;
+      user_id: string;
+      consumer_paid_cents: number;
+      credits_applied_cents: number;
+      promo_discount_cents: number;
+      promo_funded_by: 'platform' | 'vendor' | null;
+    };
+    const txns = meta.transactionId
+      ? await tx<TxnRow[]>`
+          SELECT id, status, user_id, consumer_paid_cents, credits_applied_cents, promo_discount_cents, promo_funded_by
+          FROM public.transactions
+          WHERE id = ${meta.transactionId} LIMIT 1
         `
-      : await tx<{ id: string; status: string }[]>`
-          SELECT id, status FROM public.transactions
-          WHERE stripe_payment_intent_id = ${paymentIntentId} LIMIT 1
-        `;
+      : meta.stripeCheckoutSessionId
+        ? await tx<TxnRow[]>`
+            SELECT id, status, user_id, consumer_paid_cents, credits_applied_cents, promo_discount_cents, promo_funded_by
+            FROM public.transactions
+            WHERE stripe_checkout_session_id = ${meta.stripeCheckoutSessionId} LIMIT 1
+          `
+        : await tx<TxnRow[]>`
+            SELECT id, status, user_id, consumer_paid_cents, credits_applied_cents, promo_discount_cents, promo_funded_by
+            FROM public.transactions
+            WHERE stripe_payment_intent_id = ${paymentIntentId} LIMIT 1
+          `;
     const txn = txns[0];
     if (!txn || txn.status !== 'pending_payment') return; // unknown or already done
 
@@ -498,11 +681,29 @@ export async function fulfillPurchase(
           paid_at                   = now(),
           updated_at                = now(),
           stripe_fee_cents          = ${meta.stripeFeeCents ?? 0},
-          stripe_payment_intent_id  = COALESCE(stripe_payment_intent_id, ${paymentIntentId}),
+          stripe_payment_intent_id  = COALESCE(stripe_payment_intent_id, ${paymentIntentId ?? null}),
+          card_fingerprint          = COALESCE(card_fingerprint, ${meta.cardFingerprint ?? null}),
           payer_email               = COALESCE(payer_email, ${meta.payerEmail ?? null}),
           payer_name                = COALESCE(payer_name, ${meta.payerName ?? null})
       WHERE id = ${txn.id}
     `;
+
+    // Consume the credits reserved at checkout — SAME transaction as the
+    // vouchers so lots draw down exactly once (idempotent on the txn).
+    if (txn.credits_applied_cents > 0) {
+      redeemed = await redeemCreditsForTransaction(tx, {
+        userId: txn.user_id,
+        transactionId: txn.id,
+        amountCents: txn.credits_applied_cents,
+        // Must match the base the reservation saw: a platform-funded promo
+        // shrank the chargeable total below consumer_paid_cents (GLO-44).
+        orderTotalCents: txn.consumer_paid_cents
+          - (txn.promo_funded_by === 'platform' ? txn.promo_discount_cents : 0),
+      });
+    }
+    fulfilledTxnId = txn.id;
+    creditsAppliedCents = txn.credits_applied_cents;
+    promoDiscountCents = txn.promo_discount_cents;
   });
 
   // Receipt — fire-and-forget, post-commit. `receipt` is only set when we
@@ -520,8 +721,34 @@ export async function fulfillPurchase(
       vendorName: r.vendorName,
       variantLabel: r.variantLabel,
       amountPaidCents: r.amountPaidCents,
+      creditsAppliedCents,
+      promoDiscountCents,
       photoUrl: r.photoUrl,
     }).catch((e) => console.error('[receipt] failed:', (e as Error).message));
+  }
+
+  // Post-commit, only on an actual fulfillment (fulfilledTxnId stays null on
+  // duplicate webhooks). Audit the credit drawdown, then check whether this
+  // was a referee's first qualifying purchase — fire-and-forget, every
+  // outcome audited inside maybePayoutReferrerOnFirstPurchase.
+  const consumed = redeemed as RedeemSummary | null;
+  const txId = fulfilledTxnId as string | null;
+  if (txId && consumed && consumed.redeemedCents > 0) {
+    void writeAudit(sql, {
+      action: 'credit.redeemed',
+      transactionId: txId,
+      meta: {
+        userId: meta.userId,
+        amountCents: consumed.redeemedCents,
+        shortfallCents: consumed.shortfallCents,
+        lots: consumed.lots,
+      },
+    });
+  }
+  if (txId) {
+    void import('./referrals')
+      .then((m) => m.maybePayoutReferrerOnFirstPurchase(sql, txId))
+      .catch((e) => console.error('[referral] payout check failed:', (e as Error).message));
   }
 }
 
@@ -535,7 +762,8 @@ async function sendReceiptEmail(
   d: {
     userId: string; payerEmail: string | null; quantity: number;
     codes: string[]; expiresAt: string;
-    dealTitle: string; vendorName: string; variantLabel: string; amountPaidCents: number; photoUrl: string | null;
+    dealTitle: string; vendorName: string; variantLabel: string; amountPaidCents: number;
+    creditsAppliedCents: number; promoDiscountCents: number; photoUrl: string | null;
   },
 ): Promise<void> {
   const userRows = await sql<{ email: string | null; first_name: string | null }[]>`
@@ -559,6 +787,8 @@ async function sendReceiptEmail(
       firstName: userRows[0]?.first_name ?? null,
       dealTitle: d.dealTitle, vendorName: d.vendorName, variantLabel: d.variantLabel,
       quantity: d.quantity, amountPaidCents: d.amountPaidCents, codes: d.codes, expiresAt,
+      creditsAppliedCents: d.creditsAppliedCents,
+      promoDiscountCents: d.promoDiscountCents,
       photoUrl,
       walletUrl: `${process.env.PUBLIC_WEB_ORIGIN ?? 'https://gloe.app'}/wallet`,
     }),

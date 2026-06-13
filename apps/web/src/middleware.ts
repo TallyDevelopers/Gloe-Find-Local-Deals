@@ -18,6 +18,7 @@ const isPublicRoute = createRouteMatcher([
   '/for-business(.*)', // legacy alias
   '/legal/(.*)', // terms / privacy
   '/gift/(.*)', // shared payment links — recipients are anonymous
+  '/r/(.*)', // referral invite landing — the whole point is signed-out arrivals
   '/sitemap.xml', // crawlers — must be reachable signed-out
   '/robots.txt',
   '/manifest.webmanifest',

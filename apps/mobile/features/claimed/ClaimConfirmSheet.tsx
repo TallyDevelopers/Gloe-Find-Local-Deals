@@ -1,5 +1,6 @@
 import { BottomSheet, Button, Stack, Text, radius, space, useTheme } from '@gloe/ui';
 import { useRouter } from 'expo-router';
+import { useState } from 'react';
 import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -45,9 +46,13 @@ export function ClaimConfirmSheet({
   const { color: palette } = useTheme();
   const { createClaim } = useClaimedDeals();
   const isOpen = deal !== null && variant !== null;
+  const [claiming, setClaiming] = useState(false);
+  const [claimError, setClaimError] = useState<string | null>(null);
 
   const handleConfirm = async () => {
-    if (!deal || !variant) return;
+    if (!deal || !variant || claiming) return;
+    setClaiming(true);
+    setClaimError(null);
     try {
       const claim = await createClaim({ dealId: deal.id, variantId: variant.id });
       // Close the sheet, then route to the new voucher. The sheet animates out
@@ -55,9 +60,10 @@ export function ClaimConfirmSheet({
       onClose();
       router.push(`/(app)/my-deal/${claim.id}`);
     } catch (e) {
-      // TODO: surface a toast / error state. For now, log and close.
-      console.warn('Claim failed', e);
-      onClose();
+      // Keep the sheet open and say what happened — never swallow a failed claim.
+      setClaimError(e instanceof Error && e.message ? e.message : 'That claim didn’t go through. Please try again.');
+    } finally {
+      setClaiming(false);
     }
   };
 
@@ -138,12 +144,18 @@ export function ClaimConfirmSheet({
             </Stack>
 
             <Stack gap={3}>
+              {claimError ? (
+                <Text variant="body-sm" tone="error" style={{ textAlign: 'center' }}>
+                  {claimError}
+                </Text>
+              ) : null}
               <Button
                 label="Claim now"
                 size="lg"
                 fullWidth
+                loading={claiming}
                 onPress={handleConfirm}
-                disabled={cannotClaim}
+                disabled={cannotClaim || claiming}
               />
               <Button label="Not now" variant="ghost" size="md" fullWidth onPress={onClose} />
             </Stack>

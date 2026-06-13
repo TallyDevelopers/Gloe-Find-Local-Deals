@@ -77,7 +77,7 @@ Last consolidated: 2026-05-29. Last updated: 2026-06-01 (search & discovery engi
 6E. [App shell & bottom navigation](#6e-app-shell--bottom-navigation)
 7. [Vendor portal](#7-vendor-portal)
 8. [Admin (god mode)](#8-admin-god-mode)
-9. [Credit & loyalty system](#9-credit--loyalty-system)
+9. [Credits, promos & referrals](#9-credits-promos--referrals-the-incentives-platform)
 10. [What's shipped, what's pending](#10-whats-shipped-whats-pending)
 11. [Pre-launch runbook](#11-pre-launch-runbook)
 12. [Manual test scenarios](#12-manual-test-scenarios)
@@ -368,6 +368,27 @@ payouts:         pending → paid
 11. License on file (GLO-19: admin-verified via the license review flow; enforced at posting time through `canPostDeals`)
 12. No open dispute on the transaction — a `charge.dispute.created` sets the transaction to `disputed`, and wall #4 (`status='paid'`) refuses it. The dispute also freezes the voucher (wall #3 can never reach `redeemed`). See §4 Disputes.
 
+### Deal promos — "Extra $X off" (GLO-44)
+
+A **promo** is a public discount placed ON a deal (not a code, not wallet money): everyone browsing sees the badge — auto copy "Extra $15 off" or a custom label — and the discount applies itself as a line item at checkout, **before** credits. One live promo per deal (DB-enforced), window-bound (`starts_at`/`ends_at`), table `deal_promos`. Distinct from credits (GLO-24): credits follow the *customer*; promos sit on the *deal*.
+
+**Funding decides the payout math** (the part that must not be wrong):
+
+| | Platform-funded (god mode) | Vendor-funded ("Boost this deal") |
+| -- | -- | -- |
+| Customer pays | price − promo | price − promo |
+| Fee computed on | **original price** | **discounted price** |
+| Vendor receives | original − fee(original) — **vendor stays whole** | discounted − fee(discounted) |
+| Who eats it | Gloē (comes out of the platform fee; same balance-funded plumbing as credits) | The vendor (their dashboard shows "you'll receive $X instead of $Y" before they confirm) |
+
+On the transaction row: `deal_promo_id`, `promo_discount_cents`, `promo_funded_by`. For platform-funded promos `consumer_paid_cents` stays the FULL price (the credits pattern — only the Stripe charge shrinks); for vendor-funded ones the sale is booked at the discounted price, so everything downstream (fee snapshot, payout, refunds, disputes) just works.
+
+**Stacking & guards:** promo first, credits on the remainder; earn rules (referral floor) evaluate on the post-promo total. Promo can't push any variant below Stripe's 50¢ floor, can't exceed a 90% total discount vs the original price (FTC pricing-claims hygiene), and never stacks with another promo. Paused/suspended deals take their promo off-air automatically (the lookup requires `deals.status='active'`).
+
+**Refunds:** the customer gets back what they *paid* (cash + credits — never the discount). Vendor-funded → the proportional clawback restores the vendor's discounted share; platform-funded → the platform absorbs its promo share, as it already did at sale time.
+
+**Surfaces:** badge takes the card's top-left slot (promo > Sponsored > "% off" — never stacked) with the post-promo price in the price row on app + web; its own line above credits at checkout; receipts show original / promo / credits / charged. God mode → **Promos** tab (create platform-funded, cost-to-date = orders × recorded discount, end any promo). Vendor dashboard → **Boost** on a live deal (vendor-funded, payout preview, end anytime). Audit: `deal_promo.created` / `deal_promo.ended`.
+
 ---
 
 ## 5. Database schema
@@ -452,7 +473,7 @@ The iPhone app a customer actually uses: **find** a deal (Discover + Search), **
 | Discover | Shipped | Feed of deals near you. **Admin-authored editorial section rails** (cute taglines that pool 1..N categories, GLO-27) — falls back to per-category rails when none authored. 4:3 cards each ending in an inline "See all" tile → 2-up grid; per-category Browse tiles; filter pills; location-gated home (§6A). |
 | Map | Shipped | ResortPass-style map discovery (GLO-25). Reached via the brand map button by the search bar. Full detail in §6A → "Map discovery". |
 | Saved | Shipped | Bookmarked deals + vendors. Segmented control. |
-| Wallet | Shipped | Active vouchers, past claims, soonest-expiring hero, credit balance (stub at $0). |
+| Wallet | Shipped | Active vouchers, past claims, soonest-expiring hero, live credit balance + ledger history (GLO-24). |
 | Profile | Shipped | Grouped settings (ACTIVITY / PREFERENCES / SUPPORT & ABOUT), sign out, delete account (SHIPPED). See "Profile screen" below. |
 
 ### Key flows
@@ -769,48 +790,62 @@ The founder's cockpit — **one screen to run the entire business:** approve ven
 | Fees | Global tier config (create, update, deactivate). Per-vendor override per row. |
 | Audit | Every mutation. Filter by action / vendor / user / date. |
 | Transactions | Browse + drill into individual transactions. |
-| Customers | Consumer roster + detail. Per-txn inline refund. Refunded-txn badge cross-links → Refunds tab. Issue manual coupon = **stub**. |
+| Customers | Roster → **full-page Customer 360** (`/admin/customer/[id]`, GLO-56 — no drawer): every purchase with its cash/credit/promo split, all vouchers, refund history, embedded credit ledger (grant/revoke), referral picture, ledger freeze/unfreeze, **one-off push** (`admin.sendCustomerPush` → registry type `admin_message`, audited as `customer.push_sent`), duplicate-charge alerts, per-txn full/partial refunds, last-seen-near city (from browse location). |
 | **Support** | Concierge tickets. Widened drawer with: chat (photo/video), **boss-view customer profile** (lifetime spend, refund %, auto-flags), **order-context history** (which order the ticket is about + all past orders), **inline refund/partial-refund per order**, and refund-badge cross-link → Refunds tab. Reply + push-on-reply, resolve/close. |
 
 **Cross-tab links:** the "refunded $X ↗" badge anywhere (support drawer, customer drawer) jumps to the Refunds tab and flashes the matching record (targeted by transactionId). Customer names in the Refunds ledger jump to that customer's drawer.
 
 ---
 
-## 9. Credit & loyalty system
+## 9. Credits, promos & referrals (the incentives platform)
 
 ### 💼 The pitch
 
-A future loyalty layer: customers earn **credit** (from referrals, goodwill refunds, or gifts) that they spend on their next treatment — the hook that turns a one-time deal-hunter into a **repeat** customer, which is where marketplace economics actually win. **Not built yet** (Wallet shows $0); fully specced and ready when we want to pull the retention lever post-launch.
+One incentives engine, two levers. **Wallet credits** (GLO-24) are personal dollars that follow the customer — earned from referrals, campaigns, refund returns, or (dormant) purchase tiers, auto-applied at checkout. **Deal promos** (GLO-44, §4) are public "Extra $X off" discounts sitting on a deal. Governing rule: **incentives are platform-funded** — vendor payout math never changes — unless the vendor explicitly funds their own boost. Checkout order: promo cuts the price → credits cover the remainder → card pays the rest.
 
-### 🔧 Under the hood
+**Status: BUILT** (branch `ryan/glo-24…`/`glo-44`, 2026-06). Launch posture: referral $20/$20 **ON** ($50 first-booking floor), purchase tiers + signup bonus seeded **OFF**, campaigns on demand, promos per deal.
 
-**Status: stubbed, not built.** Wallet tab shows balance of $0 with a "when referrals / refunds / gifts land" note.
+### 🔧 Under the hood — the ledger
 
-### Spec (when built)
+**Lot-based, append-only** (`supabase/migrations/20260610120000_credits_platform.sql`):
 
-**Two buckets:**
-- **Gloē pool** — funded by Gloē, usable at any vendor.
-- **Vendor credit** — funded by a specific vendor, locked to them. Opt-in per vendor.
+- `credit_lots` — every grant. `amount_cents`, `remaining_cents` (the ONLY mutable column; clawback may push it negative), `expires_at`, kind ∈ `referral_give | referral_get | purchase_reward | signup_bonus | promo | admin_grant | refund_return`.
+- `credit_entries` — append-only debits pointing at their lot: `redemption | expiry | clawback | forfeiture`.
+- Balance = `SUM(remaining_cents)` across lots; UI floors at $0. Redemption consumes lots FIFO-by-soonest-expiry.
+- `credit_rules` — god-mode-editable program knobs (the `platform_fees` pattern): tier brackets, referral give/get + `min_first_purchase_cents`, `expires_after_days` (default 90), monthly caps.
+- `credit_campaigns` — push-credit blasts; audience ∈ `everyone | lapsed_60d | signed_up_never_purchased`, optionally **drilled down by city** (`audience_city` matches `users.last_city`); idempotent per (campaign, user).
+- `users.last_lat/last_lng/last_city/last_location_at` — **last-known approximate location**, captured opportunistically from signed-in browse calls (the app already sends coords to `deals.list`/`discoverFeed`/`search` for distance ranking). Foreground-only by construction, rounded to 3 decimals (~city block), throttled to one write / 15 min, city re-geocoded only on a ≥10 km move (`domain/userLocation.ts`). Powers the Customers "Last seen near" column, the Customer 360 header line, and campaign city targeting (`admin.listCustomerCities` feeds the picker). Disclosed in the privacy policy; nutrition label must say Location = collected, linked.
 
-**Earning rules:**
-- $2.50 for deals < $500, $10 for deals ≥ $500.
-- Earned on **redemption** (not purchase) — prevents refund-farming.
-- 12-month expiry.
+**One door:** `grantCredit()` (`credits.ts`) is the only code path that mints lots. Idempotency walls (partial unique indexes): (kind, transaction_id), (kind, referral_id), (campaign_id, user_id) — webhook retries and double-clicks return `duplicate`, never double money.
 
-**Spending rules:**
-- Consumer toggles independently at checkout. Can use neither to stack for next time.
-- On refund: credit clawed back from balance (idempotent).
+### Checkout integration (`checkout.ts`)
 
-**Data model:**
-- Append-only `credit_ledger` (user_id, bucket, vendor_id?, cents, kind, created_at, expires_at).
-- Balance = sum of ledger rows minus expired.
+`computeApplicableCredits()` runs **inside** the purchase transaction with `SELECT … FOR UPDATE` on the user's lots + a pending-order reservation window — concurrent checkouts cannot spend the same balance. Client sends only the on/off toggle; amounts are server-computed. Stripe 50¢ floor: a 1–49¢ cash sliver shaves applied credit to leave exactly 50¢. 100% coverage → **zero-dollar path**: no PaymentIntent, inline `fulfillPurchase` (vouchers + receipt + drawdown in one txn). `transactions.credits_applied_cents` records the split; `consumer_paid_cents` stays the full order value so fee + vendor payout never change. Platform margin on a credited txn = `platform_fee_cents − credits_applied_cents`.
 
-**UI surfaces:**
-- Deal card: "Earn $2.50 in Gloē credit"
-- Wallet tab: credit balance + history
-- Checkout: toggles for each available credit
+### Referrals (`referrals.ts`)
 
-**Build order:** post-Stripe-Connect, post-refund-flow. Step 5 of 5 in the money roadmap.
+Personal 6-char code (no-vowel alphabet, e.g. `RYAN20`) + share link; attribution stored on the user row at signup. Referee's `referral_give` lot lands at attribution but is **locked until a first purchase ≥ the rule floor** (spendable at that checkout). `maybePayoutReferrerOnFirstPurchase()` fires post-fulfillment: verifies first-ness, the floor (on the **post-promo** total), then grants `referral_get`. Fraud walls: self-referral block, **card-fingerprint match voids the referrer payout**, deleted-account **salted email-hash denylist** (re-signup ≠ new user), monthly caps on referral+signup sources only.
+
+### Lifecycle
+
+- **Refunds** are split-tender (`vendorOps.ts`): cash → card, credit share → `refund_return` lot with expiry = max(original remaining window, 30d). Earned credits (tier reward, both referral sides) **claw back** via `unwindCreditsForTransaction` when the refund breaks the qualifying floor. DB CHECKs cap `refunded_cents` at the true cash share (credits and platform-funded promo discounts excluded).
+- **Disputes** freeze the ledger (`users.credit_frozen_at`); frozen wallets can't redeem; dispute-won unfreezes (GLO-34 webhook).
+- **Expiry**: daily in-process sweep (`index.ts`) — `expireOverdueLots()` zeroes overdue remainders, `sendCreditExpiryNudges()` queues 7d/1d push+email via the notification registry (`credit_expiry_reminder`, dedup'd per lot+window).
+- **Account deletion** forfeits the balance (`forfeiture` entries) and records the email hash; delete-confirmation warns "you'll forfeit $X."
+
+### God mode
+
+**Credits tab** (`CreditsView.tsx` / `creditAdmin.ts`): rules editor, campaigns (compose → preview audience+cost → send), per-customer ledger with manual grant/revoke (reason required, audited), program dashboard — issued / redeemed / clawed back / expired / forfeited / **outstanding liability** — plus platform Stripe balance vs exposure. **Promos tab** (`PromosView.tsx`): see §4 Deal promos. Audit actions: `credit.*`, `credit_rule.*`, `credit_campaign.*`, `referral.*`, `deal_promo.*`.
+
+**Error UX (delivery hardening, 2026-06-12):** every god-mode form validates inline with a plain-English message *before* the round-trip ("Add a note — the customer sees it in their email"), and a global tRPC `errorFormatter` (`trpc.ts → friendlyZodMessage`) turns any zod rejection into one human sentence instead of the raw JSON issue dump — this applies to every router, not just credits. Cross-surface sweep (same day): vendor portal + consumer web already rendered `error.message` inline, so they inherit the formatter for free; the silent-failure gaps were closed — mobile support create/reply now show the real error (reply restores the draft on failure), the claim sheet stays open with the message instead of closing silently, waitlist join shows the real reason, consumer account-deletion and the instant-payout/save-spa toggles surface failures. Sending a campaign to an audience of 0 refuses without burning the draft; deactivating a missing rule says "Rule not found." Regression harness: `apps/api/scripts/glo24-godmode-e2e.ts` (50 assertions — wire messages, rule shapes/conflict walls, grant/revoke ledger math, freeze/thaw, campaign draft lifecycle; throwaway fixtures, full cleanup, never sends a real campaign).
+
+### Why it scales
+
+Every knob is a DB row (no-deploy program changes); balance is a SUM over an append-only ledger (no drifting counters, full replayability); no per-user jobs (one daily sweep + the 60s notification queue); economics are observable before they bite (per-txn credit cost line, liability dashboard, promo cost-to-date). The credit share of payouts is funded from the platform Stripe balance — the balance-vs-liability indicator is the number to watch as the program grows.
+
+### ⚖️ Legal hooks
+
+ToS: no cash value, non-transferable, no gifts with credits, per-rule expiry, reversal on refund/dispute, forfeiture on deletion, program modifiable. Privacy: referral attribution + salted email-hash retention post-deletion. (Both flagged on GLO-15 for the counsel pass.)
 
 ---
 
@@ -873,12 +908,12 @@ The **infra switches** (Stripe live keys, live webhook, Railway env, EAS build, 
 - ~~**Delete account in-app**~~ — **DONE** (`me.deleteAccount`, anonymize-and-deactivate; see §6).
 - **ATT prompt** — ✅ resolved (GLO-13): not needed; the app does zero cross-app tracking. Revisit only if an ads/attribution SDK or IDFA use ever ships (see §10 table row 5 for the exact trigger).
 - ~~**Map discovery**~~ — **DONE** (GLO-25; ResortPass-style, reached via the search-bar map button, not a bottom tab — see §6A "Map discovery").
-- **Credit & loyalty system** — stubbed at $0.
+- ~~**Credit & loyalty system**~~ — **DONE** (GLO-24: lot-based wallet ledger, referrals $20/$20, campaigns, god-mode Credits tab; purchase tiers + signup bonus built but OFF). Deal promos too (GLO-44). See §9.
 - **Sentry + Mixpanel** — not wired.
 - **CI/CD** — no `.github/workflows/`. Manual Railway deploy.
 - **OTA updates (expo-updates)** — not installed; no `eas.json`. Every mobile update is a full rebuild today. Wire OTA when cutting the first TestFlight build (see §11 Phase 5). Deferred on purpose while native code churns.
 - **Supabase migrations in repo** — not visible. Schema managed directly. Risky — add migration tracking before next major schema change.
-- **Coupon / manual credit issuance in admin** — UI stub.
+- ~~**Coupon / manual credit issuance in admin**~~ — **DONE** (god-mode manual grant/revoke on any customer ledger + credit campaigns; GLO-24).
 - **OSRM self-hosted routing** — current drive-time is straight-line × tiered mph (±20%, $0). Deferred until margin demands it.
 - **Reconciliation cron** — query exists, schedule not wired.
 - **Dispute / chargeback webhook** — ✅ shipped (GLO-34): `charge.dispute.*` freezes the voucher, halts the payout (wall #12), and reconciles a lost dispute. See §4 "Disputes & chargebacks." The only remaining step is **enabling the three `charge.dispute.*` events on the live Stripe webhook endpoint**.

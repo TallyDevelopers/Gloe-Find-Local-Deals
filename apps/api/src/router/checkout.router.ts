@@ -22,6 +22,8 @@ export const checkoutRouter = router({
       z.object({
         variantId: z.string().uuid(),
         quantity: z.number().int().min(1).max(10).default(1),
+        // The client only sends the toggle — the server computes the amount.
+        applyCredits: z.boolean().default(true),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -30,6 +32,7 @@ export const checkoutRouter = router({
           userId: ctx.auth.userId,
           variantId: input.variantId,
           quantity: input.quantity,
+          applyCredits: input.applyCredits,
         });
       } catch (e) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: (e as Error).message });
@@ -46,6 +49,7 @@ export const checkoutRouter = router({
       z.object({
         variantId: z.string().uuid(),
         quantity: z.number().int().min(1).max(10).default(1),
+        applyCredits: z.boolean().default(true),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -55,6 +59,7 @@ export const checkoutRouter = router({
           variantId: input.variantId,
           quantity: input.quantity,
           publicOrigin: PUBLIC_WEB_ORIGIN,
+          applyCredits: input.applyCredits,
         });
       } catch (e) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: (e as Error).message });
@@ -72,6 +77,7 @@ export const checkoutRouter = router({
       z.object({
         variantId: z.string().uuid(),
         quantity: z.number().int().min(1).max(10).default(1),
+        applyCredits: z.boolean().default(true),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -82,8 +88,17 @@ export const checkoutRouter = router({
           quantity: input.quantity,
           publicOrigin: PUBLIC_WEB_ORIGIN,
           embedded: true,
+          applyCredits: input.applyCredits,
         });
-        return { clientSecret: res.clientSecret, sessionId: res.sessionId, amountCents: res.amountCents };
+        return {
+          clientSecret: res.clientSecret,
+          sessionId: res.sessionId,
+          amountCents: res.amountCents,
+          creditsAppliedCents: res.creditsAppliedCents,
+          // Direct-success marker: credits covered everything, no Stripe form
+          // to render — the UI should skip the embedded checkout entirely.
+          paidWithCredits: res.paidWithCredits,
+        };
       } catch (e) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: (e as Error).message });
       }

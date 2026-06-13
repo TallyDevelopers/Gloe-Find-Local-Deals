@@ -745,6 +745,16 @@ function DealList({ deals, loading }: { deals: VendorDeal[]; loading: boolean })
     onSuccess: () => utils.vendor.listDeals.invalidate(),
   });
 
+  // Boosts (GLO-44): one live promo per deal. Map for the chip + the form.
+  const promosQ = trpc.vendor.listPromos.useQuery();
+  const liveBoostByDeal = new Map(
+    (promosQ.data ?? []).filter((pr) => pr.isLive).map((pr) => [pr.dealId, pr]),
+  );
+  const [boostingDealId, setBoostingDealId] = useState<string | null>(null);
+  const endBoost = trpc.vendor.endBoost.useMutation({
+    onSuccess: () => utils.vendor.listPromos.invalidate(),
+  });
+
   if (loading) return null;
   return (
     <Card>
@@ -786,6 +796,20 @@ function DealList({ deals, loading }: { deals: VendorDeal[]; loading: boolean })
                   <span style={{ color: status?.color, fontSize: 13, fontWeight: 600 }}>{status?.label}</span>
                   <div style={{ display: 'flex', gap: 6 }}>
                     {deal.status === 'active' ? (
+                      liveBoostByDeal.has(deal.id) ? (
+                        <DealAction
+                          label={`End −${money(liveBoostByDeal.get(deal.id)!.amountCents)} boost`}
+                          onClick={() => endBoost.mutate({ promoId: liveBoostByDeal.get(deal.id)!.id })}
+                          disabled={endBoost.isPending}
+                        />
+                      ) : (
+                        <DealAction
+                          label={boostingDealId === deal.id ? 'Close' : 'Boost'}
+                          onClick={() => setBoostingDealId(boostingDealId === deal.id ? null : deal.id)}
+                        />
+                      )
+                    ) : null}
+                    {deal.status === 'active' ? (
                       <DealAction label="Pause" onClick={() => setStatus.mutate({ dealId: deal.id, to: 'paused' })} disabled={setStatus.isPending} />
                     ) : null}
                     {deal.status === 'paused' ? (
@@ -799,6 +823,15 @@ function DealList({ deals, loading }: { deals: VendorDeal[]; loading: boolean })
                     ) : null}
                   </div>
                 </div>
+                {boostingDealId === deal.id && deal.status === 'active' && !liveBoostByDeal.has(deal.id) ? (
+                  <BoostForm
+                    dealId={deal.id}
+                    onDone={() => {
+                      setBoostingDealId(null);
+                      void utils.vendor.listPromos.invalidate();
+                    }}
+                  />
+                ) : null}
                 {deal.status === 'rejected' && deal.rejectionReason ? (
                   <div style={{ background: 'rgba(178,69,69,0.08)', border: '1px solid rgba(178,69,69,0.25)', borderRadius: 'var(--radius-md)', padding: '10px 14px', marginBottom: 14, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
                     <span style={{ color: 'var(--error)', fontWeight: 700, fontSize: 14 }}>⚠</span>
@@ -816,6 +849,85 @@ function DealList({ deals, loading }: { deals: VendorDeal[]; loading: boolean })
     </Card>
   );
 }
+
+/**
+ * "Boost this deal" (GLO-44): a VENDOR-funded "Extra $X off" promo. The trade
+ * is shown plainly before confirming — you receive the discounted price minus
+ * the fee on the discounted price, while the boost runs.
+ */
+function BoostForm({ dealId, onDone }: { dealId: string; onDone: () => void }) {
+  const [amountDollars, setAmountDollars] = useState('');
+  const [endsAt, setEndsAt] = useState('');
+  const amountCents = Math.round(parseFloat(amountDollars || '0') * 100);
+
+  const preview = trpc.vendor.boostPreview.useQuery(
+    { dealId, amountCents },
+    { enabled: amountCents > 0 },
+  );
+  const create = trpc.vendor.createBoost.useMutation({ onSuccess: onDone });
+  const canSubmit = amountCents > 0 && !!endsAt;
+
+  return (
+    <div style={{ background: 'var(--surface-secondary)', borderRadius: 'var(--radius-md)', padding: 14, marginBottom: 14 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
+        Boost this deal
+      </div>
+      <p style={{ fontSize: 13, color: 'var(--text-tertiary)', margin: '0 0 12px' }}>
+        Customers see an &ldquo;Extra ${amountDollars || 'X'} off&rdquo; badge and pay the lower
+        price — you fund the discount. The boost ends on the date you pick, or whenever
+        you end it.
+      </p>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontWeight: 600 }}>Extra off $</span>
+          <input
+            type="number" value={amountDollars} onChange={(e) => setAmountDollars(e.target.value)}
+            placeholder="15" style={boostInput}
+          />
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontWeight: 600 }}>Ends</span>
+          <input type="datetime-local" value={endsAt} onChange={(e) => setEndsAt(e.target.value)} style={boostInput} />
+        </label>
+      </div>
+      {amountCents > 0 && preview.data && preview.data.length > 0 ? (
+        <div style={{ marginTop: 12, fontSize: 13 }}>
+          {preview.data.map((v) => (
+            <div key={v.variantLabel} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '4px 0' }}>
+              <span style={{ color: 'var(--text-secondary)' }}>
+                {v.variantLabel}: customers pay {moneyDetail(v.promoPriceCents)} (was {moneyDetail(v.dealPriceCents)})
+              </span>
+              <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                you&rsquo;ll receive {moneyDetail(v.payoutWithBoostCents)} instead of {moneyDetail(v.payoutNowCents)}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {create.error ? (
+        <div style={{ marginTop: 10, fontSize: 13, color: 'var(--error)' }}>{create.error.message}</div>
+      ) : null}
+      <div style={{ display: 'flex', gap: 8, marginTop: 12, justifyContent: 'flex-end' }}>
+        <DealAction label="Cancel" onClick={onDone} />
+        <Button
+          onClick={() => create.mutate({ dealId, amountCents, endsAt: new Date(endsAt).toISOString() })}
+          disabled={!canSubmit || create.isPending}
+        >
+          {create.isPending ? 'Starting…' : 'Start boost'}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+const boostInput: React.CSSProperties = {
+  padding: '8px 10px', fontSize: 14,
+  border: '1px solid var(--border-default)',
+  borderRadius: 'var(--radius-md)',
+  background: 'var(--surface-elevated)',
+  color: 'var(--text-primary)',
+  minWidth: 140,
+};
 
 function DealAction({ label, onClick, disabled }: { label: string; onClick: () => void; disabled?: boolean }) {
   return (
@@ -899,6 +1011,10 @@ function InstantPayoutCard() {
           onChange={(next) => toggle.mutate({ enabled: next })}
         />
       </div>
+
+      {toggle.error ? (
+        <div style={{ fontSize: 13, color: 'var(--error)', marginTop: 8 }}>{toggle.error.message}</div>
+      ) : null}
 
       {optedIn && !eligible ? (
         <div

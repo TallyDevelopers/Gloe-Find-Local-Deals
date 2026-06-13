@@ -7,7 +7,7 @@ import { CachedImage } from '../image/CachedImage';
 import { usePrefetch } from '../prefetch/usePrefetch';
 import { Icon } from '../icon/Icon';
 import { formatDistance, formatDriveTime, formatRating } from './cardMeta';
-import { formatPrice } from './format';
+import { formatPrice, promoBadgeLabel, promoPriceCents } from './format';
 import { TrendingRibbon } from './TrendingRibbon';
 
 interface DealCardProps {
@@ -38,6 +38,10 @@ export function DealCard({ deal, onSave, isSaved = false, width, imageAspectRati
   const discountPct = Math.round(
     ((variant.originalPriceCents - variant.dealPriceCents) / variant.originalPriceCents) * 100,
   );
+  // Deal promo (GLO-44): badge takes the top-left slot; the price row shows
+  // the post-promo price so the card matches what checkout charges.
+  const promo = deal.promo;
+  const effectivePriceCents = promoPriceCents(variant.dealPriceCents, promo);
 
   const spotsLeft =
     variant.spotsTotal !== null ? variant.spotsTotal - variant.spotsClaimed : null;
@@ -96,23 +100,22 @@ export function DealCard({ deal, onSave, isSaved = false, width, imageAspectRati
             strokeWidth={2.25}
           />
         </Pressable>
-        {/* One top-left badge, not two callouts. Sponsored deals show
-            "Sponsored" here (the strikethrough price still shows the discount);
-            everyone else shows the "% off" — so the card never stacks a
-            discount badge AND a separate Sponsored pill. */}
+        {/* One top-left badge, not two callouts. A live promo (GLO-44) wins
+            the slot; then Sponsored; then "% off" — the card never stacks
+            badges. */}
         <View
           style={{
             position: 'absolute',
             top: space[2],
             left: space[2],
-            backgroundColor: palette.brand[500],
+            backgroundColor: promo ? palette.brand[600] : palette.brand[500],
             paddingHorizontal: space[2],
             paddingVertical: 2,
             borderRadius: radius.pill,
           }}
         >
           <Text variant="caption" tone="inverse" weight="semibold">
-            {deal.isSponsored ? 'Sponsored' : `${discountPct}% off`}
+            {promo ? promoBadgeLabel(promo) : deal.isSponsored ? 'Sponsored' : `${discountPct}% off`}
           </Text>
         </View>
         {deal.isTrending ? <TrendingRibbon bottom={8} /> : null}
@@ -160,7 +163,7 @@ export function DealCard({ deal, onSave, isSaved = false, width, imageAspectRati
               in-text pill. */}
           <Stack direction="row" gap={2} align="baseline">
             <Text variant="display-sm" tone="primary" weight="semibold" style={{ fontSize: 19, lineHeight: 24 }}>
-              {formatPrice(variant.dealPriceCents)}
+              {formatPrice(effectivePriceCents)}
             </Text>
             <Text
               variant="body-sm"

@@ -119,7 +119,7 @@ export default function SupportCasesScreen() {
             {composing ? (
               <ComposeForm
                 submitting={createMutation.isPending}
-                error={createMutation.isError}
+                error={createMutation.error?.message ?? null}
                 onFocusBody={() => {
                   // Belt-and-suspenders for the tall body box: nudge the scroll
                   // so the field clears the keyboard even on smaller screens.
@@ -277,7 +277,7 @@ function ComposeForm({
   onFocusBody,
 }: {
   submitting: boolean;
-  error: boolean;
+  error: string | null;
   onCancel: () => void;
   onSubmit: (subject: string, category: TicketCategory | undefined, body: string, claimId: string | undefined) => void;
   onFocusBody: () => void;
@@ -435,7 +435,7 @@ function ComposeForm({
 
       {error ? (
         <Text variant="body-sm" tone="error">
-          Something went wrong sending that. Please try again or email us.
+          {error || 'Something went wrong sending that. Please try again or email us.'}
         </Text>
       ) : null}
 

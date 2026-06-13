@@ -157,7 +157,7 @@ export function ComingSoon({ cityLabel, lat, lng, onBrowseAnyway }: ComingSoonPr
             />
             {join.isError ? (
               <Text variant="caption" tone="error" style={{ textAlign: 'center' }}>
-                Something went wrong — try again.
+                {join.error.message || 'Something went wrong — try again.'}
               </Text>
             ) : null}
             <Button

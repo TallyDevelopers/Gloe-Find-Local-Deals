@@ -3,6 +3,7 @@ import { createElement } from 'react';
 import { render } from '@react-email/components';
 
 import type { Sql } from '../db/client';
+import { CreditGrantedEmail } from '../emails/CreditGrantedEmail';
 import { RefundEmail } from '../emails/RefundEmail';
 import { ExpiringEmail } from '../emails/ExpiringEmail';
 import { PayoutEmail } from '../emails/PayoutEmail';
@@ -110,6 +111,55 @@ export async function sendRefundEmail(
     });
   } catch (e) {
     console.error('[refund email] failed:', (e as Error).message);
+  }
+}
+
+/**
+ * Wallet credit landed (GLO-24) — the branded sibling of the `credit_granted`
+ * push. Fired for campaign blasts and god-mode manual grants (grantCredit
+ * passes `sendEmail: true`); programmatic earns like refund returns stay
+ * push-only. Keyed per lot so a campaign retry can't double-send.
+ * Fire-and-forget; never throws.
+ */
+export async function sendCreditGrantedEmail(
+  sql: Sql,
+  args: {
+    userId: string;
+    lotId: string;
+    amountCents: number;
+    /** ISO timestamp (or null) straight off the lot row. */
+    expiresAt: string | null;
+    message?: string | null;
+  },
+): Promise<void> {
+  try {
+    const rows = await sql<{ email: string | null; first_name: string | null }[]>`
+      SELECT email, first_name FROM public.users WHERE id = ${args.userId} LIMIT 1
+    `;
+    const r = rows[0];
+    if (!r?.email) return;
+
+    const expiresAt = args.expiresAt
+      ? new Date(args.expiresAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+      : null;
+    const html = await render(
+      createElement(CreditGrantedEmail, {
+        firstName: r.first_name,
+        amountCents: args.amountCents,
+        expiresAt,
+        message: args.message ?? null,
+        browseUrl: webOrigin(),
+      }),
+    );
+    const amount = '$' + (args.amountCents / 100).toLocaleString('en-US', { minimumFractionDigits: 2 });
+    await sendEmail({
+      to: r.email,
+      subject: `You've got ${amount} in Gloē credit`,
+      html,
+      idempotencyKey: `credit-granted:${args.lotId}`,
+    });
+  } catch (e) {
+    console.error('[credit granted email] failed:', (e as Error).message);
   }
 }
 

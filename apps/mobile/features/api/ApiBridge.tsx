@@ -2,9 +2,21 @@ import { useAuth } from '@clerk/clerk-expo';
 import { TrpcProvider } from '@gloe/api-client';
 import { useCallback, type ReactNode } from 'react';
 
+import { getPendingReferralCode } from '../referral/pendingReferralCode';
+
 interface ApiBridgeProps {
   apiUrl: string;
   children: ReactNode;
+}
+
+/**
+ * Module-scoped (stable identity) so TrpcProvider's one-time client setup can
+ * close over it safely. Reads the pending invite code fresh on every request —
+ * the server attributes the referral when the new user row is JIT-created.
+ */
+function getExtraHeaders(): Record<string, string> {
+  const code = getPendingReferralCode();
+  return code ? { 'x-gloe-referral-code': code } : {};
 }
 
 /**
@@ -24,7 +36,7 @@ export function ApiBridge({ apiUrl, children }: ApiBridgeProps) {
   }, [getToken]);
 
   return (
-    <TrpcProvider apiUrl={apiUrl} getToken={getTokenAsync}>
+    <TrpcProvider apiUrl={apiUrl} getToken={getTokenAsync} getExtraHeaders={getExtraHeaders}>
       {children}
     </TrpcProvider>
   );

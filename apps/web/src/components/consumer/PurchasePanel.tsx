@@ -1,12 +1,19 @@
 'use client';
 
+import { useAuth } from '@clerk/nextjs';
 import type { DealDetail } from '@gloe/api-client';
+import { useState } from 'react';
 
+import { trpc } from '../../lib/trpc';
 import { EmbeddedCheckoutModal } from './EmbeddedCheckoutModal';
-import { discountPct, formatExpiry, formatPrice } from './format';
+import { discountPct, formatCredit, formatExpiry, formatPrice, promoBadgeLabel } from './format';
 import { Share } from './icons';
 import { SharePayModal } from './SharePayModal';
 import { useBuy } from './useBuy';
+
+/** Stripe refuses charges under 50¢ — mirror the server's split-tender floor
+ *  so the previewed credit/cash split matches what actually gets charged. */
+const STRIPE_MIN_CHARGE_CENTS = 50;
 
 /**
  * Purchase card for the deal page — variant picker, quantity, price breakdown,
@@ -29,15 +36,40 @@ export function PurchasePanel({
   setQty: (n: number) => void;
 }) {
   const { buy, startShare, shareUrl, closeShare, checkoutSecret, closeCheckout, loading, sharing, error } = useBuy();
+  const { isSignedIn } = useAuth();
+  const balance = trpc.credits.balance.useQuery(undefined, { enabled: !!isSignedIn });
+  const [useCredits, setUseCredits] = useState(true);
   const variant = deal.variants.find((v) => v.id === variantId) ?? deal.variants[0];
   if (!variant) return null;
 
   const pct = discountPct(variant.originalPriceCents, variant.dealPriceCents);
-  const saveCents = (variant.originalPriceCents - variant.dealPriceCents) * qty;
   const totalCents = variant.dealPriceCents * qty;
+
+  // Deal promo (GLO-44): cuts the price first (once per order, mirroring the
+  // server's clamp), then credits auto-apply to the remainder.
+  const promo = deal.promo;
+  const promoCents = promo
+    ? Math.max(0, Math.min(promo.amountCents, totalCents - STRIPE_MIN_CHARGE_CENTS))
+    : 0;
+  const chargeBaseCents = totalCents - promoCents;
+  const saveCents = (variant.originalPriceCents - variant.dealPriceCents) * qty + promoCents;
   const spotsLeft = variant.spotsTotal != null ? variant.spotsTotal - variant.spotsClaimed : null;
   const limit = Math.max(1, deal.perCustomerLimit ?? 1);
   const expiry = formatExpiry(deal.expiresAt);
+
+  // Credits preview (GLO-24). The server recomputes authoritatively inside the
+  // checkout transaction — this only mirrors its rules so the button shows the
+  // real cash amount: locked welcome credit counts when this order meets its
+  // first-booking floor; never leave 0 < cash < 50¢ (shave credits instead).
+  const b = balance.data;
+  const unlockedWelcomeCents = b && !b.frozen && b.lockedCents > 0 && chargeBaseCents >= b.lockedFloorCents ? b.lockedCents : 0;
+  const spendableCents = b && !b.frozen ? b.availableCents + unlockedWelcomeCents : 0;
+  let creditPreviewCents = Math.min(spendableCents, chargeBaseCents);
+  if (chargeBaseCents - creditPreviewCents > 0 && chargeBaseCents - creditPreviewCents < STRIPE_MIN_CHARGE_CENTS) {
+    creditPreviewCents = Math.max(0, chargeBaseCents - STRIPE_MIN_CHARGE_CENTS);
+  }
+  const appliedCents = useCredits ? creditPreviewCents : 0;
+  const cashCents = chargeBaseCents - appliedCents;
 
   return (
     <div
@@ -49,17 +81,21 @@ export function PurchasePanel({
         boxShadow: '0 8px 30px rgba(43,32,25,0.08)',
       }}
     >
-      {/* Price */}
+      {/* Price — post-promo when a promo is live, struck anchor = true original */}
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
         <span style={{ fontFamily: 'var(--font-display)', fontSize: 34, fontWeight: 600, color: 'var(--text-primary)' }}>
-          {formatPrice(variant.dealPriceCents)}
+          {formatPrice(promo ? Math.max(0, variant.dealPriceCents - promo.amountCents) : variant.dealPriceCents)}
         </span>
-        {pct > 0 ? (
+        {promo || pct > 0 ? (
           <span style={{ fontSize: 17, color: 'var(--text-tertiary)', textDecoration: 'line-through' }}>
             {formatPrice(variant.originalPriceCents)}
           </span>
         ) : null}
-        {pct > 0 ? (
+        {promo ? (
+          <span style={{ marginLeft: 'auto', background: 'var(--brand-600)', color: 'var(--text-inverse)', fontSize: 13, fontWeight: 700, padding: '4px 10px', borderRadius: 'var(--radius-pill)' }}>
+            {promoBadgeLabel(promo)}
+          </span>
+        ) : pct > 0 ? (
           <span style={{ marginLeft: 'auto', background: 'var(--brand-100)', color: 'var(--brand-600)', fontSize: 13, fontWeight: 700, padding: '4px 10px', borderRadius: 'var(--radius-pill)' }}>
             {pct}% off
           </span>
@@ -113,11 +149,45 @@ export function PurchasePanel({
         <p style={{ fontSize: 13, color: 'var(--text-tertiary)', marginTop: 14 }}>Limit 1 per customer</p>
       )}
 
+      {/* Promo line (GLO-44) — its own line above credits, same order as the
+          receipt: order total / promo / credit / charged. */}
+      {promoCents > 0 ? (
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, marginTop: 18, fontSize: 14 }}>
+          <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>
+            {promo ? promoBadgeLabel(promo) : 'Promo'}
+          </span>
+          <span style={{ color: 'var(--brand-700)', fontWeight: 700 }}>−{formatCredit(promoCents)}</span>
+        </div>
+      ) : null}
+
+      {/* Credits (GLO-24) — inline in the price math, defaults on. The client
+          only sends the toggle; the server computes the actual amount. */}
+      {spendableCents > 0 ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 18, padding: '12px 14px', background: 'var(--brand-50)', border: '1px solid var(--brand-100)', borderRadius: 'var(--radius-md)' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Use your Gloē credit</div>
+            <div style={{ fontSize: 12.5, color: useCredits ? 'var(--brand-700)' : 'var(--text-tertiary)', fontWeight: 600, marginTop: 2 }}>
+              {useCredits ? `−${formatCredit(appliedCents)} applied` : `${formatCredit(creditPreviewCents)} available`}
+            </div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={useCredits}
+            aria-label="Use your Gloē credit"
+            onClick={() => setUseCredits((v) => !v)}
+            style={{ position: 'relative', width: 44, height: 26, flexShrink: 0, borderRadius: 'var(--radius-pill)', border: 'none', background: useCredits ? 'var(--brand-500)' : 'var(--border-default)', cursor: 'pointer', transition: 'background 0.15s' }}
+          >
+            <span style={{ position: 'absolute', top: 3, left: useCredits ? 21 : 3, width: 20, height: 20, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 3px rgba(43,32,25,0.25)', transition: 'left 0.15s' }} />
+          </button>
+        </div>
+      ) : null}
+
       {/* Buy */}
       <button
         type="button"
         disabled={loading}
-        onClick={() => buy(variant.id, qty)}
+        onClick={() => buy(variant.id, qty, useCredits)}
         style={{
           width: '100%',
           marginTop: 18,
@@ -131,7 +201,13 @@ export function PurchasePanel({
           opacity: loading ? 0.7 : 1,
         }}
       >
-        {loading ? 'Starting secure checkout…' : `Buy now · ${formatPrice(totalCents)}`}
+        {loading
+          ? 'Starting secure checkout…'
+          : appliedCents > 0 && cashCents === 0
+            ? 'Redeem with credit — nothing to pay'
+            : appliedCents > 0 || promoCents > 0
+              ? `Buy now · ${formatCredit(cashCents)}`
+              : `Buy now · ${formatPrice(totalCents)}`}
       </button>
 
       <button
