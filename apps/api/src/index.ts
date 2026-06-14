@@ -118,7 +118,7 @@ app.post('/webhooks/stripe', async (c) => {
           const Stripe = (await import('stripe')).default;
           const stripeKey = process.env.STRIPE_SECRET_KEY;
           if (stripeKey) {
-            const sc = new Stripe(stripeKey, { apiVersion: '2026-04-22.dahlia' });
+            const sc = new Stripe(stripeKey, { apiVersion: '2026-05-27.dahlia' });
             const full = await sc.paymentIntents.retrieve(piId, {
               expand: ['latest_charge.balance_transaction'],
             });
@@ -182,7 +182,7 @@ app.post('/webhooks/stripe', async (c) => {
       const Stripe = (await import('stripe')).default;
       const stripeKey = process.env.STRIPE_SECRET_KEY;
       if (stripeKey) {
-        const sc = new Stripe(stripeKey, { apiVersion: '2026-04-22.dahlia' });
+        const sc = new Stripe(stripeKey, { apiVersion: '2026-05-27.dahlia' });
         const full = await sc.paymentIntents.retrieve(pi.id, {
           expand: ['latest_charge.balance_transaction'],
         });

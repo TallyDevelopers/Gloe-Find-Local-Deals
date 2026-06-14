@@ -334,33 +334,39 @@ export async function maybePayoutReferrerOnFirstPurchase(
       }
     }
 
-    if (rule.monthly_referral_payout_cap !== null) {
-      const payoutRows = await sql<{ count: number }[]>`
-        SELECT COUNT(*)::int AS count FROM public.credit_lots
-        WHERE user_id = ${referrerId} AND kind = 'referral_get'
-          AND created_at >= date_trunc('month', now())
-      `;
-      if ((payoutRows[0]?.count ?? 0) >= rule.monthly_referral_payout_cap) {
-        return refuse('monthly_payout_cap', { capPayouts: rule.monthly_referral_payout_cap });
+    const grant = await sql.begin(async (tx) => {
+      await tx`SELECT 1 FROM public.users WHERE id = ${referrerId} FOR UPDATE`;
+      if (rule.monthly_referral_payout_cap !== null) {
+        const payoutRows = await tx<{ count: number }[]>`
+          SELECT COUNT(*)::int AS count FROM public.credit_lots
+          WHERE user_id = ${referrerId} AND kind = 'referral_get'
+            AND created_at >= date_trunc('month', now())
+        `;
+        if ((payoutRows[0]?.count ?? 0) >= rule.monthly_referral_payout_cap) {
+          refuse('monthly_payout_cap', { capPayouts: rule.monthly_referral_payout_cap });
+          return null;
+        }
       }
-    }
-    if (rule.monthly_user_cap_cents !== null) {
-      const earned = await cappedEarnsThisMonthCents(sql, referrerId);
-      if (earned + rule.get_cents > rule.monthly_user_cap_cents) {
-        return refuse('monthly_cap', { earnedThisMonthCents: earned, capCents: rule.monthly_user_cap_cents });
+      if (rule.monthly_user_cap_cents !== null) {
+        const earned = await cappedEarnsThisMonthCents(tx, referrerId);
+        if (earned + rule.get_cents > rule.monthly_user_cap_cents) {
+          refuse('monthly_cap', { earnedThisMonthCents: earned, capCents: rule.monthly_user_cap_cents });
+          return null;
+        }
       }
-    }
 
-    const grant = await grantCredit(sql, {
-      userId: referrerId,
-      kind: 'referral_get',
-      amountCents: rule.get_cents,
-      expiresAfterDays: rule.expires_after_days,
-      ruleId: rule.id,
-      transactionId, // the qualifying purchase — the unwind hook on refund/dispute
-      referralId: txn.user_id,
-      note: 'Referral reward — your friend made their first booking',
+      return await grantCredit(tx, {
+        userId: referrerId,
+        kind: 'referral_get',
+        amountCents: rule.get_cents,
+        expiresAfterDays: rule.expires_after_days,
+        ruleId: rule.id,
+        transactionId, // the qualifying purchase — the unwind hook on refund/dispute
+        referralId: txn.user_id,
+        note: 'Referral reward — your friend made their first booking',
+      });
     });
+    if (!grant) return;
     if (grant.duplicate) return; // webhook retry — already paid
 
     void writeAudit(sql, {

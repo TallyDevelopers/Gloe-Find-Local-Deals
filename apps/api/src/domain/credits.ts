@@ -464,9 +464,10 @@ export async function unwindCreditsForTransaction(
       consumer_paid_cents: number;
       refunded_cents: number;
       credits_refunded_cents: number;
+      paid_at: string | null;
       referred_by: string | null;
     }[]>`
-      SELECT t.user_id, t.consumer_paid_cents, t.refunded_cents, t.credits_refunded_cents,
+      SELECT t.user_id, t.consumer_paid_cents, t.refunded_cents, t.credits_refunded_cents, t.paid_at,
              u.referred_by
       FROM public.transactions t
       JOIN public.users u ON u.id = t.user_id
@@ -474,6 +475,7 @@ export async function unwindCreditsForTransaction(
     `;
     const txn = txnRows[0];
     if (!txn) return [];
+    if (!txn.paid_at) return [];
     const remainingValueCents =
       txn.consumer_paid_cents - txn.refunded_cents - txn.credits_refunded_cents;
 

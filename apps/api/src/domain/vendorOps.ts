@@ -11,8 +11,72 @@ type StripeClient = InstanceType<typeof StripeNode>;
 let _stripe: StripeClient | null = null;
 function stripe(): StripeClient {
   if (!SECRET) throw new Error('Stripe not configured');
-  if (!_stripe) _stripe = new StripeNode(SECRET, { apiVersion: '2026-04-22.dahlia' });
+  if (!_stripe) _stripe = new StripeNode(SECRET, { apiVersion: '2026-05-27.dahlia' });
   return _stripe;
+}
+
+/**
+ * Split-tender refund math, shared by every refund path (GLO-24/GLO-44).
+ * Refunds consume CASH first, then wallet credits. Stripe only ever held the
+ * cash share, so it's capped there; the rest returns as credit. A
+ * platform-funded promo never reached the card either, so it's excluded from
+ * the refundable cash. Returns `{ error }` (a human reason) when the request
+ * is invalid — the caller wraps it in its own audit/fail closure.
+ */
+function computeRefundSplit(args: {
+  amountCents: number;
+  consumerPaidCents: number;
+  creditsAppliedCents: number;
+  creditsRefundedCents: number;
+  refundedCents: number;
+  promoDiscountCents: number;
+  promoFundedBy: 'platform' | 'vendor' | null;
+  piId: string | null;
+}):
+  | { ok: false; error: string }
+  | { ok: true; error: null; cashRefundCents: number; creditRefundCents: number; isFullRefund: boolean } {
+  const platformPromoCents = args.promoFundedBy === 'platform' ? args.promoDiscountCents : 0;
+  const cashRemaining =
+    args.consumerPaidCents - args.creditsAppliedCents - platformPromoCents - args.refundedCents;
+  const creditRemaining = args.creditsAppliedCents - args.creditsRefundedCents;
+  const remaining = cashRemaining + creditRemaining;
+  if (args.amountCents > remaining) {
+    return { ok: false, error: `amount ${args.amountCents} exceeds refundable balance ${remaining}` };
+  }
+  const cashRefundCents = Math.min(args.amountCents, cashRemaining);
+  const creditRefundCents = args.amountCents - cashRefundCents;
+  if (cashRefundCents > 0 && !args.piId) {
+    return { ok: false, error: 'no Stripe PaymentIntent on this transaction' };
+  }
+  return { ok: true, error: null, cashRefundCents, creditRefundCents, isFullRefund: args.amountCents === remaining };
+}
+
+/**
+ * The post-refund credit tail, shared by every refund path. Runs OUTSIDE the
+ * money-moving transaction: returns the credit share to the wallet, then claws
+ * back anything this purchase EARNED if the refund broke the floor. Neither
+ * step throws — Stripe already moved the cash, so a ledger hiccup must not
+ * unwind it; the shares stay re-runnable (both are idempotent + audited inside).
+ */
+async function settleRefundCredits(
+  sql: Sql,
+  args: { transactionId: string; creditRefundCents: number; actorUserId: string | null; reason: string; logTag: string },
+): Promise<void> {
+  if (args.creditRefundCents > 0) {
+    try {
+      await returnCreditsForTransaction(sql, {
+        transactionId: args.transactionId, amountCents: args.creditRefundCents,
+        actorUserId: args.actorUserId, reason: args.reason,
+      });
+    } catch (e) {
+      console.error(`${args.logTag} credit return failed:`, (e as Error).message);
+    }
+  }
+  try {
+    await unwindCreditsForTransaction(sql, args.transactionId, 'refund', args.actorUserId);
+  } catch (e) {
+    console.error(`${args.logTag} credit unwind failed:`, (e as Error).message);
+  }
 }
 
 /**
@@ -95,23 +159,7 @@ export async function refundClaim(
         refunded_at = now(), updated_at = now()
     WHERE id = ${r.tx_id}
   `;
-  if (creditCents > 0) {
-    // A ledger hiccup must not throw after Stripe already moved money —
-    // credits_refunded_cents stays put, so the share is re-returnable later.
-    try {
-      await returnCreditsForTransaction(sql, {
-        transactionId: r.tx_id, amountCents: creditCents, actorUserId, reason,
-      });
-    } catch (e) {
-      console.error('[refund] credit return failed:', (e as Error).message);
-    }
-  }
-  // Full refund → reverse anything this purchase EARNED (audited inside).
-  try {
-    await unwindCreditsForTransaction(sql, r.tx_id, 'refund', actorUserId);
-  } catch (e) {
-    console.error('[refund] credit unwind failed:', (e as Error).message);
-  }
+  await settleRefundCredits(sql, { transactionId: r.tx_id, creditRefundCents: creditCents, actorUserId, reason, logTag: '[refund]' });
 
   void writeAudit(sql, {
     action: 'refund.issued',
@@ -165,15 +213,12 @@ export async function refundClaim(
  *     can still redeem for the kept portion).
  *   - Transaction status flips to `refunded` (full) or `partially_refunded`.
  *
- * Idempotency: keyed on `txn + cumulative_refunded_before` so retries of the
- * same refund don't double-charge, but a follow-up partial in the same minute
- * still goes through.
+ * Idempotency: keyed on `txn + cumulative_refunded_before + cash_amount` so
+ * retries of the same refund don't double-charge, but a later partial refund
+ * for a newly computed balance still goes through.
  *
- * Race safety: Stripe's idempotency key (keyed on `txn + refunded_cents_before`)
- * dedupes any double-clicks, and the DB CHECK `refunded_cents <= consumer_paid_cents`
- * prevents over-refund. A concurrent redemption between our eligibility read
- * and the Stripe call is the only edge case — caller should be a human admin
- * with seconds between actions, and the audit log will show both events.
+ * Race safety: the transaction + claim rows stay locked while we compute the
+ * remaining balance, call Stripe, and write the new cumulative refund.
  */
 export async function refundTransaction(
   sql: Sql,
@@ -189,7 +234,8 @@ export async function refundTransaction(
     return audit('reason is required', null, null, null);
   }
 
-  const rows = await sql<{
+  const result = await sql.begin(async (tx) => {
+    const rows = await tx<{
     claim_id: string;
     claim_status: string;
     tx_id: string;
@@ -202,7 +248,7 @@ export async function refundTransaction(
     credits_refunded_cents: number;
     promo_discount_cents: number;
     promo_funded_by: 'platform' | 'vendor' | null;
-  }[]>`
+    }[]>`
     SELECT
       c.id  AS claim_id,
       c.status AS claim_status,
@@ -219,61 +265,51 @@ export async function refundTransaction(
     FROM public.transactions t
     JOIN public.claims c ON c.transaction_id = t.id
     WHERE t.id = ${transactionId}
+    FOR UPDATE OF t, c
     LIMIT 1
-  `;
-  const r = rows[0];
-  if (!r) return audit('transaction_or_claim_not_found', null, null, null);
-  if (!['active', 'expired'].includes(r.claim_status)) {
-    return audit(`claim is ${r.claim_status}, only active or expired (unredeemed) claims can be refunded`, r.vendor_id, r.claim_id, r.tx_id);
-  }
-  if (!['paid', 'partially_refunded'].includes(r.tx_status)) {
-    return audit(`transaction is ${r.tx_status}, expected paid or partially_refunded`, r.vendor_id, r.claim_id, r.tx_id);
-  }
-
-  // Split-tender order (GLO-24): refunds consume CASH first, then credits.
-  // Stripe only ever charged the cash share, so the Stripe refund is capped
-  // there; whatever's left of the requested amount returns as wallet credit.
-  // A platform-funded promo (GLO-44) shrank the cash share too — the customer
-  // is refunded what they paid, never the discount.
-  const platformPromoCents = r.promo_funded_by === 'platform' ? r.promo_discount_cents : 0;
-  const cashRemaining = r.consumer_paid_cents - r.credits_applied_cents - platformPromoCents - r.refunded_cents;
-  const creditRemaining = r.credits_applied_cents - r.credits_refunded_cents;
-  const remaining = cashRemaining + creditRemaining;
-  if (amountCents > remaining) {
-    return audit(`amount ${amountCents} exceeds refundable balance ${remaining}`, r.vendor_id, r.claim_id, r.tx_id);
-  }
-  const cashRefundCents = Math.min(amountCents, cashRemaining);
-  const creditRefundCents = amountCents - cashRefundCents;
-  if (cashRefundCents > 0 && !r.pi_id) {
-    return audit('no Stripe PaymentIntent on this transaction', r.vendor_id, r.claim_id, r.tx_id);
-  }
-
-  const isFullRefund = amountCents === remaining;
-
-  let refundId: string | null = null;
-  if (cashRefundCents > 0) {
-    try {
-      const refund = await stripe().refunds.create(
-        {
-          payment_intent: r.pi_id!,
-          amount: cashRefundCents,
-          reason: 'requested_by_customer',
-          // We keep our platform fee on refunds — see fn docs.
-          refund_application_fee: false,
-          metadata: { gloe_reason: reason, transaction_id: transactionId, claim_id: r.claim_id },
-        },
-        { idempotencyKey: `refund_txn_${transactionId}_${r.refunded_cents}` },
-      );
-      refundId = refund.id;
-    } catch (e) {
-      return audit(`stripe refund failed: ${e instanceof Error ? e.message : String(e)}`, r.vendor_id, r.claim_id, r.tx_id);
+    `;
+    const r = rows[0];
+    if (!r) return audit('transaction_or_claim_not_found', null, null, null);
+    if (!['active', 'expired'].includes(r.claim_status)) {
+      return audit(`claim is ${r.claim_status}, only active or expired (unredeemed) claims can be refunded`, r.vendor_id, r.claim_id, r.tx_id);
     }
-  }
+    if (!['paid', 'partially_refunded'].includes(r.tx_status)) {
+      return audit(`transaction is ${r.tx_status}, expected paid or partially_refunded`, r.vendor_id, r.claim_id, r.tx_id);
+    }
 
-  const newRefundedCents = r.refunded_cents + cashRefundCents;
-  const newStatus = isFullRefund ? 'refunded' : 'partially_refunded';
+    const split = computeRefundSplit({
+      amountCents, consumerPaidCents: r.consumer_paid_cents,
+      creditsAppliedCents: r.credits_applied_cents, creditsRefundedCents: r.credits_refunded_cents,
+      refundedCents: r.refunded_cents, promoDiscountCents: r.promo_discount_cents,
+      promoFundedBy: r.promo_funded_by, piId: r.pi_id,
+    });
+    if (!split.ok) return audit(split.error, r.vendor_id, r.claim_id, r.tx_id);
+    const { cashRefundCents, creditRefundCents, isFullRefund } = split;
 
-  await sql`
+    let refundId: string | null = null;
+    if (cashRefundCents > 0) {
+      try {
+        const refund = await stripe().refunds.create(
+          {
+            payment_intent: r.pi_id!,
+            amount: cashRefundCents,
+            reason: 'requested_by_customer',
+            // We keep our platform fee on refunds — see fn docs.
+            refund_application_fee: false,
+            metadata: { gloe_reason: reason, transaction_id: transactionId, claim_id: r.claim_id },
+          },
+          { idempotencyKey: `refund_txn_${transactionId}_${r.refunded_cents}_${cashRefundCents}` },
+        );
+        refundId = refund.id;
+      } catch (e) {
+        return audit(`stripe refund failed: ${e instanceof Error ? e.message : String(e)}`, r.vendor_id, r.claim_id, r.tx_id);
+      }
+    }
+
+    const newRefundedCents = r.refunded_cents + cashRefundCents;
+    const newStatus = isFullRefund ? 'refunded' : 'partially_refunded';
+
+    await tx`
     UPDATE public.transactions
     SET status         = ${newStatus},
         refunded_cents = ${newRefundedCents},
@@ -281,30 +317,27 @@ export async function refundTransaction(
         updated_at     = now()
     WHERE id = ${r.tx_id}
   `;
-  if (creditRefundCents > 0) {
-    // Returns a refund_return lot + bumps credits_refunded_cents (audited
-    // inside). Never throw after Stripe already moved money — the share
-    // stays returnable (credits_refunded_cents untouched on failure).
-    try {
-      await returnCreditsForTransaction(sql, {
-        transactionId: r.tx_id, amountCents: creditRefundCents, actorUserId, reason,
-      });
-    } catch (e) {
-      console.error('[refund] credit return failed:', (e as Error).message);
+    if (isFullRefund) {
+      // Kill the voucher only on a full refund. Partial refunds leave the
+      // voucher live so the customer can still redeem the kept portion.
+      await tx`UPDATE public.claims SET status = 'cancelled' WHERE id = ${r.claim_id}`;
     }
-  }
-  if (isFullRefund) {
-    // Kill the voucher only on a full refund. Partial refunds leave the
-    // voucher live so the customer can still redeem the kept portion.
-    await sql`UPDATE public.claims SET status = 'cancelled' WHERE id = ${r.claim_id}`;
-  }
-  // Claw back anything this purchase EARNED if the refund broke the floor
-  // (full refunds always do). Idempotent + audited inside.
-  try {
-    await unwindCreditsForTransaction(sql, r.tx_id, 'refund', actorUserId);
-  } catch (e) {
-    console.error('[refund] credit unwind failed:', (e as Error).message);
-  }
+    return {
+      refunded: true as const,
+      stripeRefundId: refundId,
+      amountCents,
+      isFullRefund,
+      error: null,
+      r,
+      cashRefundCents,
+      creditRefundCents,
+      newRefundedCents,
+    };
+  });
+  if (!result.refunded) return result;
+  const { r, cashRefundCents, creditRefundCents, newRefundedCents, isFullRefund, stripeRefundId } = result;
+
+  await settleRefundCredits(sql, { transactionId: r.tx_id, creditRefundCents, actorUserId, reason, logTag: '[refund]' });
 
   void writeAudit(sql, {
     action: isFullRefund ? 'refund.issued' : 'refund.partial',
@@ -313,7 +346,7 @@ export async function refundTransaction(
     claimId: r.claim_id,
     transactionId: r.tx_id,
     meta: {
-      stripeRefundId: refundId,
+      stripeRefundId,
       amountCents,
       cashRefundCents,
       creditRefundCents,
@@ -324,7 +357,7 @@ export async function refundTransaction(
   });
 
   void sendRefundEmail(sql, r.tx_id, amountCents, isFullRefund);
-  return { refunded: true, stripeRefundId: refundId, amountCents, isFullRefund, error: null };
+  return { refunded: true, stripeRefundId, amountCents, isFullRefund, error: null };
 
   function audit(err: string, vendorId: string | null, claimId: string | null, txId: string | null) {
     void writeAudit(sql, {
@@ -369,135 +402,131 @@ export async function forceRefundRedeemed(
   if (!Number.isFinite(amountCents) || amountCents <= 0) return fail('amount must be > 0', null, null, null);
   if (!reason || reason.trim().length === 0) return fail('reason is required', null, null, null);
 
-  const rows = await sql<{
-    claim_id: string;
-    claim_status: string;
-    tx_id: string;
-    tx_status: string;
-    vendor_id: string;
-    pi_id: string | null;
-    transfer_id: string | null;
-    consumer_paid_cents: number;
-    vendor_payout_cents: number;
-    refunded_cents: number;
-    credits_applied_cents: number;
-    credits_refunded_cents: number;
-    promo_discount_cents: number;
-    promo_funded_by: 'platform' | 'vendor' | null;
-  }[]>`
-    SELECT
-      c.id AS claim_id, c.status AS claim_status,
-      t.id AS tx_id, t.status AS tx_status, c.vendor_id,
-      t.stripe_payment_intent_id AS pi_id, t.stripe_transfer_id AS transfer_id,
-      t.consumer_paid_cents, t.vendor_payout_cents, t.refunded_cents,
-      t.credits_applied_cents, t.credits_refunded_cents,
-      t.promo_discount_cents, t.promo_funded_by
-    FROM public.transactions t
-    JOIN public.claims c ON c.transaction_id = t.id
-    WHERE t.id = ${transactionId}
-    LIMIT 1
-  `;
-  const r = rows[0];
-  if (!r) return fail('transaction_or_claim_not_found', null, null, null);
-  if (!['paid', 'partially_refunded', 'released'].includes(r.tx_status)) {
-    return fail(`transaction is ${r.tx_status}, cannot force-refund`, r.vendor_id, r.claim_id, r.tx_id);
-  }
-  // Split-tender order (GLO-24): cash first, then credits — same as
-  // refundTransaction. Stripe never held the credit share, nor the
-  // platform-funded promo share (GLO-44).
-  const platformPromoCents = r.promo_funded_by === 'platform' ? r.promo_discount_cents : 0;
-  const cashRemaining = r.consumer_paid_cents - r.credits_applied_cents - platformPromoCents - r.refunded_cents;
-  const creditRemaining = r.credits_applied_cents - r.credits_refunded_cents;
-  const remaining = cashRemaining + creditRemaining;
-  if (amountCents > remaining) {
-    return fail(`amount ${amountCents} exceeds refundable balance ${remaining}`, r.vendor_id, r.claim_id, r.tx_id);
-  }
-  const cashRefundCents = Math.min(amountCents, cashRemaining);
-  const creditRefundCents = amountCents - cashRefundCents;
-  if (cashRefundCents > 0 && !r.pi_id) {
-    return fail('no Stripe PaymentIntent on this transaction', r.vendor_id, r.claim_id, r.tx_id);
-  }
-  const isFullRefund = amountCents === remaining;
-
-  // 1) Refund the customer's cash share.
-  let refundId: string | null = null;
-  if (cashRefundCents > 0) {
-    try {
-      const refund = await stripe().refunds.create(
-        {
-          payment_intent: r.pi_id!,
-          amount: cashRefundCents,
-          reason: 'requested_by_customer',
-          refund_application_fee: false,
-          metadata: { gloe_reason: reason, transaction_id: transactionId, claim_id: r.claim_id, redeemed: 'true' },
-        },
-        { idempotencyKey: `force_refund_txn_${transactionId}_${r.refunded_cents}` },
-      );
-      refundId = refund.id;
-    } catch (e) {
-      return fail(`stripe refund failed: ${e instanceof Error ? e.message : String(e)}`, r.vendor_id, r.claim_id, r.tx_id);
+  const result = await sql.begin(async (tx) => {
+    const rows = await tx<{
+      claim_id: string;
+      claim_status: string;
+      tx_id: string;
+      tx_status: string;
+      vendor_id: string;
+      pi_id: string | null;
+      transfer_id: string | null;
+      consumer_paid_cents: number;
+      vendor_payout_cents: number;
+      refunded_cents: number;
+      credits_applied_cents: number;
+      credits_refunded_cents: number;
+      promo_discount_cents: number;
+      promo_funded_by: 'platform' | 'vendor' | null;
+    }[]>`
+      SELECT
+        c.id AS claim_id, c.status AS claim_status,
+        t.id AS tx_id, t.status AS tx_status, c.vendor_id,
+        t.stripe_payment_intent_id AS pi_id, t.stripe_transfer_id AS transfer_id,
+        t.consumer_paid_cents, t.vendor_payout_cents, t.refunded_cents,
+        t.credits_applied_cents, t.credits_refunded_cents,
+        t.promo_discount_cents, t.promo_funded_by
+      FROM public.transactions t
+      JOIN public.claims c ON c.transaction_id = t.id
+      WHERE t.id = ${transactionId}
+      FOR UPDATE OF t, c
+      LIMIT 1
+    `;
+    const r = rows[0];
+    if (!r) return fail('transaction_or_claim_not_found', null, null, null);
+    if (!['paid', 'partially_refunded', 'released'].includes(r.tx_status)) {
+      return fail(`transaction is ${r.tx_status}, cannot force-refund`, r.vendor_id, r.claim_id, r.tx_id);
     }
-  }
+    const split = computeRefundSplit({
+      amountCents, consumerPaidCents: r.consumer_paid_cents,
+      creditsAppliedCents: r.credits_applied_cents, creditsRefundedCents: r.credits_refunded_cents,
+      refundedCents: r.refunded_cents, promoDiscountCents: r.promo_discount_cents,
+      promoFundedBy: r.promo_funded_by, piId: r.pi_id,
+    });
+    if (!split.ok) return fail(split.error, r.vendor_id, r.claim_id, r.tx_id);
+    const { cashRefundCents, creditRefundCents, isFullRefund } = split;
 
-  // 2) Claw back the vendor's proportional share, if asked and a transfer exists.
-  let reversedCents = 0;
-  if (reverseTransfer && r.transfer_id && r.vendor_payout_cents > 0) {
-    reversedCents = Math.round((amountCents * r.vendor_payout_cents) / r.consumer_paid_cents);
-    if (reversedCents > 0) {
+    // 1) Refund the customer's cash share.
+    let refundId: string | null = null;
+    if (cashRefundCents > 0) {
       try {
-        await stripe().transfers.createReversal(
-          r.transfer_id,
-          { amount: reversedCents, metadata: { gloe_reason: reason, transaction_id: transactionId } },
-          { idempotencyKey: `force_reverse_txn_${transactionId}_${r.refunded_cents}` },
+        const refund = await stripe().refunds.create(
+          {
+            payment_intent: r.pi_id!,
+            amount: cashRefundCents,
+            reason: 'requested_by_customer',
+            refund_application_fee: false,
+            metadata: { gloe_reason: reason, transaction_id: transactionId, claim_id: r.claim_id, redeemed: 'true' },
+          },
+          { idempotencyKey: `force_refund_txn_${transactionId}_${r.refunded_cents}_${cashRefundCents}` },
         );
+        refundId = refund.id;
       } catch (e) {
-        // Refund already went through; surface the reversal failure but don't
-        // unwind the customer refund. Audit captures the partial outcome.
-        reversedCents = 0;
-        void writeAudit(sql, {
-          action: 'refund.refused',
-          actorUserId, vendorId: r.vendor_id, claimId: r.claim_id, transactionId: r.tx_id,
-          meta: { stage: 'transfer_reversal', error: e instanceof Error ? e.message : String(e), refundIssued: refundId },
-        });
+        return fail(`stripe refund failed: ${e instanceof Error ? e.message : String(e)}`, r.vendor_id, r.claim_id, r.tx_id);
       }
     }
-  }
 
-  const newRefundedCents = r.refunded_cents + cashRefundCents;
-  const newStatus = isFullRefund ? 'refunded' : 'partially_refunded';
-  await sql`
-    UPDATE public.transactions
-    SET status = ${newStatus}, refunded_cents = ${newRefundedCents},
-        refunded_at = COALESCE(refunded_at, now()), updated_at = now()
-    WHERE id = ${r.tx_id}
-  `;
-  if (creditRefundCents > 0) {
-    try {
-      await returnCreditsForTransaction(sql, {
-        transactionId: r.tx_id, amountCents: creditRefundCents, actorUserId, reason,
-      });
-    } catch (e) {
-      console.error('[force refund] credit return failed:', (e as Error).message);
+    // 2) Claw back the vendor's proportional share, if asked and a transfer exists.
+    let reversedCents = 0;
+    if (reverseTransfer && r.transfer_id && r.vendor_payout_cents > 0) {
+      reversedCents = Math.round((amountCents * r.vendor_payout_cents) / r.consumer_paid_cents);
+      if (reversedCents > 0) {
+        try {
+          await stripe().transfers.createReversal(
+            r.transfer_id,
+            { amount: reversedCents, metadata: { gloe_reason: reason, transaction_id: transactionId } },
+            { idempotencyKey: `force_reverse_txn_${transactionId}_${r.refunded_cents}_${reversedCents}` },
+          );
+        } catch (e) {
+          // Refund already went through; surface the reversal failure but don't
+          // unwind the customer refund. Audit captures the partial outcome.
+          reversedCents = 0;
+          void writeAudit(sql, {
+            action: 'refund.refused',
+            actorUserId, vendorId: r.vendor_id, claimId: r.claim_id, transactionId: r.tx_id,
+            meta: { stage: 'transfer_reversal', error: e instanceof Error ? e.message : String(e), refundIssued: refundId },
+          });
+        }
+      }
     }
-  }
-  try {
-    await unwindCreditsForTransaction(sql, r.tx_id, 'refund', actorUserId);
-  } catch (e) {
-    console.error('[force refund] credit unwind failed:', (e as Error).message);
-  }
+
+    const newRefundedCents = r.refunded_cents + cashRefundCents;
+    const newStatus = isFullRefund ? 'refunded' : 'partially_refunded';
+    await tx`
+      UPDATE public.transactions
+      SET status = ${newStatus}, refunded_cents = ${newRefundedCents},
+          refunded_at = COALESCE(refunded_at, now()), updated_at = now()
+      WHERE id = ${r.tx_id}
+    `;
+    return {
+      refunded: true as const,
+      stripeRefundId: refundId,
+      reversedCents,
+      amountCents,
+      isFullRefund,
+      error: null,
+      r,
+      cashRefundCents,
+      creditRefundCents,
+      newRefundedCents,
+    };
+  });
+  if (!result.refunded) return result;
+  const { r, cashRefundCents, creditRefundCents, newRefundedCents, isFullRefund, stripeRefundId, reversedCents } = result;
+  await settleRefundCredits(sql, { transactionId: r.tx_id, creditRefundCents, actorUserId, reason, logTag: '[force refund]' });
 
   void writeAudit(sql, {
     action: isFullRefund ? 'refund.issued' : 'refund.partial',
     actorUserId, vendorId: r.vendor_id, claimId: r.claim_id, transactionId: r.tx_id,
     meta: {
-      stripeRefundId: refundId, amountCents, cashRefundCents, creditRefundCents, reversedCents,
+      stripeRefundId, amountCents, cashRefundCents, creditRefundCents, reversedCents,
       cumulativeRefundedCents: newRefundedCents, consumerPaidCents: r.consumer_paid_cents,
       redeemedForceRefund: true, reverseTransfer, reason,
     },
   });
 
   void sendRefundEmail(sql, r.tx_id, amountCents, isFullRefund);
-  return { refunded: true, stripeRefundId: refundId, reversedCents, amountCents, isFullRefund, error: null };
+  return { refunded: true, stripeRefundId, reversedCents, amountCents, isFullRefund, error: null };
 
   function fail(err: string, vendorId: string | null, claimId: string | null, txId: string | null) {
     void writeAudit(sql, {

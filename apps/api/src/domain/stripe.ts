@@ -28,7 +28,7 @@ type StripeClient = InstanceType<typeof StripeNode>;
 let _stripe: StripeClient | null = null;
 function client(): StripeClient {
   if (!SECRET) throw new StripeNotConfiguredError();
-  if (!_stripe) _stripe = new StripeNode(SECRET, { apiVersion: '2026-04-22.dahlia' });
+  if (!_stripe) _stripe = new StripeNode(SECRET, { apiVersion: '2026-05-27.dahlia' });
   return _stripe;
 }
 
@@ -306,6 +306,23 @@ export async function createPaymentIntent(args: {
     metadata: args.metadata,
   });
   return { paymentIntentId: pi.id, clientSecret: pi.client_secret! };
+}
+
+export async function refundPaymentIntent(args: {
+  paymentIntentId: string;
+  idempotencyKey: string;
+  reason?: 'duplicate' | 'fraudulent' | 'requested_by_customer';
+  metadata?: Record<string, string>;
+}): Promise<{ refundId: string }> {
+  const refund = await client().refunds.create(
+    {
+      payment_intent: args.paymentIntentId,
+      reason: args.reason ?? 'requested_by_customer',
+      metadata: args.metadata ?? {},
+    },
+    { idempotencyKey: args.idempotencyKey },
+  );
+  return { refundId: refund.id };
 }
 
 /**

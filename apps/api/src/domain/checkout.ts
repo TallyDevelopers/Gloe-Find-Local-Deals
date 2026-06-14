@@ -5,7 +5,7 @@ import { writeAudit } from './audit';
 import { computeApplicableCredits, redeemCreditsForTransaction, type RedeemSummary } from './credits';
 import { pricePromoOrder } from './promos';
 import { getVoucherValidityDays } from './platformSettings';
-import { createGiftCheckoutSession, createPaymentIntent } from './stripe';
+import { createGiftCheckoutSession, createPaymentIntent, refundPaymentIntent } from './stripe';
 
 export interface CreatePurchaseResult {
   /** Null on the zero-dollar path — credits covered everything, no Stripe step. */
@@ -65,7 +65,7 @@ export async function createPurchase(
            d.status AS deal_status, d.per_customer_limit, d.lifetime_limit_per_customer
     FROM public.deal_variants dv
     JOIN public.deals d ON d.id = dv.deal_id
-    WHERE dv.id = ${args.variantId} LIMIT 1
+    WHERE dv.id = ${args.variantId} AND dv.active = true LIMIT 1
   `;
   const v = rows[0];
   if (!v) throw new Error('Deal option not found.');
@@ -247,7 +247,7 @@ export async function createGiftLink(
     FROM public.deal_variants dv
     JOIN public.deals d ON d.id = dv.deal_id
     JOIN public.vendors ven ON ven.id = d.vendor_id
-    WHERE dv.id = ${args.variantId} LIMIT 1
+    WHERE dv.id = ${args.variantId} AND dv.active = true LIMIT 1
   `;
   const v = rows[0];
   if (!v) throw new Error('Deal option not found.');
@@ -399,7 +399,7 @@ export async function createHostedCheckout(
     FROM public.deal_variants dv
     JOIN public.deals d ON d.id = dv.deal_id
     JOIN public.vendors ven ON ven.id = d.vendor_id
-    WHERE dv.id = ${args.variantId} LIMIT 1
+    WHERE dv.id = ${args.variantId} AND dv.active = true LIMIT 1
   `;
   const v = rows[0];
   if (!v) throw new Error('Deal option not found.');
@@ -581,8 +581,10 @@ export async function fulfillPurchase(
   let creditsAppliedCents = 0;
   let promoDiscountCents = 0;
   let redeemed: RedeemSummary | null = null;
+  let blocked: { transactionId: string; reason: string; paymentIntentId: string | null } | null = null;
 
-  await sql.begin(async (tx) => {
+  try {
+    await sql.begin(async (tx) => {
     type TxnRow = {
       id: string;
       status: string;
@@ -621,8 +623,12 @@ export async function fulfillPurchase(
       FROM public.deals d WHERE d.id = ${meta.dealId} LIMIT 1
     `;
     const variantRows = await tx<{ label: string; deal_price_cents: number; original_price_cents: number }[]>`
-      SELECT label, deal_price_cents, original_price_cents
-      FROM public.deal_variants WHERE id = ${meta.variantId} LIMIT 1
+      UPDATE public.deal_variants
+      SET spots_claimed = spots_claimed + ${meta.quantity}
+      WHERE id = ${meta.variantId}
+        AND active = true
+        AND (spots_total IS NULL OR spots_claimed + ${meta.quantity} <= spots_total)
+      RETURNING label, deal_price_cents, original_price_cents
     `;
     const vendorRows = await tx<{ business_name: string }[]>`
       SELECT business_name FROM public.vendors WHERE id = ${meta.vendorId} LIMIT 1
@@ -630,7 +636,29 @@ export async function fulfillPurchase(
     const deal = dealRows[0];
     const variant = variantRows[0];
     const vendor = vendorRows[0];
-    if (!deal || !variant || !vendor) return;
+    if (!deal || !vendor) {
+      blocked = { transactionId: txn.id, reason: 'fulfillment_reference_missing', paymentIntentId };
+      return;
+    }
+    if (!variant) {
+      blocked = { transactionId: txn.id, reason: 'inventory_unavailable', paymentIntentId };
+      return;
+    }
+
+    if (txn.credits_applied_cents > 0) {
+      redeemed = await redeemCreditsForTransaction(tx, {
+        userId: txn.user_id,
+        transactionId: txn.id,
+        amountCents: txn.credits_applied_cents,
+        // Must match the base the reservation saw: a platform-funded promo
+        // shrank the chargeable total below consumer_paid_cents (GLO-44).
+        orderTotalCents: txn.consumer_paid_cents
+          - (txn.promo_funded_by === 'platform' ? txn.promo_discount_cents : 0),
+      });
+      if (redeemed.shortfallCents > 0) {
+        throw new FulfillmentBlocked(txn.id, 'credit_shortfall', paymentIntentId);
+      }
+    }
 
     // Per-deal override wins; otherwise the admin-set platform window (GLO-29).
     const validityDays = deal.code_validity_days ?? (await getVoucherValidityDays(tx));
@@ -671,11 +699,6 @@ export async function fulfillPurchase(
     }
 
     await tx`
-      UPDATE public.deal_variants
-      SET spots_claimed = spots_claimed + ${meta.quantity}
-      WHERE id = ${meta.variantId}
-    `;
-    await tx`
       UPDATE public.transactions
       SET status                    = 'paid',
           paid_at                   = now(),
@@ -687,24 +710,55 @@ export async function fulfillPurchase(
           payer_name                = COALESCE(payer_name, ${meta.payerName ?? null})
       WHERE id = ${txn.id}
     `;
-
-    // Consume the credits reserved at checkout — SAME transaction as the
-    // vouchers so lots draw down exactly once (idempotent on the txn).
-    if (txn.credits_applied_cents > 0) {
-      redeemed = await redeemCreditsForTransaction(tx, {
-        userId: txn.user_id,
-        transactionId: txn.id,
-        amountCents: txn.credits_applied_cents,
-        // Must match the base the reservation saw: a platform-funded promo
-        // shrank the chargeable total below consumer_paid_cents (GLO-44).
-        orderTotalCents: txn.consumer_paid_cents
-          - (txn.promo_funded_by === 'platform' ? txn.promo_discount_cents : 0),
-      });
-    }
     fulfilledTxnId = txn.id;
     creditsAppliedCents = txn.credits_applied_cents;
     promoDiscountCents = txn.promo_discount_cents;
-  });
+    });
+  } catch (e) {
+    if (e instanceof FulfillmentBlocked) {
+      blocked = { transactionId: e.transactionId, reason: e.reason, paymentIntentId: e.paymentIntentId };
+    } else {
+      throw e;
+    }
+  }
+
+  if (blocked) {
+    let refundId: string | null = null;
+    if (blocked.paymentIntentId) {
+      try {
+        const refunded = await refundPaymentIntent({
+          paymentIntentId: blocked.paymentIntentId,
+          idempotencyKey: `fulfillment_refund_${blocked.transactionId}`,
+          metadata: { transaction_id: blocked.transactionId, reason: blocked.reason },
+        });
+        refundId = refunded.refundId;
+      } catch (e) {
+        void writeAudit(sql, {
+          action: 'purchase.fulfillment_refund_failed',
+          transactionId: blocked.transactionId,
+          meta: { reason: blocked.reason, error: e instanceof Error ? e.message : String(e) },
+        });
+      }
+    }
+    await sql`
+      UPDATE public.transactions
+      SET status = ${refundId ? 'refunded' : 'failed'},
+          refunded_cents = CASE
+            WHEN ${refundId}::text IS NULL THEN refunded_cents
+            ELSE consumer_paid_cents - credits_applied_cents
+              - CASE WHEN promo_funded_by = 'platform' THEN promo_discount_cents ELSE 0 END
+          END,
+          refunded_at = CASE WHEN ${refundId}::text IS NULL THEN refunded_at ELSE COALESCE(refunded_at, now()) END,
+          updated_at = now()
+      WHERE id = ${blocked.transactionId} AND status = 'pending_payment'
+    `;
+    void writeAudit(sql, {
+      action: 'purchase.fulfillment_refused',
+      transactionId: blocked.transactionId,
+      meta: { reason: blocked.reason, stripeRefundId: refundId },
+    });
+    return;
+  }
 
   // Receipt — fire-and-forget, post-commit. `receipt` is only set when we
   // actually fulfilled (it stays null if the txn was already done / not found),
@@ -749,6 +803,16 @@ export async function fulfillPurchase(
     void import('./referrals')
       .then((m) => m.maybePayoutReferrerOnFirstPurchase(sql, txId))
       .catch((e) => console.error('[referral] payout check failed:', (e as Error).message));
+  }
+}
+
+class FulfillmentBlocked extends Error {
+  constructor(
+    readonly transactionId: string,
+    readonly reason: string,
+    readonly paymentIntentId: string | null,
+  ) {
+    super(reason);
   }
 }
 

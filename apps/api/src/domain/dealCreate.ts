@@ -431,8 +431,8 @@ export async function listVendorDeals(sql: Sql, vendorId: string) {
       c.display_name AS category_name,
       (SELECT url FROM public.deal_photos p WHERE p.deal_id = d.id
         ORDER BY CASE WHEN p.photo_type='hero' THEN 0 ELSE 1 END, p.display_order LIMIT 1) AS primary_photo_url,
-      (SELECT MIN(deal_price_cents) FROM public.deal_variants dv WHERE dv.deal_id = d.id) AS headline_price_cents,
-      (SELECT COUNT(*)::int FROM public.deal_variants dv WHERE dv.deal_id = d.id) AS variant_count
+      (SELECT MIN(deal_price_cents) FROM public.deal_variants dv WHERE dv.deal_id = d.id AND dv.active = true) AS headline_price_cents,
+      (SELECT COUNT(*)::int FROM public.deal_variants dv WHERE dv.deal_id = d.id AND dv.active = true) AS variant_count
     FROM public.deals d
     JOIN public.service_categories c ON c.id = d.category_id
     WHERE d.vendor_id = ${vendorId}

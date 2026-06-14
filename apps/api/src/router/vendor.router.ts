@@ -677,11 +677,14 @@ export const vendorRouter = router({
 
   /** Fire an Instant Payout for the vendor. Stripe deducts the 3% fee. */
   requestInstantPayout: protectedProcedure
-    .input(z.object({ amountCents: z.number().int().positive() }))
+    .input(z.object({
+      amountCents: z.number().int().positive(),
+      requestId: z.string().min(12).max(80).regex(/^[A-Za-z0-9_-]+$/),
+    }))
     .mutation(async ({ ctx, input }) => {
       const vendor = await requireVendor(ctx);
       try {
-        return await triggerInstantPayout(ctx.sql, vendor.id, input.amountCents, ctx.auth.userId);
+        return await triggerInstantPayout(ctx.sql, vendor.id, input.amountCents, ctx.auth.userId, input.requestId);
       } catch (e) {
         if (e instanceof InstantPayoutError) {
           throw new TRPCError({ code: 'BAD_REQUEST', message: e.message });

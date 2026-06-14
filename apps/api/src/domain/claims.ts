@@ -73,8 +73,9 @@ interface CreateClaimInput {
 export async function createClaim(sql: Sql, input: CreateClaimInput): Promise<Claim> {
   const { userId, dealId, variantId } = input;
 
+  return await sql.begin(async (tx) => {
   // Validate variant + deal + vendor and build snapshot in one query
-  const dealInfo = await sql<{
+  const dealInfo = await tx<{
     deal_title: string;
     vendor_id: string;
     vendor_name: string;
@@ -99,7 +100,7 @@ export async function createClaim(sql: Sql, input: CreateClaimInput): Promise<Cl
       d.expires_at            AS deal_expires_at
     FROM public.deals d
     JOIN public.vendors v ON v.id = d.vendor_id
-    JOIN public.deal_variants dv ON dv.deal_id = d.id AND dv.id = ${variantId}
+    JOIN public.deal_variants dv ON dv.deal_id = d.id AND dv.id = ${variantId} AND dv.active = true
     WHERE d.id = ${dealId} AND d.status = 'active'
     LIMIT 1
   `;
@@ -112,6 +113,16 @@ export async function createClaim(sql: Sql, input: CreateClaimInput): Promise<Cl
   }
   if (new Date(info.deal_expires_at) < new Date()) {
     throw new Error('Deal has expired');
+  }
+  const bumped = await tx<{ id: string }[]>`
+    UPDATE public.deal_variants
+    SET spots_claimed = spots_claimed + 1
+    WHERE id = ${variantId}
+      AND (spots_total IS NULL OR spots_claimed + 1 <= spots_total)
+    RETURNING id
+  `;
+  if (!bumped[0]) {
+    throw new Error('No spots left for this variant');
   }
 
   const snapshot: ClaimSnapshot = {
@@ -127,9 +138,9 @@ export async function createClaim(sql: Sql, input: CreateClaimInput): Promise<Cl
   const humanCode = generateHumanCode();
 
   // Per-deal override wins; otherwise the admin-set platform window (GLO-29).
-  const validityDays = info.code_validity_days ?? (await getVoucherValidityDays(sql));
+  const validityDays = info.code_validity_days ?? (await getVoucherValidityDays(tx));
 
-  const inserted = await sql<{ id: string; created_at: string; expires_at: string }[]>`
+  const inserted = await tx<{ id: string; created_at: string; expires_at: string }[]>`
     INSERT INTO public.claims (
       user_id, deal_id, variant_id, vendor_id,
       snapshot, qr_payload, human_code,
@@ -143,13 +154,6 @@ export async function createClaim(sql: Sql, input: CreateClaimInput): Promise<Cl
   `;
   const row = inserted[0];
   if (!row) throw new Error('Failed to create claim');
-
-  // Bump the variant's spots_claimed counter
-  await sql`
-    UPDATE public.deal_variants
-    SET spots_claimed = spots_claimed + 1
-    WHERE id = ${variantId}
-  `;
 
   return {
     id: row.id,
@@ -165,6 +169,7 @@ export async function createClaim(sql: Sql, input: CreateClaimInput): Promise<Cl
     redeemedAt: null,
     hasReview: false, // brand-new claim — nothing to review yet
   };
+  });
 }
 
 export async function listClaimsForUser(sql: Sql, userId: string): Promise<Claim[]> {

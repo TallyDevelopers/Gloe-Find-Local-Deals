@@ -33,6 +33,9 @@ export type AuditAction =
   | 'instant_payout.requested'
   | 'instant_payout.refused'
   | 'instant_payout.toggled'
+  // Purchase fulfillment guardrails
+  | 'purchase.fulfillment_refused'
+  | 'purchase.fulfillment_refund_failed'
   // Standard payout (Stripe → bank, observed via webhook)
   | 'payout.created'
   | 'payout.paid'

@@ -262,6 +262,7 @@ export async function triggerInstantPayout(
   vendorId: string,
   amountCents: number,
   actorUserId: string,
+  requestId: string,
 ): Promise<{ payoutId: string; amountCents: number; feeCents: number }> {
   const refuse = (reason: string): never => {
     void writeAudit(sql, {
@@ -274,6 +275,7 @@ export async function triggerInstantPayout(
   };
 
   if (amountCents <= 0) refuse('Amount must be positive.');
+  if (!/^[A-Za-z0-9_-]{12,80}$/.test(requestId)) refuse('Invalid payout request id.');
 
   const rows = await sql<{
     stripe_account_id: string | null;
@@ -297,14 +299,14 @@ export async function triggerInstantPayout(
     refuse(`Only $${(balance.availableCents / 100).toFixed(2)} is available to pay out instantly.`);
   }
 
-  const idempotencyKey = `instant_payout_${vendorId}_${Date.now()}_${randomUUID()}`;
+  const idempotencyKey = `instant_payout_${vendorId}_${requestId}`;
   let payoutId: string;
   try {
     const res = await createInstantPayout({
       amountCents,
       accountId: v!.stripe_account_id!,
       idempotencyKey,
-      metadata: { vendor_id: vendorId, source: 'gloe_vendor_hub' },
+      metadata: { vendor_id: vendorId, request_id: requestId, source: 'gloe_vendor_hub' },
     });
     payoutId = res.payoutId;
   } catch (e) {
@@ -335,7 +337,7 @@ export async function triggerInstantPayout(
     action: 'instant_payout.requested',
     vendorId,
     actorUserId,
-    meta: { amountCents, feeCents, stripePayoutId: payoutId },
+    meta: { amountCents, feeCents, stripePayoutId: payoutId, requestId },
   });
 
   return { payoutId, amountCents, feeCents };

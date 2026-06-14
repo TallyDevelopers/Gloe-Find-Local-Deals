@@ -360,9 +360,11 @@ function InstantPayoutInline() {
   const utils = trpc.useUtils();
   const statusQ = trpc.vendor.instantPayoutStatus.useQuery();
   const [confirming, setConfirming] = useState(false);
+  const [requestId, setRequestId] = useState<string | null>(null);
   const request = trpc.vendor.requestInstantPayout.useMutation({
     onSuccess: () => {
       setConfirming(false);
+      setRequestId(null);
       void utils.vendor.stripeMoney.invalidate();
       void utils.vendor.hubSnapshot.invalidate();
       void utils.vendor.instantPayoutStatus.invalidate();
@@ -398,7 +400,10 @@ function InstantPayoutInline() {
             </div>
           </div>
           <button
-            onClick={() => setConfirming(true)}
+            onClick={() => {
+              setRequestId(crypto.randomUUID());
+              setConfirming(true);
+            }}
             disabled={!eligible}
             style={pillButton('brand')}
           >
@@ -435,7 +440,10 @@ function InstantPayoutInline() {
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 12, justifyContent: 'flex-end' }}>
             <button
-              onClick={() => setConfirming(false)}
+              onClick={() => {
+                setConfirming(false);
+                setRequestId(null);
+              }}
               disabled={request.isPending}
               style={{
                 padding: '8px 14px',
@@ -451,7 +459,7 @@ function InstantPayoutInline() {
               Cancel
             </button>
             <button
-              onClick={() => request.mutate({ amountCents: availableCents })}
+              onClick={() => request.mutate({ amountCents: availableCents, requestId: requestId ?? crypto.randomUUID() })}
               disabled={request.isPending}
               style={pillButton('brand')}
             >
